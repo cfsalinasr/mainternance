@@ -95,12 +95,18 @@ struct WindowVisibilityObserver: NSViewRepresentable {
             report(state.handle(event, window: facts))
         }
 
-        /// Orders out the hosting window (never any other window) and reports it hidden right away, because
-        /// `orderOut` posts no `willClose` and the occlusion notification may arrive late.
+        /// Dismisses the popover only if it is currently shown (never toggles a hidden one open). Preferred
+        /// path: click the status item like a user would, so `MenuBarExtra` resets its own presented state
+        /// and the button highlight. Fallback: order out this view's own window. Either way the hidden state
+        /// is reported at once (idempotent with the notifications that follow, `report` drops repeats).
         func dismissHostingWindow() {
-            guard let window else { return }
-            window.orderOut(nil)
-            handle(.willClose)
+            guard let window, window.isVisible else { return }
+            if let button = StatusItemButtonFinder.find(in: NSApp.windows) {
+                button.performClick(nil)
+            } else {
+                window.orderOut(nil)
+            }
+            handle(.dismissed)
         }
 
         private func report(_ visible: Bool) {
@@ -124,5 +130,33 @@ public final class WindowDismisser {
 
     public func dismiss() {
         view?.dismissHostingWindow()
+    }
+}
+
+/// Finds this app's menu bar extra button. It relies on the status-bar window being an `NSStatusBarWindow`,
+/// a private class name (the button class `NSStatusBarButton` is public). That is not a stable contract,
+/// which is why the caller falls back to ordering out the popover's own window when nothing is found.
+/// This app has exactly one status item, so the first match is unambiguous.
+@MainActor
+enum StatusItemButtonFinder {
+    static func find(in windows: [NSWindow]) -> NSStatusBarButton? {
+        for window in windows where String(describing: type(of: window)).contains("StatusBarWindow") {
+            if let content = window.contentView, let button = button(in: content) {
+                return button
+            }
+        }
+        return nil
+    }
+
+    private static func button(in view: NSView) -> NSStatusBarButton? {
+        if let button = view as? NSStatusBarButton {
+            return button
+        }
+        for subview in view.subviews {
+            if let found = button(in: subview) {
+                return found
+            }
+        }
+        return nil
     }
 }

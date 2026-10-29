@@ -19,6 +19,8 @@ public struct WindowFacts: Equatable, Sendable {
 public struct WindowVisibilityState: Equatable, Sendable {
     public enum Event: Equatable, Sendable {
         case attached, detached, becameKey, resignedKey, occlusionChanged, willClose
+        /// The owner dismissed the window itself; hidden until it becomes key again or is re-attached.
+        case dismissed
     }
 
     public private(set) var isClosed = false
@@ -30,7 +32,7 @@ public struct WindowVisibilityState: Equatable, Sendable {
         switch event {
         case .attached, .becameKey, .detached:
             isClosed = false
-        case .willClose:
+        case .willClose, .dismissed:
             isClosed = true
         case .resignedKey, .occlusionChanged:
             break

@@ -24,8 +24,10 @@ struct DetailsStateTests {
         let empty = sample(1, cpu: nil)
         #expect(DetailsState(history: [sample(0), empty]) == .collecting)
         #expect(DetailsState(history: [empty, empty, empty]) == .collecting)
-        // A gpu-only or memory-only sample has a value too.
-        #expect(DetailsState(history: [sample(0, cpu: nil, gpu: 0.3), sample(1, cpu: nil, memory: .normal)]) == .ready)
+        // Values spread over different series never reach two in one series: no row, so still collecting.
+        let split = [sample(0, cpu: nil, gpu: 0.3), sample(1, cpu: nil, memory: .normal)]
+        #expect(DetailsState(history: split) == .collecting)
+        #expect(DetailsState(history: [sample(0, cpu: nil, gpu: 0.3), sample(1, cpu: nil, gpu: 0.4)]) == .ready)
     }
 
     @Test func collectingTextIsPinned() {

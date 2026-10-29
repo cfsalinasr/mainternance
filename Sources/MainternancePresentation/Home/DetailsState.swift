@@ -5,9 +5,11 @@ enum DetailsState: Equatable {
 
     static let collectingText = "Collecting data…"
 
-    /// `.ready` once at least two samples carry any value; empty (all-nil) samples do not count.
+    /// `.ready` only when at least one row would be drawn (the same predicate as `HistorySeries`: a series
+    /// needs two values of its own), so Details is never shown empty.
     init(history: [OverviewSample]) {
-        let withValue = history.filter { $0.cpu != nil || $0.gpu != nil || $0.memoryPressure != nil }
-        self = withValue.count >= 2 ? .ready : .collecting
+        let series = HistorySeries(history: history)
+        let hasRow = series.cpu != nil || series.gpu != nil || series.memory != nil
+        self = hasRow ? .ready : .collecting
     }
 }

@@ -85,8 +85,8 @@ extension WindowVisibilityStateTests {
         let shown = WindowFacts(isOrderedIn: true, occlusionVisible: true, isKey: true)
         let orderedOut = WindowFacts(isOrderedIn: false, occlusionVisible: true, isKey: false)
         let first = state.handle(.becameKey, window: shown)
-        // The dismiss path: orderOut then willClose, while occlusion can still say visible.
-        let afterDismiss = state.handle(.willClose, window: orderedOut)
+        // The dismiss path: the owner dismisses, while occlusion can still say visible.
+        let afterDismiss = state.handle(.dismissed, window: orderedOut)
         let lateOcclusion = state.handle(.occlusionChanged, window: shown)
         let reopened = state.handle(.becameKey, window: shown)
         #expect(first)
