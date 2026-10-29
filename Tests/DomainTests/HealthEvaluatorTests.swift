@@ -68,6 +68,13 @@ struct HealthEvaluatorTests {
             .reason == "100 GB free")
     }
 
+    @Test func absurdlyLargeDiskUsesTheOverflowSafePath() {
+        // 100x the size overflows Int64; the percentage falls back to an approximation (99, not a trap).
+        let full = check(.diskSpace, snapshot: makeSnapshot(total: Int64.max, free: 0))
+        #expect(full?.state == .problem)
+        #expect(full?.reason == "Disk 99% full")
+    }
+
     @Test func diskCorruptInputsAreClamped() {
         let negative = check(.diskSpace, snapshot: makeSnapshot(total: 100, free: -50))
         #expect(negative?.state == .problem)
