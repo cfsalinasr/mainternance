@@ -67,11 +67,11 @@ public struct LoadOverview: Sendable {
         async let snapshot = snapshots.currentSnapshot()
         async let scan = scans.currentStatus()
         async let suggested = actions.suggestedActions()
-        let (s, c, a) = await (snapshot, scan, suggested)
+        let (loadedSnapshot, loadedScan, loadedActions) = await (snapshot, scan, suggested)
         return Overview(
-            snapshot: s, scan: c,
-            report: evaluator.evaluate(snapshot: s, scan: c, now: now()),
-            actions: a
+            snapshot: loadedSnapshot, scan: loadedScan,
+            report: evaluator.evaluate(snapshot: loadedSnapshot, scan: loadedScan, now: now()),
+            actions: loadedActions
         )
     }
 }
