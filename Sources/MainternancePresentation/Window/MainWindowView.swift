@@ -43,8 +43,14 @@ public struct MainWindowView: View {
             FilesView(navigation: navigation, state: states.files)
         case .scanner:
             ScannerView(state: states.scanner)
-        case .cleanup, .startup, .uninstaller, .settings:
-            ComingSoonView(destination: navigation.selection)
+        case .cleanup:
+            CleanupView(state: states.cleanup)
+        case .startup:
+            StartupView(state: states.startup)
+        case .uninstaller:
+            UninstallerView(state: states.uninstaller)
+        case .settings:
+            SettingsView(state: states.settings)
         }
     }
 }
