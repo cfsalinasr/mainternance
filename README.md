@@ -41,5 +41,6 @@ Build products go out-of-tree because an iCloud-synced Desktop corrupts in-repo 
 
 CI (GitHub Actions, `.github/workflows/ci.yml`) runs lint, the layer-boundary check, build and tests
 on every push and pull request to `main`, then a SonarCloud scan. Actions are pinned to commit SHAs.
-Code coverage is collected by `swift test` but is not reported to SonarCloud, which does not import
-Swift coverage natively. CodeRabbit reviews pull requests using `.coderabbit.yaml`.
+Code coverage is collected by `scripts/test.sh --enable-code-coverage` and converted to SonarCloud's generic format by
+`scripts/coverage-to-sonar.sh` (writes the untracked `coverage.xml`); SwiftUI views and the app target are excluded
+by design in `sonar-project.properties`. CodeRabbit reviews pull requests using `.coderabbit.yaml`.
