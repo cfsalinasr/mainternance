@@ -95,4 +95,57 @@ struct ScannerStateTests {
         #expect(findings.allSatisfy { !$0.id.isEmpty && !$0.reason.isEmpty && !$0.path.isEmpty })
         #expect(Set(findings.map(\.id)).count == findings.count)
     }
+
+    @Test func quarantineTwiceIsIdempotent() throws {
+        let state = ScannerViewState()
+        let id = try #require(state.findings.first).id
+        state.quarantine(id)
+        state.quarantine(id)
+        #expect(state.quarantined == [id])
+    }
+
+    @Test func restoreOfNonQuarantinedKnownIdIsNoOp() throws {
+        let state = ScannerViewState()
+        let id = try #require(state.findings.first).id
+        state.restore(id)
+        #expect(state.quarantined.isEmpty)
+    }
+
+    @Test func requestOnQuarantinedIdDoesNotOpenSheet() throws {
+        let state = ScannerViewState()
+        let id = try #require(state.findings.first).id
+        state.quarantine(id)
+        state.requestQuarantine(id)
+        #expect(state.pendingQuarantineID == nil)
+    }
+
+    @Test func confirmWithoutPendingDoesNothing() {
+        let state = ScannerViewState()
+        state.confirmQuarantine()
+        #expect(state.quarantined.isEmpty)
+        #expect(state.pendingQuarantineID == nil)
+    }
+
+    @Test func previewChangeClearsPendingConfirmation() throws {
+        let state = ScannerViewState()
+        try state.requestQuarantine(#require(state.findings.first).id)
+        state.select(previewID: "ready-clean")
+        #expect(state.pendingQuarantineID == nil)
+        state.confirmQuarantine()
+        #expect(state.quarantined.isEmpty)
+    }
+
+    @Test func quarantinePersistsAcrossPreviewSwitches() throws {
+        let state = ScannerViewState()
+        let id = try #require(state.findings.first).id
+        state.quarantine(id)
+        state.select(previewID: "not-installed")
+        state.select(previewID: "ready-findings")
+        #expect(state.isQuarantined(id))
+    }
+
+    @Test func findingsPreviewCountMatchesSampleList() throws {
+        let preview = try #require(ScannerPreview.all.first { $0.id == "ready-findings" })
+        #expect(preview.run == .finished(findings: ScannerSampleData.findings.count))
+    }
 }

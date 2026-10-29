@@ -250,6 +250,7 @@ public final class ScannerViewState {
     func select(previewID id: String) {
         guard let preview = ScannerPreview.all.first(where: { $0.id == id }) else { return }
         previewID = id
+        pendingQuarantineID = nil // A stale confirmation must not outlive the preview it was opened in.
         engine = preview.engine
         run = preview.run
     }
