@@ -160,7 +160,7 @@ struct HomeModelTests {
         let series = HistorySeries(history: samples)
         expectClose(series.cpu ?? [], [1, 0.2])
         #expect(series.gpu == nil)
-        #expect(series.memory == [0, 1])
+        expectClose(series.memory ?? [], [0, 1])
         let withGpu = HistorySeries(history: [
             OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp),
             OverviewSample(cpu: 0, gpu: 1.5, memoryPressure: .warning, at: stamp)

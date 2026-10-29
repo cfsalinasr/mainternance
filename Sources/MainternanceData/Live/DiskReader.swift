@@ -17,7 +17,8 @@ public struct DiskReader: Sendable {
     private let readRaw: @Sendable (URL) -> RawDisk?
 
     public init(
-        volumeURL: URL = URL(fileURLWithPath: "/"),
+        // The filesystem root ("/" on macOS), i.e. the startup volume.
+        volumeURL: URL = URL(fileURLWithPath: NSOpenStepRootDirectory()),
         read: @escaping @Sendable (URL) -> RawDisk? = DiskReader.readSystem
     ) {
         self.volumeURL = volumeURL

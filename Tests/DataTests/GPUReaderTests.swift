@@ -2,16 +2,18 @@ import MainternanceData
 import Testing
 
 struct GPUReaderTests {
+    private let tolerance = 1e-9
+
     @Test func mapsPercentToFraction() throws {
         let value = try #require(GPUReader.map(34))
         #expect(abs(value - 0.34) < 1e-9)
     }
 
     @Test func clampsOutOfRange() throws {
-        #expect(try #require(GPUReader.map(150)) == 1.0)
-        #expect(try #require(GPUReader.map(-3)) == 0.0)
-        #expect(try #require(GPUReader.map(Int.max)) == 1.0)
-        #expect(try #require(GPUReader.map(Int.min)) == 0.0)
+        #expect(try abs(#require(GPUReader.map(150)) - 1.0) < tolerance)
+        #expect(try abs(#require(GPUReader.map(-3)) - 0.0) < tolerance)
+        #expect(try abs(#require(GPUReader.map(Int.max)) - 1.0) < tolerance)
+        #expect(try abs(#require(GPUReader.map(Int.min)) - 0.0) < tolerance)
     }
 
     @Test func missingIsNil() {

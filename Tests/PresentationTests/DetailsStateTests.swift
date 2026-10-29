@@ -34,7 +34,7 @@ struct DetailsStateTests {
         #expect(DetailsState.collectingText == "Collecting data…")
     }
 
-    @Test func aRowNeedsTwoValuesToBeDrawn() {
+    @Test func aRowNeedsTwoValuesToBeDrawn() throws {
         let one = HistorySeries(history: [sample(0, gpu: 0.4), sample(1, gpu: nil)])
         #expect(one.gpu == nil)
         #expect(one.cpu?.count == 2)
@@ -42,6 +42,8 @@ struct DetailsStateTests {
         #expect(single.memory == nil)
         #expect(single.cpu == nil)
         let two = HistorySeries(history: [sample(0, gpu: 0.4), sample(1, gpu: 0.6)])
-        #expect(two.gpu == [0.4, 0.6])
+        let gpu = try #require(two.gpu)
+        #expect(gpu.count == 2)
+        #expect(abs(gpu[0] - 0.4) < 1e-9 && abs(gpu[1] - 0.6) < 1e-9)
     }
 }
