@@ -6,3 +6,4 @@ Pasted *.tiff
 .swiftpm/
 *.app
 dist/
+coverage.xml

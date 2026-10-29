@@ -40,6 +40,9 @@ jobs:
       - name: Test
         run: scripts/test.sh --enable-code-coverage
 
+      - name: Convert coverage for SonarCloud
+        run: scripts/coverage-to-sonar.sh
+
       - name: SonarCloud scan
         if: steps.sonar.outputs.has_sonar == 'true'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
