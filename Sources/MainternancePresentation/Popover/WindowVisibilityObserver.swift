@@ -97,16 +97,32 @@ struct WindowVisibilityObserver: NSViewRepresentable {
 
         /// Dismisses the popover only if it is currently shown (never toggles a hidden one open). Preferred
         /// path: click the status item like a user would, so `MenuBarExtra` resets its own presented state
-        /// and the button highlight. Fallback: order out this view's own window. Either way the hidden state
-        /// is reported at once (idempotent with the notifications that follow, `report` drops repeats).
+        /// and the button highlight. Fallback: order out this view's own window, either at once when no
+        /// button is found or after a one-shot check when the click did not close it. The hidden state is
+        /// reported at once (idempotent with the notifications that follow, `report` drops repeats).
+        /// Not verified at runtime: the button lookup and the click's effect can only be checked by hand.
         func dismissHostingWindow() {
             guard let window, window.isVisible else { return }
             if let button = StatusItemButtonFinder.find(in: NSApp.windows) {
                 button.performClick(nil)
+                scheduleFallbackCheck(for: window)
             } else {
                 window.orderOut(nil)
             }
             handle(.dismissed)
+        }
+
+        /// A single delayed check (not polling): if the click left the popover on screen, order out that
+        /// same window and keep the reported state hidden. It never touches any other window.
+        private func scheduleFallbackCheck(for popover: NSWindow) {
+            Task { @MainActor [weak self, weak popover] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard let self, let popover, window === popover,
+                      PopoverDismissFallback.afterClick(stillOrderedIn: popover.isVisible) == .orderOut
+                else { return }
+                popover.orderOut(nil)
+                handle(.dismissed)
+            }
         }
 
         private func report(_ visible: Bool) {
@@ -133,9 +149,10 @@ public final class WindowDismisser {
     }
 }
 
-/// Finds this app's menu bar extra button. It relies on the status-bar window being an `NSStatusBarWindow`,
-/// a private class name (the button class `NSStatusBarButton` is public). That is not a stable contract,
-/// which is why the caller falls back to ordering out the popover's own window when nothing is found.
+/// Finds this app's menu bar extra button. It relies on the status-bar window's class name containing
+/// `StatusBarWindow`, a non-public AppKit class (the button class `NSStatusBarButton` is public). That is
+/// not a stable contract and was not verified at runtime by tests, which is why the caller falls back to
+/// ordering out the popover's own window when nothing is found or the click does not close it.
 /// This app has exactly one status item, so the first match is unambiguous.
 @MainActor
 enum StatusItemButtonFinder {

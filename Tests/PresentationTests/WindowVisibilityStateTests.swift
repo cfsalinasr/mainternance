@@ -94,4 +94,9 @@ extension WindowVisibilityStateTests {
         #expect(!lateOcclusion)
         #expect(reopened)
     }
+
+    @Test func fallbackOrdersOutOnlyWhenTheClickLeftThePopoverOnScreen() {
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true) == .orderOut)
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: false) == PopoverDismissFallback.none)
+    }
 }

@@ -46,3 +46,16 @@ public struct WindowVisibilityState: Equatable, Sendable {
         !isClosed && window.isOrderedIn && (window.occlusionVisible || window.isKey)
     }
 }
+
+/// What to do once the status item was clicked to dismiss the popover and the click has had time to act.
+public enum PopoverDismissFallback: Equatable, Sendable {
+    /// The popover closed; nothing to do.
+    case none
+    /// The click did not close it: order the popover's own window out so it cannot overlap the main window.
+    case orderOut
+
+    /// One-shot check after the click; `stillOrderedIn` is the popover window's `isVisible` at that moment.
+    public static func afterClick(stillOrderedIn: Bool) -> Self {
+        stillOrderedIn ? .orderOut : .none
+    }
+}
