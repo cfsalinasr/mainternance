@@ -111,4 +111,16 @@ struct PopoverModelTests {
         #expect(HealthState.needsAttention.accessibilityNote.contains("needs attention"))
         #expect(HealthState.problem.accessibilityNote.contains("problem"))
     }
+
+    @Test func cpuPercentIsClampedAndNonFiniteShowsZero() {
+        let cases: [(Double, String)] = [
+            (0.234, "23%"), (-0.5, "0%"), (1.4, "100%"), (.nan, "0%"), (.infinity, "0%"), (-.infinity, "0%")
+        ]
+        for (usage, text) in cases {
+            var busy = snapshot()
+            busy.cpuUsage = usage
+            let cpu = model(overview(snapshot: busy)).metrics.first { $0.title == "CPU" }
+            #expect(cpu?.value == text)
+        }
+    }
 }

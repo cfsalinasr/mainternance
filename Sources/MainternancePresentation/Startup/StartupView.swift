@@ -44,11 +44,13 @@ public struct StartupView: View {
                     .overlay(Capsule().stroke(.secondary))
                     .accessibilityLabel("New since last review")
             }
-            Button("Reveal in Finder") {}
-                .disabled(true)
-                .help(SystemHelp.engineNotConnected)
-                .accessibilityLabel("Reveal \(item.name) in Finder")
-                .accessibilityHint(SystemHelp.engineNotConnected)
+            Button("Reveal in Finder") {
+                // Inert: the system engine arrives in a later plan; the button is disabled.
+            }
+            .disabled(true)
+            .help(SystemHelp.engineNotConnected)
+            .accessibilityLabel("Reveal \(item.name) in Finder")
+            .accessibilityHint(SystemHelp.engineNotConnected)
             Toggle(item.name, isOn: Binding(get: { item.isEnabled }, set: { _ in state.toggle(item.id) }))
                 .labelsHidden()
                 .toggleStyle(.switch)

@@ -57,10 +57,14 @@ struct FileActionButtons: View {
     }
 
     private func action(_ title: String, _ symbol: String) -> some View {
-        Button {} label: { Image(systemName: symbol) }
-            .buttonStyle(.borderless)
-            .help(fileEngineUnavailableHelp)
-            .accessibilityLabel(title)
-            .accessibilityHint(fileEngineUnavailableHelp)
+        Button {
+            // Inert: the file engine arrives in a later plan; the row's actions are disabled.
+        } label: {
+            Image(systemName: symbol)
+        }
+        .buttonStyle(.borderless)
+        .help(fileEngineUnavailableHelp)
+        .accessibilityLabel(title)
+        .accessibilityHint(fileEngineUnavailableHelp)
     }
 }

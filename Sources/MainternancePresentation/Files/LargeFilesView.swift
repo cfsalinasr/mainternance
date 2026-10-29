@@ -13,7 +13,7 @@ struct LargeFilesView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(state.largest.sorted { $0.size > $1.size }) { FileResultRow(file: $0) }
+                        ForEach(state.largest) { FileResultRow(file: $0) }
                     }
                 }
             }

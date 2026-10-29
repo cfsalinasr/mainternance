@@ -12,8 +12,12 @@ public struct MainWindowView: View {
         navigation: Navigation,
         overview: OverviewViewModel,
         states: WindowStates,
-        scanNow: @escaping () -> Void = {},
-        onVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in }
+        scanNow: @escaping () -> Void = {
+            // Default: no scan action (previews); the app passes the real one.
+        },
+        onVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in
+            // Default: visibility is not observed (previews); the app passes the real handler.
+        }
     ) {
         self.navigation = navigation
         self.overview = overview

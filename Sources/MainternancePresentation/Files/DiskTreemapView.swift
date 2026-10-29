@@ -60,14 +60,14 @@ struct DiskTreemapView: View {
             }
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            openButtons(node)
+            openButtons
         }
     }
 
     /// Keyboard and VoiceOver route into folders; the Canvas itself is a single read-only element.
     @ViewBuilder
-    private func openButtons(_ node: TreemapNode) -> some View {
-        let folders = node.children.filter { !$0.children.isEmpty && $0.size > 0 }
+    private var openButtons: some View {
+        let folders = state.drillableChildren
         if !folders.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {

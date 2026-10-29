@@ -148,10 +148,34 @@ struct HomeModelTests {
             OverviewSample(cpu: 0.2, gpu: nil, memoryPressure: .critical, at: stamp)
         ]
         let series = HistorySeries(history: samples)
-        #expect(series.cpu == [1, 0.2])
+        expectClose(series.cpu, [1, 0.2])
         #expect(series.gpu == nil)
         #expect(series.memory == [0, 1])
         let withGpu = HistorySeries(history: [OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp)])
-        #expect(withGpu.gpu == [0.5])
+        expectClose(withGpu.gpu ?? [], [0.5])
+    }
+
+    private func expectClose(
+        _ actual: [Double],
+        _ expected: [Double],
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        #expect(actual.count == expected.count, sourceLocation: sourceLocation)
+        for (value, want) in zip(actual, expected) {
+            #expect(abs(value - want) < 1e-9, sourceLocation: sourceLocation)
+        }
+    }
+
+    @Test func nonFiniteTemperatureIsOmittedInsteadOfTrapping() {
+        for bad in [Double.nan, .infinity, -.infinity] {
+            let hot = overview(snapshot: makeSnapshot(temperatureCelsius: bad))
+            #expect(HomeModel(overview: hot).temperatureText == nil)
+        }
+    }
+
+    @Test func extremeFiniteTemperatureIsClampedInsteadOfTrapping() {
+        #expect(HomeModel.temperatureText(1e300) == "1000 °C")
+        #expect(HomeModel.temperatureText(-1e300) == "-1000 °C")
+        #expect(HomeModel.temperatureText(-3.6) == "-4 °C")
     }
 }

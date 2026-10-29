@@ -16,30 +16,52 @@ enum ScheduleInput {
     }
 }
 
+struct WeekdayOption: Equatable, Identifiable {
+    let value: Int
+    let name: String
+
+    var id: Int {
+        value
+    }
+}
+
 @MainActor
 @Observable
 public final class SettingsViewState {
     var launchAtLogin = false
     var problemAlerts = true
     var weeklyDigest = true
-    private(set) var weekday: Int
-    private(set) var hour: Int
-    private(set) var minute: Int
+    private let scheduleStore: ScanScheduleStore
 
-    public init() {
-        let schedule = ScannerSampleData.schedule
-        weekday = ScheduleInput.weekday(schedule.weekday)
-        hour = ScheduleInput.hour(schedule.hour)
-        minute = ScheduleInput.minute(schedule.minute)
+    var weekday: Int {
+        scheduleStore.schedule.weekday
+    }
+
+    var hour: Int {
+        scheduleStore.schedule.hour
+    }
+
+    var minute: Int {
+        scheduleStore.schedule.minute
+    }
+
+    public init(schedule: ScanScheduleStore = ScanScheduleStore()) {
+        scheduleStore = schedule
+    }
+
+    /// The selectable days, 1 (Sunday) ... 7, named for the locale; a name is empty only if the calendar has none.
+    func weekdayOptions(locale: Locale = .current) -> [WeekdayOption] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        return (1 ... 7).map { WeekdayOption(value: $0, name: ScanSchedule.weekdayName($0, calendar: calendar)) }
     }
 
     func setWeekday(_ value: Int) {
-        weekday = ScheduleInput.weekday(value)
+        scheduleStore.setWeekday(value)
     }
 
     func setTime(hour: Int, minute: Int) {
-        self.hour = ScheduleInput.hour(hour)
-        self.minute = ScheduleInput.minute(minute)
+        scheduleStore.setTime(hour: hour, minute: minute)
     }
 
     func setTime(from date: Date, calendar: Calendar = .current) {
@@ -52,6 +74,6 @@ public final class SettingsViewState {
     }
 
     func scheduleSummary(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
-        ScanSchedule(weekday: weekday, hour: hour, minute: minute).description(locale: locale, timeZone: timeZone)
+        scheduleStore.summary(locale: locale, timeZone: timeZone)
     }
 }

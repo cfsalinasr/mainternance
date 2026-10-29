@@ -61,6 +61,11 @@ struct TreemapNode: Identifiable, Equatable, Sendable {
     var size: Int64 {
         children.isEmpty ? max(leafSize, 0) : children.reduce(0) { $0 + $1.size }
     }
+
+    /// A folder the user can open: it has children and a non-zero size.
+    var isDrillable: Bool {
+        !children.isEmpty && size > 0
+    }
 }
 
 enum FilesSampleData {

@@ -46,7 +46,7 @@ public struct UninstallerView: View {
                     }
                     ForEach(app.leftovers) { leftover in
                         PreviewListRow(
-                            title: leftover.path.split(separator: "/").last.map(String.init) ?? leftover.path,
+                            title: leftover.displayName,
                             subtitle: leftover.path,
                             trailing: formatBytes(leftover.bytes)
                         )
@@ -55,11 +55,13 @@ public struct UninstallerView: View {
                     HStack {
                         Text("Total: \(formatBytes(app.totalBytes))").font(.headline)
                         Spacer()
-                        Button("Move to Trash") {}
-                            .disabled(true)
-                            .help(SystemHelp.engineNotConnected)
-                            .accessibilityLabel("Move \(app.name) and its leftovers to the Trash")
-                            .accessibilityHint(SystemHelp.engineNotConnected)
+                        Button("Move to Trash") {
+                            // Inert: the system engine arrives in a later plan; the button is disabled.
+                        }
+                        .disabled(true)
+                        .help(SystemHelp.engineNotConnected)
+                        .accessibilityLabel("Move \(app.name) and its leftovers to the Trash")
+                        .accessibilityHint(SystemHelp.engineNotConnected)
                     }
                 }
                 .padding(20)

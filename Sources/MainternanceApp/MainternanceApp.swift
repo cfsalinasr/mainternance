@@ -24,10 +24,7 @@ struct MainternanceApp: App {
         MenuBarExtra {
             PopoverHost(viewModel: viewModel, visibility: visibility)
         } label: {
-            let label = MenuBarLabel.make(from: viewModel.overview)
-            Image(systemName: label.symbol)
-                .foregroundStyle(label.state.color)
-            Text(label.text)
+            MenuBarLabelView(overview: viewModel.overview)
         }
         .menuBarExtraStyle(.window)
 
@@ -36,7 +33,7 @@ struct MainternanceApp: App {
                 navigation: navigation,
                 overview: viewModel,
                 states: states,
-                scanNow: { Task { await viewModel.refresh() } }, // Real scanning arrives in a later plan.
+                scanNow: { viewModel.scanNow() },
                 onVisibilityChange: { visibility.report(.window, visible: $0) }
             )
         }
@@ -57,7 +54,7 @@ private struct PopoverHost: View {
                 openWindow(id: "main")
                 NSApp.activate()
             },
-            scanNow: { Task { await viewModel.refresh() } },
+            scanNow: { viewModel.scanNow() },
             onVisibilityChange: { visibility.report(.popover, visible: $0) }
         )
     }

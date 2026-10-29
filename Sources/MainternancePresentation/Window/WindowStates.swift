@@ -9,11 +9,12 @@ public final class WindowStates {
     let settings: SettingsViewState
 
     public init() {
+        let schedule = ScanScheduleStore() // One schedule, shared by Settings (edits) and the Scanner (reads).
         files = FilesViewState()
-        scanner = ScannerViewState()
+        scanner = ScannerViewState(schedule: schedule)
         cleanup = CleanupViewState()
         startup = StartupViewState()
         uninstaller = UninstallerViewState()
-        settings = SettingsViewState()
+        settings = SettingsViewState(schedule: schedule)
     }
 }

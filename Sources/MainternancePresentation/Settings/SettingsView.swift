@@ -40,10 +40,7 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Scan schedule").font(.headline)
             Picker("Day", selection: Binding(get: { state.weekday }, set: { state.setWeekday($0) })) {
-                let names = Calendar.current.weekdaySymbols
-                ForEach(1 ... 7, id: \.self) { day in
-                    Text(names.indices.contains(day - 1) ? names[day - 1] : "").tag(day)
-                }
+                ForEach(state.weekdayOptions()) { Text($0.name).tag($0.value) }
             }
             .accessibilityLabel("Scan day")
             DatePicker(

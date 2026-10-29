@@ -117,6 +117,18 @@ struct TreemapLayoutTests {
     private let container = CGRect(x: 10, y: 20, width: 400, height: 300)
     private let eps: CGFloat = 0.001
 
+    /// Compares each component with a tolerance; layout arithmetic is floating point.
+    private func expectRect(_ actual: CGRect?, _ expected: CGRect, sourceLocation: SourceLocation = #_sourceLocation) {
+        guard let actual else {
+            Issue.record("Expected a rect, got nil", sourceLocation: sourceLocation)
+            return
+        }
+        #expect(abs(actual.minX - expected.minX) < eps, sourceLocation: sourceLocation)
+        #expect(abs(actual.minY - expected.minY) < eps, sourceLocation: sourceLocation)
+        #expect(abs(actual.width - expected.width) < eps, sourceLocation: sourceLocation)
+        #expect(abs(actual.height - expected.height) < eps, sourceLocation: sourceLocation)
+    }
+
     private let items = [
         TreemapItem(id: "a", size: 600), TreemapItem(id: "b", size: 300), TreemapItem(id: "c", size: 200),
         TreemapItem(id: "d", size: 100), TreemapItem(id: "e", size: 50), TreemapItem(id: "f", size: 50)
@@ -181,7 +193,7 @@ struct TreemapLayoutTests {
 
     @Test func drawRectInsetsOrReturnsNil() {
         let big = TreemapTile(id: "a", rect: CGRect(x: 0, y: 0, width: 10, height: 10))
-        #expect(big.drawRect() == CGRect(x: 1, y: 1, width: 8, height: 8))
+        expectRect(big.drawRect(), CGRect(x: 1, y: 1, width: 8, height: 8))
         #expect(TreemapTile(id: "b", rect: CGRect(x: 0, y: 0, width: 1.5, height: 50)).drawRect() == nil)
         #expect(TreemapTile(id: "c", rect: CGRect(x: 0, y: 0, width: 50, height: 0.2)).drawRect() == nil)
     }
@@ -189,7 +201,7 @@ struct TreemapLayoutTests {
     @Test func singleItemFillsContainer() {
         let tiles = TreemapLayout.layout([TreemapItem(id: "only", size: 1)], in: container)
         #expect(tiles.count == 1)
-        #expect(tiles[0].rect == container)
+        expectRect(tiles[0].rect, container)
     }
 }
 

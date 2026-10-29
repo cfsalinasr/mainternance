@@ -220,7 +220,8 @@ struct OverviewViewModelTests {
         await model.refresh()
         await model.refresh()
         #expect(model.history.count == 2)
-        #expect(model.history.last?.cpu == 0.1)
+        let cpu = model.history.last?.cpu ?? .nan
+        #expect(abs(cpu - 0.1) < 1e-9)
         #expect(model.history.last?.gpu == nil)
         #expect(model.history.last?.memoryPressure == .normal)
     }

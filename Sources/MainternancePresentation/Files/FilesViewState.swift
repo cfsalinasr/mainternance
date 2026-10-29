@@ -45,7 +45,7 @@ public final class FilesViewState {
     ) {
         self.files = files
         self.duplicates = duplicates
-        self.largest = largest
+        self.largest = largest.sorted { $0.size > $1.size } // Largest first; the view only renders.
         self.treemap = treemap
         self.now = now
     }
@@ -68,8 +68,14 @@ public final class FilesViewState {
         breadcrumb.last ?? treemap
     }
 
+    /// The current node's folders the user can open (non-empty, with a size); the one rule for tap, buttons and
+    /// `drillInto`.
+    var drillableChildren: [TreemapNode] {
+        currentNode.children.filter(\.isDrillable)
+    }
+
     func drillInto(_ id: String) {
-        guard let child = currentNode.children.first(where: { $0.id == id }), !child.children.isEmpty else { return }
+        guard let child = currentNode.children.first(where: { $0.id == id }), child.isDrillable else { return }
         drillPath = Array(drillPath.prefix(breadcrumb.count - 1)) + [id]
     }
 

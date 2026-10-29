@@ -14,39 +14,41 @@ public struct ScannerView: View {
                 scanButtons
                 ScanProgressCard(run: state.run)
                 results
-                Text(state.schedule.description())
+                Text(state.scheduleSummary())
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Scheduled scan: \(state.schedule.description())")
+                    .accessibilityLabel("Scheduled scan: \(state.scheduleSummary())")
                 designPreview
             }
             .padding(20)
         }
-        .sheet(isPresented: Binding(
-            get: { state.pendingFinding != nil },
+        .sheet(item: Binding(
+            get: { state.pendingFinding },
             set: {
-                if !$0 {
+                if $0 == nil {
                     state.cancelQuarantine()
                 }
             }
-        )) {
-            if let finding = state.pendingFinding {
-                QuarantineConfirmation(
-                    finding: finding,
-                    confirm: { state.confirmQuarantine() },
-                    cancel: { state.cancelQuarantine() }
-                )
-            }
+        )) { finding in
+            QuarantineConfirmation(
+                finding: finding,
+                confirm: { state.confirmQuarantine() },
+                cancel: { state.cancelQuarantine() }
+            )
         }
     }
 
     private var scanButtons: some View {
         HStack {
             // The actions have no backend yet; enabled buttons simply do nothing.
-            Button("Quick scan") {}
-                .accessibilityHint(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
-            Button("Full scan") {}
-                .accessibilityHint(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
+            Button("Quick scan") {
+                // Inert: the scanner engine arrives in a later plan.
+            }
+            .accessibilityHint(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
+            Button("Full scan") {
+                // Inert: the scanner engine arrives in a later plan.
+            }
+            .accessibilityHint(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
             Spacer()
         }
         .disabled(!state.engine.canScan)
@@ -55,14 +57,17 @@ public struct ScannerView: View {
 
     @ViewBuilder
     private var results: some View {
-        if case .finished(0) = state.run {
+        switch state.resultsContent {
+        case .clean:
             ContentUnavailableView(
                 "No threats found",
                 systemImage: "checkmark.shield",
                 description: Text("Your Mac looks clean.")
             )
-        } else if case .finished = state.run {
+        case .findings:
             FindingsList(state: state)
+        case .none:
+            EmptyView()
         }
     }
 

@@ -61,7 +61,15 @@ public struct HomeModel: Equatable, Sendable {
         scan = Self.makeScan(overview: overview, now: now, locale: locale)
 
         actions = overview.actions
-        temperatureText = snapshot.temperatureCelsius.map { "\(Int($0.rounded())) °C" }
+        temperatureText = Self.temperatureText(snapshot.temperatureCelsius)
+    }
+
+    /// Nil for a missing or non-finite reading (a sensor can report NaN or infinity), so the row is omitted.
+    /// Values beyond the `Int` range are clamped before conversion, which would otherwise trap.
+    static func temperatureText(_ celsius: Double?) -> String? {
+        guard let celsius, celsius.isFinite else { return nil }
+        let bounded = min(max(celsius.rounded(), -1000), 1000)
+        return "\(Int(bounded)) °C"
     }
 
     private static func makeTiles(snapshot: SystemSnapshot, report: HealthReport) -> [Tile] {
@@ -110,7 +118,11 @@ public struct HomeModel: Equatable, Sendable {
 
         let scanState = max(check(.lastScan)?.state ?? .good, check(.scannerFindings)?.state ?? .good)
         let findings = overview.scan.unresolvedFindings
-        let outcome = findings > 0 ? (findings == 1 ? "1 finding" : "\(findings) findings") : "clean"
+        let outcome = switch findings {
+        case ...0: "clean"
+        case 1: "1 finding"
+        default: "\(findings) findings"
+        }
         return ScanSummary(
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,

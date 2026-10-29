@@ -21,11 +21,13 @@ struct ScanProgressCard: View {
                         .help(current)
                 }
                 Spacer()
-                Button("Cancel") {}
-                    .disabled(true)
-                    .help(ScannerHelp.engineNotConnected)
-                    .accessibilityLabel("Cancel scan")
-                    .accessibilityHint(ScannerHelp.engineNotConnected)
+                Button("Cancel") {
+                    // Inert: the scanner engine arrives in a later plan. The button is disabled.
+                }
+                .disabled(true)
+                .help(ScannerHelp.engineNotConnected)
+                .accessibilityLabel("Cancel scan")
+                .accessibilityHint(ScannerHelp.engineNotConnected)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .solidCard()

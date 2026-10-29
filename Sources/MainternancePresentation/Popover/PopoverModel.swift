@@ -48,11 +48,19 @@ public struct PopoverModel: Equatable, Sendable {
             state: state, title: state.title,
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             checkCount: count,
-            checksText: state == .good ? nil : (count == 1 ? "1 check" : "\(count) checks")
+            checksText: Self.checksText(state: state, count: count)
         )
 
         metrics = Self.makeMetrics(snapshot: snapshot, report: report)
         rows = Self.makeRows(overview: overview, now: now, locale: locale)
+    }
+
+    /// Nil when the state is good (the count is hidden).
+    private static func checksText(state: HealthState, count: Int) -> String? {
+        if state == .good {
+            return nil
+        }
+        return count == 1 ? "1 check" : "\(count) checks"
     }
 
     private static func makeMetrics(snapshot: SystemSnapshot, report: HealthReport) -> [Metric] {
@@ -124,8 +132,12 @@ public struct PopoverModel: Equatable, Sendable {
         return formatter.localizedString(for: date, relativeTo: now)
     }
 
+    /// A usage fraction as a whole percent, clamped to 0...100. A non-finite fraction (a first sample can
+    /// divide zero by zero) shows as 0%, because `Int(_:)` would trap on it.
     private static func percent(_ fraction: Double) -> String {
-        "\(Int((fraction * 100).rounded()))%"
+        guard fraction.isFinite else { return "0%" }
+        let clamped = min(max(fraction, 0), 1)
+        return "\(Int((clamped * 100).rounded()))%"
     }
 
     static func memoryName(_ pressure: MemoryPressure) -> String {

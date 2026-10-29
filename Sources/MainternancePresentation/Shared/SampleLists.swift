@@ -38,6 +38,11 @@ struct Leftover: Identifiable, Equatable {
     let id: String
     let path: String
     let bytes: Int64
+
+    /// The last path component ("~/Library/Logs/App" -> "App"); the whole path when it has no component ("/" or "~").
+    var displayName: String {
+        path.split(separator: "/").last.map(String.init) ?? path
+    }
 }
 
 struct SampleApp: Identifiable, Equatable {

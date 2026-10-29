@@ -8,8 +8,9 @@ struct SampleListsTests {
         let categories = SampleLists.cleanupCategories
         #expect(categories.count == 5)
         #expect(SampleLists.cleanupTotalBytes == categories.map(\.bytes).reduce(0, +))
-        let gigabytes = (Double(SampleLists.cleanupTotalBytes) / 1_000_000_000).rounded()
-        #expect(gigabytes == 12) // The Home suggested action reads "Clear 12 GB of junk".
+        // The Home suggested action reads "Clear 12 GB of junk"; the sample total rounds to 12 GB.
+        let gigabytes = (SampleLists.cleanupTotalBytes + 500_000_000) / 1_000_000_000
+        #expect(gigabytes == 12)
         #expect(formatBytes(SampleLists.cleanupTotalBytes) == "12 GB")
     }
 

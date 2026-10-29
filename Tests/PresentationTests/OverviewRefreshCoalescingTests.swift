@@ -5,6 +5,16 @@ import Testing
 /// `refresh()` calls that overlap (the loop and "Scan now") share one load and one history sample.
 @MainActor
 struct OverviewRefreshCoalescingTests {
+    /// Polls observable state with a bound (never a fixed delay) until `condition` holds.
+    private func waitUntil(_ condition: () async -> Bool) async {
+        for _ in 0 ..< 2000 {
+            if await condition() {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
     private func settle() async {
         for _ in 0 ..< 50 {
             await Task.yield()
@@ -57,7 +67,7 @@ struct OverviewRefreshCoalescingTests {
         model.setVisible(true) // restarts the loop; its refresh joins the in-flight load
         await settle()
         await gate.open()
-        await settle()
+        await waitUntil { model.overview != nil }
         #expect(await gate.entered == 1)
         #expect(model.overview != nil)
         #expect(model.history.count == 1)

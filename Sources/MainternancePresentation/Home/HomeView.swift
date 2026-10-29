@@ -5,7 +5,13 @@ public struct HomeView: View {
     private let navigation: Navigation
     private let scanNow: () -> Void
 
-    public init(viewModel: OverviewViewModel, navigation: Navigation, scanNow: @escaping () -> Void = {}) {
+    public init(
+        viewModel: OverviewViewModel,
+        navigation: Navigation,
+        scanNow: @escaping () -> Void = {
+            // Default: no scan action (previews); the app passes the real one.
+        }
+    ) {
         self.viewModel = viewModel
         self.navigation = navigation
         self.scanNow = scanNow

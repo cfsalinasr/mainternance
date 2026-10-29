@@ -160,7 +160,13 @@ public struct HealthEvaluator: Sendable {
             )
         }
         let days = max(0, Int((now.timeIntervalSince(last) / 86400).rounded(.down)))
-        let state: HealthState = days > 30 ? .problem : (days > 10 ? .needsAttention : .good)
+        let state: HealthState = if days > 30 {
+            .problem
+        } else if days > 10 {
+            .needsAttention
+        } else {
+            .good
+        }
         let reason = switch days {
         case 0: "Today"
         case 1: "1 day ago"

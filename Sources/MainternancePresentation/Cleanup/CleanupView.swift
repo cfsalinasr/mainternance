@@ -42,12 +42,13 @@ public struct CleanupView: View {
             .labelsHidden()
             .disabled(cleaned)
             .accessibilityLabel("Include \(category.name)")
-            .accessibilityHint(cleaned ? "Already moved to the Trash" : "Adds or removes this category from the total")
+            .accessibilityHint(cleaned ? "Marked as cleaned in this sample; nothing was moved" :
+                "Adds or removes this category from the total")
             Image(systemName: category.symbol).frame(width: 22).foregroundStyle(.secondary).accessibilityHidden(true)
             PreviewListRow(
                 title: category.name,
                 subtitle: category.detail,
-                trailing: cleaned ? "Cleaned" : formatBytes(category.bytes)
+                trailing: cleaned ? "Marked cleaned (sample)" : formatBytes(category.bytes)
             )
             if cleaned {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityHidden(true)
@@ -63,9 +64,11 @@ public struct CleanupView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Selected: \(formatBytes(state.selectedBytes))").font(.headline)
                 if state.cleanedBytes > 0 {
-                    Text("Cleaned: \(formatBytes(state.cleanedBytes))").font(.system(size: 12))
+                    Text("Marked cleaned (sample): \(formatBytes(state.cleanedBytes))").font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
+                Text("Sample only: nothing is moved to the Trash").font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             Button("Review") { state.review() }

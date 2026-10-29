@@ -32,10 +32,12 @@ struct EngineStatusCard: View {
             }
             Spacer()
             if case .notInstalled = engine {
-                Button("Install") {}
-                    .disabled(true)
-                    .help(ScannerHelp.engineNotConnected)
-                    .accessibilityHint(ScannerHelp.engineNotConnected)
+                Button("Install") {
+                    // Inert: the scanner engine arrives in a later plan. The button is disabled.
+                }
+                .disabled(true)
+                .help(ScannerHelp.engineNotConnected)
+                .accessibilityHint(ScannerHelp.engineNotConnected)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

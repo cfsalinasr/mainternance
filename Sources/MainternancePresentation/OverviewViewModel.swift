@@ -73,6 +73,11 @@ public final class OverviewViewModel {
         }
     }
 
+    /// "Scan now": a fresh refresh without waiting for the loop. Real scanning arrives in a later plan.
+    public func scanNow() {
+        Task { await refresh() }
+    }
+
     private func publish(_ loaded: Overview) {
         overview = loaded
         guard isVisible else { return }

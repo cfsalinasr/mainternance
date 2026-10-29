@@ -5,7 +5,7 @@ struct FindingsList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Findings").font(.headline)
+            Text("Findings (sample)").font(.headline)
             ForEach(state.findings) { finding in
                 row(finding)
             }
@@ -40,12 +40,12 @@ struct FindingsList: View {
             }
             Spacer()
             if isQuarantined {
-                Label("Quarantined", systemImage: "lock.fill")
+                Label("Marked quarantined (sample)", systemImage: "lock.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 Button("Restore") { state.restore(finding.id) }
                     .accessibilityLabel("Restore \(finding.name)")
-                    .accessibilityHint("Moves the file back to its original place")
+                    .accessibilityHint("Clears the sample quarantine mark; no file is touched")
             } else {
                 Button("Quarantine") { state.requestQuarantine(finding.id) }
                     .accessibilityLabel("Quarantine \(finding.name)")
@@ -71,9 +71,14 @@ struct QuarantineConfirmation: View {
                 Text(finding.path).font(.system(size: 12)).foregroundStyle(.secondary)
                     .lineLimit(2).truncationMode(.middle)
             }
-            Text("The file is moved to quarantine and can be restored at any time. Nothing is deleted.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+            Text(
+                [
+                    "Sample only: once the scanner engine is connected, this file would be moved to quarantine",
+                    "and could be restored. For now nothing is moved or deleted."
+                ].joined(separator: " ")
+            )
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)

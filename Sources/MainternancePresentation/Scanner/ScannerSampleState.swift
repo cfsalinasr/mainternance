@@ -128,13 +128,18 @@ struct ScanSchedule: Equatable {
     var hour = 2
     var minute = 0
 
+    /// The calendar's name for a weekday (1 = Sunday); empty when out of range.
+    static func weekdayName(_ weekday: Int, calendar: Calendar) -> String {
+        let names = calendar.weekdaySymbols
+        return names.indices.contains(weekday - 1) ? names[weekday - 1] : ""
+    }
+
     /// "Weekly, Sunday 02:00"; the clock follows the locale (12 h or 24 h).
     func description(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = locale
         calendar.timeZone = timeZone
-        let names = calendar.weekdaySymbols
-        let day = names.indices.contains(weekday - 1) ? names[weekday - 1] : ""
+        let day = Self.weekdayName(weekday, calendar: calendar)
         let time = calendar.date(from: DateComponents(hour: hour, minute: minute))
             .map {
                 $0.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: timeZone).hour().minute())
@@ -167,8 +172,6 @@ enum ScannerSampleData {
             severity: .low
         )
     ]
-
-    static let schedule = ScanSchedule()
 }
 
 /// One entry of the "Design preview" picker; removed in the scanner-engine plan.
@@ -226,19 +229,37 @@ public final class ScannerViewState {
     var pendingQuarantineID: String?
 
     let findings: [ScanFinding]
-    let schedule: ScanSchedule
+    private let scheduleStore: ScanScheduleStore
 
-    public convenience init() {
-        self.init(findings: ScannerSampleData.findings)
+    public convenience init(schedule: ScanScheduleStore = ScanScheduleStore()) {
+        self.init(findings: ScannerSampleData.findings, schedule: schedule)
     }
 
-    init(findings: [ScanFinding] = ScannerSampleData.findings, schedule: ScanSchedule = ScannerSampleData.schedule) {
+    init(findings: [ScanFinding] = ScannerSampleData.findings, schedule: ScanScheduleStore = ScanScheduleStore()) {
         self.findings = findings
-        self.schedule = schedule
+        scheduleStore = schedule
         let first = ScannerPreview.all.first { $0.id == "ready-findings" } ?? ScannerPreview.all[0]
         engine = first.engine
         run = first.run
         previewID = first.id
+    }
+
+    /// The schedule line; follows the shared schedule, so a change in Settings shows here too.
+    func scheduleSummary(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        scheduleStore.summary(locale: locale, timeZone: timeZone)
+    }
+
+    /// What the results area shows for the current run.
+    enum ResultsContent: Equatable {
+        case none, clean, findings
+    }
+
+    var resultsContent: ResultsContent {
+        switch run {
+        case .finished(findings: 0): .clean
+        case .finished: .findings
+        case .idle, .running: .none
+        }
     }
 
     var pendingFinding: ScanFinding? {
