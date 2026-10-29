@@ -21,7 +21,7 @@ public struct MenuBarLabel: Equatable, Sendable {
         return MenuBarLabel(
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: state,
-            text: freeSpaceText(overview.snapshot.diskFreeBytes)
+            text: formatFreeSpace(overview.snapshot.diskFreeBytes)
         )
     }
 }
@@ -36,6 +36,7 @@ private let freeSpaceFormatter: Mutex<ByteCountFormatter> = {
     return Mutex(formatter)
 }()
 
-private func freeSpaceText(_ bytes: Int64) -> String {
+/// The single byte-formatting path (decimal GB, e.g. "41 GB") shared by the menu bar label and the popover.
+func formatFreeSpace(_ bytes: Int64) -> String {
     freeSpaceFormatter.withLock { $0.string(fromByteCount: max(bytes, 0)) }
 }

@@ -17,4 +17,13 @@ public extension HealthState {
         case .problem: "Problem"
         }
     }
+
+    /// Spoken suffix so color is never the only signal; empty when good.
+    var accessibilityNote: String {
+        switch self {
+        case .good: ""
+        case .needsAttention: ", needs attention"
+        case .problem: ", problem"
+        }
+    }
 }

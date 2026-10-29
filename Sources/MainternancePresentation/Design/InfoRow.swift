@@ -25,6 +25,7 @@ public struct InfoRow: View {
                 .foregroundStyle(state == .good ? Color.secondary : state.color)
         }
         .font(.system(size: 13))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(value)\(state.accessibilityNote)")
     }
 }

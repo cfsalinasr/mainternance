@@ -28,6 +28,6 @@ public struct MetricColumn: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(value)")
+        .accessibilityLabel("\(title), \(value)\(state.accessibilityNote)")
     }
 }
