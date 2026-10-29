@@ -35,7 +35,8 @@ public struct HomeModel: Equatable, Sendable {
         public var symbol: String
         public var state: HealthState
         public var last: String
-        public var next: String
+        /// Nil when there is no scanner, so only one line is shown.
+        public var next: String?
     }
 
     public var banner: Banner
@@ -116,8 +117,13 @@ public struct HomeModel: Equatable, Sendable {
             overview.report.checks.first { $0.id == id }
         }
 
+        guard let scan = overview.scan else {
+            return ScanSummary(
+                symbol: "shield", state: .good, last: "Scanner not set up yet", next: nil
+            )
+        }
         let scanState = max(check(.lastScan)?.state ?? .good, check(.scannerFindings)?.state ?? .good)
-        let findings = overview.scan.unresolvedFindings
+        let findings = scan.unresolvedFindings
         let outcome = switch findings {
         case ...0: "clean"
         case 1: "1 finding"
@@ -126,10 +132,10 @@ public struct HomeModel: Equatable, Sendable {
         return ScanSummary(
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,
-            last: overview.scan.lastScan.map {
+            last: scan.lastScan.map {
                 "Last scan \(PopoverModel.relative($0, now: now, locale: locale)), \(outcome)"
             } ?? "Never scanned",
-            next: overview.scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
+            next: scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
         )
     }
 

@@ -31,8 +31,10 @@ public struct SystemSnapshot: Sendable, Equatable {
     public var gpuUsage: Double?
     public var temperatureCelsius: Double?
     public var battery: BatterySnapshot?
-    public var newStartupItemCount: Int
-    public var osUpdateAvailable: Bool
+    /// Nil when unknown (never shown as 0).
+    public var newStartupItemCount: Int?
+    /// Nil when unknown (never shown as up to date).
+    public var osUpdateAvailable: Bool?
 
     public init(
         diskTotalBytes: Int64,
@@ -43,8 +45,8 @@ public struct SystemSnapshot: Sendable, Equatable {
         gpuUsage: Double?,
         temperatureCelsius: Double?,
         battery: BatterySnapshot?,
-        newStartupItemCount: Int,
-        osUpdateAvailable: Bool
+        newStartupItemCount: Int?,
+        osUpdateAvailable: Bool?
     ) {
         self.diskTotalBytes = diskTotalBytes
         self.diskFreeBytes = diskFreeBytes

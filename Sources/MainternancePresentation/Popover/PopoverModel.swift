@@ -110,14 +110,18 @@ public struct PopoverModel: Equatable, Sendable {
                 state: checkState(.batteryHealth) ?? .good
             ))
         }
+        guard let scan = overview.scan else {
+            rows.append(Row(title: "Scanner", value: "Not set up yet", symbol: "shield", state: .good))
+            return rows
+        }
         rows.append(Row(
             title: "Last scan",
-            value: overview.scan.lastScan.map { relative($0, now: now, locale: locale) } ?? "Never",
+            value: scan.lastScan.map { relative($0, now: now, locale: locale) } ?? "Never",
             symbol: "clock", state: .good
         ))
         rows.append(Row(
             title: "Next scan",
-            value: overview.scan.nextScan.map { relative($0, now: now, locale: locale) } ?? "Not scheduled",
+            value: scan.nextScan.map { relative($0, now: now, locale: locale) } ?? "Not scheduled",
             symbol: "calendar", state: .good
         ))
         return rows

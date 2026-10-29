@@ -10,7 +10,7 @@ struct HomeModelTests {
     private func overview(
         battery: BatterySnapshot? = nil,
         checks: [HealthCheck] = [],
-        scan: ScanStatus = ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0),
+        scan: ScanStatus? = ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0),
         snapshot: SystemSnapshot? = nil
     ) -> Overview {
         Overview(
@@ -109,7 +109,7 @@ struct HomeModelTests {
             now: now, locale: locale
         )
         #expect(model.scan.last == "Last scan 3 days ago, clean")
-        #expect(model.scan.next.hasPrefix("Next: "))
+        #expect(model.scan.next?.hasPrefix("Next: ") == true)
     }
 
     @Test func nextScanTimeFollowsLocaleClock() {
@@ -125,6 +125,15 @@ struct HomeModelTests {
         let model = HomeModel(overview: overview(), now: now, locale: locale)
         #expect(model.scan.last == "Never scanned")
         #expect(model.scan.next == "Next: not scheduled")
+    }
+
+    @Test func missingScannerShowsSingleNotSetUpLine() {
+        let model = HomeModel(overview: overview(scan: nil), now: now, locale: locale)
+        #expect(model.scan.last == "Scanner not set up yet")
+        #expect(model.scan.next == nil)
+        #expect(model.scan.state == .good)
+        #expect(!model.scan.last.contains("Never"))
+        #expect(!model.scan.last.contains("Next"))
     }
 
     @Test func findingsReplaceCleanWord() {

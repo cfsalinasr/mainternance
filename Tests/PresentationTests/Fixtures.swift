@@ -46,7 +46,7 @@ struct FakeSnapshots: SystemSnapshotProviding {
 }
 
 struct FakeScans: ScanStatusProviding {
-    func currentStatus() async -> ScanStatus {
+    func currentStatus() async -> ScanStatus? {
         ScanStatus(lastScan: Date(timeIntervalSince1970: 0), nextScan: nil, unresolvedFindings: 0)
     }
 }

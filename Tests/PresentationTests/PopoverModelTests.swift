@@ -26,11 +26,12 @@ struct PopoverModelTests {
         snapshot: SystemSnapshot,
         checks: [HealthCheck]? = nil,
         last: Date? = nil,
-        next: Date? = nil
+        next: Date? = nil,
+        hasScanner: Bool = true
     ) -> Overview {
         Overview(
             snapshot: snapshot,
-            scan: ScanStatus(lastScan: last, nextScan: next, unresolvedFindings: 0),
+            scan: hasScanner ? ScanStatus(lastScan: last, nextScan: next, unresolvedFindings: 0) : nil,
             report: HealthReport(checks: checks ?? [
                 check(.diskSpace, .needsAttention), check(.memoryPressure, .good),
                 check(.thermal, .good), check(.batteryHealth, .needsAttention)
@@ -41,6 +42,17 @@ struct PopoverModelTests {
 
     private func model(_ overview: Overview) -> PopoverModel {
         PopoverModel(overview: overview, now: now, locale: locale)
+    }
+
+    @Test func missingScannerShowsOneNotSetUpRow() {
+        let popover = model(overview(snapshot: snapshot(), hasScanner: false))
+        #expect(popover.rows.map(\.title) == ["Disk free", "Battery health", "Scanner"])
+        #expect(popover.rows.last?.value == "Not set up yet")
+        let text = popover.rows.map { "\($0.title) \($0.value)" }.joined(separator: "|")
+        #expect(!text.contains("Never"))
+        #expect(!text.contains("Not scheduled"))
+        #expect(!text.contains("Last scan"))
+        #expect(!text.contains("Next scan"))
     }
 
     @Test func fullSnapshotProducesRealValues() {
