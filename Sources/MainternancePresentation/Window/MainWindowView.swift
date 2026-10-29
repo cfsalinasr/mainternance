@@ -6,6 +6,7 @@ public struct MainWindowView: View {
     private let overview: OverviewViewModel
     private let scanNow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
+    private let filesState = FilesViewState()
 
     public init(
         navigation: Navigation,
@@ -36,7 +37,9 @@ public struct MainWindowView: View {
         switch navigation.selection {
         case .home:
             HomeView(viewModel: overview, navigation: navigation, scanNow: scanNow)
-        case .cleanup, .files, .scanner, .startup, .uninstaller, .settings:
+        case .files:
+            FilesView(navigation: navigation, state: filesState)
+        case .cleanup, .scanner, .startup, .uninstaller, .settings:
             ComingSoonView(destination: navigation.selection)
         }
     }
