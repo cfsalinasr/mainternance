@@ -36,10 +36,15 @@ public struct DiskReader: Sendable {
     }
 
     /// Uses `volumeAvailableCapacityForImportantUsageKey` on purpose: it is the figure System Settings
-    /// shows (278 GB on the reference Mac), while `volumeAvailableCapacityKey` (232 GB) and `df` (216 GB)
-    /// exclude purgeable space and disagree with what the user sees.
+    /// shows. Measured once on the reference Mac (the user's): 278 GB for this key, while
+    /// `volumeAvailableCapacityKey` said 232 GB and `df` 216 GB, because those exclude purgeable space.
+    /// The exact gap differs from Mac to Mac.
     @Sendable
     public static func readSystem(_ url: URL) -> RawDisk? {
+        // Foundation caches resource values on a URL instance and nothing else clears that cache, so
+        // reading the same URL every poll would return the launch-time figure forever. Clear it first.
+        var url = url
+        url.removeAllCachedResourceValues()
         let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
         guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
         return RawDisk(
