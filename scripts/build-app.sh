@@ -76,6 +76,12 @@ if [[ "$INSTALL" -eq 1 ]]; then
     fi
     rm -rf "$STAGE" "$OLD"
     ditto "$APP" "$STAGE" || { rm -rf "$STAGE"; echo "ERROR: copy failed; existing install untouched." >&2; exit 1; }
+    # Verify the staged copy (not only $APP, which a concurrent run could have changed) before the swap.
+    codesign --verify --deep --strict "$STAGE" || {
+        rm -rf "$STAGE"
+        echo "ERROR: the staged bundle failed verification; existing install untouched." >&2
+        exit 1
+    }
     [[ -e "$DEST" ]] && mv "$DEST" "$OLD"
     mv "$STAGE" "$DEST" || {
         # Never leave the user without an app: put the previous bundle back before giving up.
@@ -91,6 +97,16 @@ if [[ "$INSTALL" -eq 1 ]]; then
         fi
         exit 1
     }
+    # Keep the rollback until the installed bundle verifies; restore it if verification fails.
+    if ! codesign --verify --deep --strict "$DEST"; then
+        rm -rf "$DEST"
+        if [[ -e "$OLD" ]] && mv "$OLD" "$DEST"; then
+            echo "ERROR: the installed bundle failed verification; the previous install was restored." >&2
+        else
+            echo "ERROR: the installed bundle failed verification and there was no previous install to restore." >&2
+        fi
+        exit 1
+    fi
     rm -rf "$OLD"
     echo "Installed: $DEST"
 fi
