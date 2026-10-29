@@ -81,7 +81,7 @@ public struct PopoverModel: Equatable, Sendable {
 
         var rows = [
             Row(
-                title: "Disk free", value: formatFreeSpace(snapshot.diskFreeBytes), symbol: "internaldrive",
+                title: "Disk free", value: formatBytes(snapshot.diskFreeBytes), symbol: "internaldrive",
                 state: checkState(.diskSpace) ?? .good
             )
         ]

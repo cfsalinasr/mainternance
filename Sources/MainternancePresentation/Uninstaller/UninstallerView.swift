@@ -22,8 +22,12 @@ public struct UninstallerView: View {
     private var list: some View {
         List(selection: Binding(get: { state.selectedID }, set: { state.select($0) })) {
             ForEach(state.apps) { app in
-                PreviewListRow(title: app.name, trailing: formatBytes(app.totalBytes))
-                    .tag(app.id)
+                PreviewListRow(
+                    title: app.name,
+                    trailing: formatBytes(app.totalBytes),
+                    isSelected: state.selectedID == app.id
+                )
+                .tag(app.id)
             }
         }
         .accessibilityLabel("Installed apps")

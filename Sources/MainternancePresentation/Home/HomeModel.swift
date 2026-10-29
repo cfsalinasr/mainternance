@@ -63,8 +63,8 @@ public struct HomeModel: Equatable, Sendable {
 
         var tiles = [
             Tile(
-                title: "Disk free", symbol: "internaldrive", value: formatFreeSpace(snapshot.diskFreeBytes),
-                caption: snapshot.diskTotalBytes > 0 ? "of \(formatFreeSpace(snapshot.diskTotalBytes))" : nil,
+                title: "Disk free", symbol: "internaldrive", value: formatBytes(snapshot.diskFreeBytes),
+                caption: snapshot.diskTotalBytes > 0 ? "of \(formatBytes(snapshot.diskTotalBytes))" : nil,
                 state: check(.diskSpace)?.state ?? .good, destination: check(.diskSpace)?.destination ?? .home
             )
         ]

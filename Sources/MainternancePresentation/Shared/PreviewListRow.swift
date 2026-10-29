@@ -9,6 +9,8 @@ struct PreviewListRow: View {
     let title: String
     var subtitle: String?
     let trailing: String
+    /// Set when the row lives in a selectable list, so VoiceOver announces the selection.
+    var isSelected = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -27,6 +29,7 @@ struct PreviewListRow: View {
             Text(trailing).font(.system(size: 13)).foregroundStyle(.secondary).monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityLabel("\(title), \(trailing)\(subtitle.map { ", \($0)" } ?? "")")
     }
 }

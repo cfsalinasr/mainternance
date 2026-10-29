@@ -1,6 +1,5 @@
 import Foundation
 import MainternanceDomain
-import Synchronization
 
 public struct MenuBarLabel: Equatable, Sendable {
     public var symbol: String
@@ -21,22 +20,7 @@ public struct MenuBarLabel: Equatable, Sendable {
         return MenuBarLabel(
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: state,
-            text: formatFreeSpace(overview.snapshot.diskFreeBytes)
+            text: formatBytes(overview.snapshot.diskFreeBytes)
         )
     }
-}
-
-/// One formatter shared by every call; the lock keeps access safe under Swift 6.
-private let freeSpaceFormatter: Mutex<ByteCountFormatter> = {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .decimal
-    formatter.allowedUnits = [.useGB]
-    formatter.includesUnit = true
-    formatter.allowsNonnumericFormatting = false
-    return Mutex(formatter)
-}()
-
-/// The single byte-formatting path (decimal GB, e.g. "41 GB") shared by the menu bar label and the popover.
-func formatFreeSpace(_ bytes: Int64) -> String {
-    freeSpaceFormatter.withLock { $0.string(fromByteCount: max(bytes, 0)) }
 }

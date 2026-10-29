@@ -10,7 +10,7 @@ struct SampleListsTests {
         #expect(SampleLists.cleanupTotalBytes == categories.map(\.bytes).reduce(0, +))
         let gigabytes = (Double(SampleLists.cleanupTotalBytes) / 1_000_000_000).rounded()
         #expect(gigabytes == 12) // The Home suggested action reads "Clear 12 GB of junk".
-        #expect(formatFreeSpace(SampleLists.cleanupTotalBytes) == "12 GB")
+        #expect(formatBytes(SampleLists.cleanupTotalBytes) == "12 GB")
     }
 
     @Test func startupSampleHasExactlyThreeNewItems() {
@@ -33,12 +33,13 @@ struct SampleListsTests {
         #expect(SampleLists.sum([]) == 0)
     }
 
-    @Test func byteTextIsLocaleAwareAndSafe() {
-        #expect(formatBytes(-5, locale: Locale(identifier: "en_US")) == formatBytes(
-            0,
-            locale: Locale(identifier: "en_US")
-        ))
-        #expect(formatBytes(1_500_000, locale: Locale(identifier: "en_US")).contains("MB"))
+    @Test func sharedByteFormatterCoversUnitsAndZero() {
+        #expect(formatBytes(41_000_000_000) == "41 GB")
+        #expect(formatBytes(240_000_000) == "240 MB")
+        #expect(formatBytes(12000) == "12 KB")
+        #expect(formatBytes(0).contains("0"))
+        #expect(!formatBytes(0).localizedCaseInsensitiveContains("zero"))
+        #expect(formatBytes(-5) == formatBytes(0))
     }
 }
 
