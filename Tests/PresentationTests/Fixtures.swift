@@ -129,7 +129,8 @@ actor FakeSleeper {
 
 /// Holds a load open until the test lets it through, so a refresh can be observed mid-flight.
 actor LoadGate {
-    private var entered = 0
+    /// How many loads have reached the gate.
+    private(set) var entered = 0
     private var isOpen = false
     private var entryWaiters: [CheckedContinuation<Void, Never>] = []
     private var openWaiters: [CheckedContinuation<Void, Never>] = []

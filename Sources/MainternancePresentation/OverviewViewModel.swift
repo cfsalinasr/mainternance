@@ -32,6 +32,8 @@ public final class OverviewViewModel {
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private var isVisible = false
     @ObservationIgnored private var loop: Task<Void, Never>?
+    @ObservationIgnored private var isLoading = false
+    @ObservationIgnored private var joiners: [CheckedContinuation<Overview?, Never>] = []
 
     public init(
         load: LoadOverview,
@@ -47,9 +49,31 @@ public final class OverviewViewModel {
 
     /// Loads and publishes a fresh overview. A result that arrives after the calling task (such as the
     /// loop) was cancelled is dropped, so a stopped or restarted loop never writes stale state.
+    /// Calls made while a load is in flight join it instead of starting another, so a "Scan now" that
+    /// overlaps the loop's refresh produces one load and one history sample.
     public func refresh() async {
+        if isLoading {
+            // A result the (cancelled) starter did not publish is handed to the first joiner.
+            if let unpublished = await withCheckedContinuation({ joiners.append($0) }), !Task.isCancelled {
+                publish(unpublished)
+            }
+            return
+        }
+        isLoading = true
         let loaded = await load()
-        guard !Task.isCancelled else { return }
+        isLoading = false
+        let published = !Task.isCancelled
+        if published {
+            publish(loaded)
+        }
+        let waiting = joiners
+        joiners.removeAll()
+        for (index, joiner) in waiting.enumerated() {
+            joiner.resume(returning: index == 0 && !published ? loaded : nil)
+        }
+    }
+
+    private func publish(_ loaded: Overview) {
         overview = loaded
         guard isVisible else { return }
         history.append(OverviewSample(
