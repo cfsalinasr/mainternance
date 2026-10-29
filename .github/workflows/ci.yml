@@ -12,12 +12,21 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+
+      - name: Detect Sonar token
+        id: sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "has_sonar=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_sonar=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install lint tools
         run: brew install swiftlint swiftformat
@@ -32,7 +41,7 @@ jobs:
         run: scripts/test.sh --enable-code-coverage
 
       - name: SonarCloud scan
-        if: ${{ env.SONAR_TOKEN != '' }}
+        if: steps.sonar.outputs.has_sonar == 'true'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
