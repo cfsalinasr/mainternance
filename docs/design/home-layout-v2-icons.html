@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Home layout v2</title>
+<style>
+  :root { --amber:#f5b83d; --green:#4cd37b; --red:#ff6b5e; --text:#f2f2f4; --dim:rgba(242,242,244,.55); --line:rgba(255,255,255,.12); }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px; background:linear-gradient(135deg,#1b2230,#2a1f33 55%,#1a2a2a); color:var(--text); font:14px -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; }
+  h2 { margin:0 0 4px; font-weight:600; } .sub { color:var(--dim); margin:0 0 22px; }
+  .stage { display:flex; flex-wrap:wrap; gap:36px; align-items:flex-start; }
+  .cap { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.08em; margin:0 0 10px; }
+  .ic { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  .amber { color:var(--amber); } .green { color:var(--green); } .red { color:var(--red); } .dim { color:var(--dim); }
+
+  /* menu bar strip */
+  .bar { display:flex; justify-content:flex-end; align-items:center; gap:18px; background:rgba(0,0,0,.55); border-radius:10px; padding:8px 16px; width:320px; margin-bottom:10px; font-size:13px; }
+  .pill { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,.14); border-radius:14px; padding:3px 10px; }
+
+  /* glass panel */
+  .glass { background:rgba(60,60,66,.62); backdrop-filter:blur(30px) saturate(1.4); border:1px solid var(--line); border-radius:22px; box-shadow:0 18px 50px rgba(0,0,0,.45); }
+  .pop { width:320px; padding:18px 20px 12px; }
+  .hero { display:flex; justify-content:space-between; align-items:flex-start; }
+  .hero .big { font-size:30px; font-weight:500; line-height:1.1; margin-top:4px; }
+  .hero .right { text-align:right; font-size:13px; }
+  .hero .right .ic { width:34px; height:34px; }
+  hr { border:0; border-top:1px solid var(--line); margin:14px 0; }
+  .cols { display:grid; grid-template-columns:repeat(4,1fr); text-align:center; gap:4px; }
+  .cols .l { font-weight:600; font-size:13px; } .cols .ic { margin:8px auto 4px; display:block; width:24px; height:24px; }
+  .cols .s { font-size:12px; color:var(--dim); }
+  .row { display:flex; align-items:center; justify-content:space-between; padding:9px 0; font-size:15px; }
+  .row .v { display:flex; align-items:center; gap:10px; color:var(--text); }
+  .row + .row { }
+  .link { color:var(--dim); } .foot { padding:10px 0 6px; font-size:15px; }
+
+  /* window */
+  .win { width:720px; display:flex; overflow:hidden; border-radius:24px; }
+  .side { width:190px; padding:18px 12px; background:rgba(0,0,0,.18); border-right:1px solid var(--line); }
+  .side .item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; margin-bottom:2px; color:var(--dim); font-size:14px; }
+  .side .item.on { background:rgba(255,255,255,.14); color:var(--text); }
+  .main { flex:1; padding:22px; }
+  .card { background:rgba(255,255,255,.07); border:1px solid var(--line); border-radius:16px; padding:14px; }
+  .banner { display:flex; align-items:center; gap:14px; background:rgba(245,184,61,.16); border-color:rgba(245,184,61,.35); }
+  .banner .ic { width:36px; height:36px; }
+  .btn { margin-left:auto; background:rgba(255,255,255,.18); border:1px solid var(--line); color:var(--text); padding:7px 14px; border-radius:18px; font-size:13px; }
+  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:12px 0; }
+  .tile .t { display:flex; align-items:center; gap:6px; color:var(--dim); font-size:12px; margin-bottom:8px; }
+  .tile .n { font-size:20px; font-weight:600; } .tile .m { font-size:12px; color:var(--dim); margin-top:2px; }
+  .act { display:flex; align-items:center; gap:12px; padding:10px 0; } .act + .act { border-top:1px solid var(--line); }
+  .act .go { margin-left:auto; color:var(--dim); }
+  .spark { opacity:.7; margin-top:12px; font-size:13px; color:var(--dim); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="shield-warn" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M12 8.5v4M12 15.5v.01"/></symbol>
+  <symbol id="cpu" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></symbol>
+  <symbol id="mem" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 16v2M11 16v2M15 16v2M7 11v2M12 11v2M17 11v2"/></symbol>
+  <symbol id="thermo" viewBox="0 0 24 24"><path d="M10 14V5a2 2 0 014 0v9a4 4 0 11-4 0z"/></symbol>
+  <symbol id="batt" viewBox="0 0 24 24"><rect x="3" y="8" width="16" height="9" rx="2.5"/><path d="M21 11.5v2"/><path d="M6 12.5h6"/></symbol>
+  <symbol id="disk" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M4 14h16"/><path d="M8 17h.01"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z"/></symbol>
+  <symbol id="spark" viewBox="0 0 24 24"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M16 16l5 5"/></symbol>
+  <symbol id="power" viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.5 7a8 8 0 1011 0"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="dup" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></symbol>
+</svg>
+
+<h2>Home screen: icon-led, glass style</h2>
+<p class="sub">Modeled on the Weather popover you shared. In the real app the icons are SF Symbols and the glass is the system material.</p>
+
+<div class="stage">
+  <div>
+    <p class="cap">Menu bar + popover</p>
+    <div class="bar">
+      <span class="pill"><svg class="ic amber" style="width:16px;height:16px"><use href="#shield-warn"/></svg>41 GB</span>
+      <span>100% ⚡</span><span>Thu 29 Oct 13:48</span>
+    </div>
+    <div class="glass pop">
+      <div class="hero">
+        <div>
+          <div style="font-weight:600">This Mac</div>
+          <div class="big amber">Needs attention</div>
+        </div>
+        <div class="right amber"><svg class="ic"><use href="#shield-warn"/></svg><br><span class="dim">2 checks</span></div>
+      </div>
+      <hr>
+      <div class="cols">
+        <div><div class="l">CPU</div><svg class="ic green"><use href="#cpu"/></svg><div class="s">23%</div></div>
+        <div><div class="l">Memory</div><svg class="ic green"><use href="#mem"/></svg><div class="s">Green</div></div>
+        <div><div class="l">Thermal</div><svg class="ic green"><use href="#thermo"/></svg><div class="s">Nominal</div></div>
+        <div><div class="l">Battery</div><svg class="ic green"><use href="#batt"/></svg><div class="s">82%</div></div>
+      </div>
+      <hr>
+      <div class="row"><span>Disk free</span><span class="v amber">41 GB <svg class="ic"><use href="#disk"/></svg></span></div>
+      <div class="row"><span>Battery health</span><span class="v">91% <svg class="ic green"><use href="#batt"/></svg></span></div>
+      <div class="row"><span>Last scan</span><span class="v">3 days ago <svg class="ic green"><use href="#shield"/></svg></span></div>
+      <div class="row"><span>Next scan</span><span class="v">Sun 02:00 <svg class="ic dim"><use href="#clock"/></svg></span></div>
+      <hr>
+      <div class="row link"><span>Scan now</span><svg class="ic"><use href="#chev"/></svg></div>
+      <div class="foot">Open Mainternance</div>
+    </div>
+  </div>
+
+  <div>
+    <p class="cap">Main window: Home</p>
+    <div class="glass win">
+      <div class="side">
+        <div class="item on"><svg class="ic"><use href="#home"/></svg>Home</div>
+        <div class="item"><svg class="ic"><use href="#spark"/></svg>Cleanup</div>
+        <div class="item"><svg class="ic"><use href="#search"/></svg>Files</div>
+        <div class="item"><svg class="ic"><use href="#shield"/></svg>Scanner</div>
+        <div class="item"><svg class="ic"><use href="#power"/></svg>Startup</div>
+        <div class="item"><svg class="ic"><use href="#trash"/></svg>Uninstaller</div>
+        <div class="item"><svg class="ic"><use href="#gear"/></svg>Settings</div>
+      </div>
+      <div class="main">
+        <div class="card banner">
+          <svg class="ic amber"><use href="#shield-warn"/></svg>
+          <div><div style="font-weight:600;font-size:16px">Needs attention</div><div class="dim" style="font-size:13px">Disk 91% full · 3 new login items</div></div>
+          <button class="btn">Scan now</button>
+        </div>
+        <div class="tiles">
+          <div class="card tile"><div class="t"><svg class="ic amber" style="width:16px;height:16px"><use href="#disk"/></svg>Disk free</div><div class="n">41 GB</div><div class="m">of 460 GB</div></div>
+          <div class="card tile"><div class="t"><svg class="ic green" style="width:16px;height:16px"><use href="#mem"/></svg>Memory</div><div class="n">Green</div><div class="m">pressure</div></div>
+          <div class="card tile"><div class="t"><svg class="ic green" style="width:16px;height:16px"><use href="#thermo"/></svg>Thermal</div><div class="n">Nominal</div><div class="m">no throttling</div></div>
+          <div class="card tile"><div class="t"><svg class="ic green" style="width:16px;height:16px"><use href="#batt"/></svg>Battery</div><div class="n">82%</div><div class="m">health 91% · 214 cycles</div></div>
+        </div>
+        <div class="card">
+          <div class="cap" style="margin-bottom:4px">Suggested</div>
+          <div class="act"><svg class="ic"><use href="#spark"/></svg><div>Clear 12 GB of junk<div class="dim" style="font-size:12px">Caches, logs, old installers</div></div><svg class="ic go"><use href="#chev"/></svg></div>
+          <div class="act"><svg class="ic"><use href="#power"/></svg><div>Review 3 new login items<div class="dim" style="font-size:12px">Added since last week</div></div><svg class="ic go"><use href="#chev"/></svg></div>
+          <div class="act"><svg class="ic"><use href="#dup"/></svg><div>4 GB of duplicates found<div class="dim" style="font-size:12px">Review before removing</div></div><svg class="ic go"><use href="#chev"/></svg></div>
+        </div>
+        <div class="card" style="margin-top:12px;display:flex;align-items:center;gap:10px"><svg class="ic green"><use href="#shield"/></svg>Last scan 3 days ago, clean<span class="dim" style="margin-left:auto">Next: Sun 02:00</span></div>
+        <div class="spark">▸ Details: CPU, GPU, RAM sparklines</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

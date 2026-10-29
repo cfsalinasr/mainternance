@@ -2,3 +2,7 @@
 .remember/
 .DS_Store
 Pasted *.tiff
+.build/
+.swiftpm/
+*.app
+dist/
