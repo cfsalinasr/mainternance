@@ -4,7 +4,10 @@ import SwiftUI
 
 @main
 struct MainternanceApp: App {
-    /// Plain stored references: the SwiftUI macros behind @State are unavailable with Command Line Tools only.
+    // Ownership lives here as plain `let`s on purpose: `@State` does not compile with the Command Line
+    // Tools-only toolchain (its SwiftUI macro plugin is missing), and the `App` value is created once for
+    // the whole process lifetime, so these references are stable. Do not move them into a View or Scene
+    // body (or any struct SwiftUI recreates): each re-evaluation would build fresh models and lose state.
     private let viewModel: OverviewViewModel
     private let navigation = Navigation()
     private let states = WindowStates()

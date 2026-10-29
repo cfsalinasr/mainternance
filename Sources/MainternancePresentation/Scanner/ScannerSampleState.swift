@@ -94,12 +94,8 @@ enum ScannerProgress {
     }
 }
 
-enum FindingSeverity: Int, Equatable, Comparable {
+enum FindingSeverity: Int, Equatable {
     case low, medium, high
-
-    static func < (lhs: Self, rhs: Self) -> Bool {
-        lhs.rawValue < rhs.rawValue
-    }
 
     var title: String {
         switch self {
