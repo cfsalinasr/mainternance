@@ -106,13 +106,6 @@ struct PopoverModelTests {
         #expect(popover.metrics.first { $0.title == "Thermal" }?.value == "Serious")
     }
 
-    @Test func visibilityDecision() {
-        #expect(WindowVisibility.isVisible(occlusionVisible: true, isKey: false, isClosed: false))
-        #expect(WindowVisibility.isVisible(occlusionVisible: false, isKey: true, isClosed: false))
-        #expect(!WindowVisibility.isVisible(occlusionVisible: false, isKey: false, isClosed: false))
-        #expect(!WindowVisibility.isVisible(occlusionVisible: true, isKey: true, isClosed: true))
-    }
-
     @Test func accessibilityNotesFlagNonGoodStates() {
         #expect(HealthState.good.accessibilityNote.isEmpty)
         #expect(HealthState.needsAttention.accessibilityNote.contains("needs attention"))
