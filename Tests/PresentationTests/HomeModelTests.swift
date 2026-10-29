@@ -112,6 +112,15 @@ struct HomeModelTests {
         #expect(model.scan.next.hasPrefix("Next: "))
     }
 
+    @Test func nextScanTimeFollowsLocaleClock() {
+        // Sunday 2027-01-10 14:00 UTC; the formatter below uses the same fixed zone as the date.
+        let sunday = Date(timeIntervalSince1970: 1_799_589_600)
+        let us = HomeModel.nextText(sunday, locale: Locale(identifier: "en_US"), timeZone: .gmt)
+        let gb = HomeModel.nextText(sunday, locale: Locale(identifier: "en_GB"), timeZone: .gmt)
+        #expect(us.contains("2:00") && us.contains("PM") && us.hasPrefix("Next: Sun"))
+        #expect(gb == "Next: Sun 14:00")
+    }
+
     @Test func scanSummaryWithoutDatesIsSafe() {
         let model = HomeModel(overview: overview(), now: now, locale: locale)
         #expect(model.scan.last == "Never scanned")

@@ -110,8 +110,9 @@ public struct HomeModel: Equatable, Sendable {
         temperatureText = snapshot.temperatureCelsius.map { "\(Int($0.rounded())) °C" }
     }
 
-    private static func nextText(_ date: Date, locale: Locale) -> String {
-        let style = Date.FormatStyle(locale: locale).weekday(.abbreviated).hour(.twoDigits(amPM: .omitted)).minute()
+    /// Locale decides the clock (12 h with AM/PM or 24 h); no fixed pattern.
+    static func nextText(_ date: Date, locale: Locale, timeZone: TimeZone = .current) -> String {
+        let style = Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute()
         return "Next: \(date.formatted(style))"
     }
 }
