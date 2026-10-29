@@ -5,15 +5,19 @@ import SwiftUI
 /// `onAppear`/`onDisappear` do not track open/close. The hosting NSWindow's state does.
 struct WindowVisibilityObserver: NSViewRepresentable {
     var onChange: @MainActor (Bool) -> Void
+    /// When set, it is pointed at the observed window so the owner can dismiss exactly that window.
+    var dismisser: WindowDismisser?
 
     func makeNSView(context _: Context) -> VisibilityView {
         let view = VisibilityView()
         view.onChange = onChange
+        dismisser?.view = view
         return view
     }
 
     func updateNSView(_ view: VisibilityView, context _: Context) {
         view.onChange = onChange
+        dismisser?.view = view
     }
 
     @MainActor
@@ -91,10 +95,34 @@ struct WindowVisibilityObserver: NSViewRepresentable {
             report(state.handle(event, window: facts))
         }
 
+        /// Orders out the hosting window (never any other window) and reports it hidden right away, because
+        /// `orderOut` posts no `willClose` and the occlusion notification may arrive late.
+        func dismissHostingWindow() {
+            guard let window else { return }
+            window.orderOut(nil)
+            handle(.willClose)
+        }
+
         private func report(_ visible: Bool) {
             guard visible != lastReported else { return }
             lastReported = visible
             onChange?(visible)
         }
+    }
+}
+
+/// Lets the owner of a `MenuBarExtra(.window)` popover dismiss it: that content stays open until a click
+/// outside, so choosing "Open Mainternance" must close it itself. It only ever touches the window that
+/// hosts the observed view, so the main window cannot be closed by mistake.
+@MainActor
+public final class WindowDismisser {
+    weak var view: WindowVisibilityObserver.VisibilityView?
+
+    public init() {
+        // Nothing to set up: the observer view registers itself once it is in a window.
+    }
+
+    public func dismiss() {
+        view?.dismissHostingWindow()
     }
 }

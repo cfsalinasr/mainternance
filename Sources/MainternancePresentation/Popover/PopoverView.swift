@@ -5,14 +5,18 @@ public struct PopoverView: View {
     private let viewModel: OverviewViewModel
     private let openWindow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
+    private let dismisser: WindowDismisser
 
+    /// `openWindow` opens the main window; the popover then dismisses itself through `dismisser`.
     public init(
         viewModel: OverviewViewModel,
         openWindow: @escaping () -> Void,
+        dismisser: WindowDismisser,
         onVisibilityChange: @escaping @MainActor (Bool) -> Void
     ) {
         self.viewModel = viewModel
         self.openWindow = openWindow
+        self.dismisser = dismisser
         self.onVisibilityChange = onVisibilityChange
     }
 
@@ -28,7 +32,7 @@ public struct PopoverView: View {
             .padding(16)
         }
         .frame(width: 320)
-        .background(WindowVisibilityObserver { onVisibilityChange($0) })
+        .background(WindowVisibilityObserver(onChange: { onVisibilityChange($0) }, dismisser: dismisser))
     }
 
     @ViewBuilder
@@ -48,7 +52,10 @@ public struct PopoverView: View {
         }
         Divider()
         actionButton("Scan now", symbol: "arrow.clockwise", disabledHint: ScannerHelp.engineNotConnected)
-        actionButton("Open Mainternance", symbol: "chevron.right", action: openWindow)
+        actionButton("Open Mainternance", symbol: "chevron.right") {
+            openWindow()
+            dismisser.dismiss()
+        }
     }
 
     private func hero(_ hero: PopoverModel.Hero) -> some View {
