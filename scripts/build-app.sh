@@ -70,10 +70,27 @@ if [[ "$INSTALL" -eq 1 ]]; then
             exit 1
         fi
     fi
+    # A previous run that failed mid-swap may have left the only copy aside; restore it, never delete it.
+    if [[ -e "$OLD" && ! -e "$DEST" ]]; then
+        mv "$OLD" "$DEST"
+    fi
     rm -rf "$STAGE" "$OLD"
     ditto "$APP" "$STAGE" || { rm -rf "$STAGE"; echo "ERROR: copy failed; existing install untouched." >&2; exit 1; }
     [[ -e "$DEST" ]] && mv "$DEST" "$OLD"
-    mv "$STAGE" "$DEST"
+    mv "$STAGE" "$DEST" || {
+        # Never leave the user without an app: put the previous bundle back before giving up.
+        rm -rf "$STAGE"
+        if [[ -e "$OLD" ]]; then
+            if [[ ! -e "$DEST" ]] && mv "$OLD" "$DEST"; then
+                echo "ERROR: installing the new bundle failed; the previous install was restored at $DEST." >&2
+            else
+                echo "ERROR: installing the new bundle failed; the previous install is at $OLD (move it back to $DEST)." >&2
+            fi
+        else
+            echo "ERROR: installing the new bundle failed; nothing was installed at $DEST." >&2
+        fi
+        exit 1
+    }
     rm -rf "$OLD"
     echo "Installed: $DEST"
 fi
