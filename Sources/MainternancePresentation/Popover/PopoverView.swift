@@ -5,11 +5,18 @@ public struct PopoverView: View {
     private let viewModel: OverviewViewModel
     private let openWindow: () -> Void
     private let scanNow: () -> Void
+    private let onVisibilityChange: @MainActor (Bool) -> Void
 
-    public init(viewModel: OverviewViewModel, openWindow: @escaping () -> Void, scanNow: @escaping () -> Void) {
+    public init(
+        viewModel: OverviewViewModel,
+        openWindow: @escaping () -> Void,
+        scanNow: @escaping () -> Void,
+        onVisibilityChange: @escaping @MainActor (Bool) -> Void
+    ) {
         self.viewModel = viewModel
         self.openWindow = openWindow
         self.scanNow = scanNow
+        self.onVisibilityChange = onVisibilityChange
     }
 
     public var body: some View {
@@ -24,7 +31,7 @@ public struct PopoverView: View {
             .padding(16)
         }
         .frame(width: 320)
-        .background(WindowVisibilityObserver { viewModel.setVisible($0) })
+        .background(WindowVisibilityObserver { onVisibilityChange($0) })
     }
 
     @ViewBuilder
