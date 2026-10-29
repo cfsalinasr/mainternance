@@ -9,6 +9,13 @@ struct SampleDataCopyTests {
         #expect(SampleDataCopy.settingsNote == "Not connected yet: these settings are not applied.")
     }
 
+    @Test func settingsRefreshNoteMentionsLowPowerMode() {
+        #expect(SettingsView.refreshNote == [
+            "Metrics refresh every 2 s while this window or the menu bar popover is open,",
+            "and about every 45 s otherwise; both intervals double in Low Power Mode."
+        ].joined(separator: " "))
+    }
+
     @Test func onlyScreensWithoutEnginesAreMarked() {
         let marked = SidebarItem.all.filter { SampleDataCopy.isSample($0.destination) }.map(\.title)
         #expect(Set(marked) == ["Files", "Scanner", "Cleanup", "Startup", "Uninstaller"])
