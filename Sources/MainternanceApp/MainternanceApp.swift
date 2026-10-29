@@ -7,8 +7,7 @@ struct MainternanceApp: App {
     /// Plain stored references: the SwiftUI macros behind @State are unavailable with Command Line Tools only.
     private let viewModel: OverviewViewModel
     private let navigation = Navigation()
-    private let filesState = FilesViewState()
-    private let scannerState = ScannerViewState()
+    private let states = WindowStates()
     private let visibility: VisibilityCoordinator
 
     init() {
@@ -33,8 +32,7 @@ struct MainternanceApp: App {
             MainWindowView(
                 navigation: navigation,
                 overview: viewModel,
-                filesState: filesState,
-                scannerState: scannerState,
+                states: states,
                 scanNow: { Task { await viewModel.refresh() } }, // Real scanning arrives in a later plan.
                 onVisibilityChange: { visibility.report(.window, visible: $0) }
             )
