@@ -12,7 +12,23 @@ and the `MainternanceApp` executable that wires them together.
 - Run tests: `scripts/test.sh` (adds the Swift Testing flag needed with Command Line Tools only)
 - Lint: `scripts/lint.sh` (SwiftLint strict, then SwiftFormat lint)
 - Check layer boundaries: `scripts/check-boundaries.sh`
-- Build the `.app` bundle: `scripts/build-app.sh` (coming in Task 12)
+- Build and sign the `.app` bundle: `scripts/build-app.sh` (see Install)
+
+## Install
+
+Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar, then
+choose Open Mainternance to show the window.
+
+- `scripts/build-app.sh` builds a release binary and assembles and signs
+  `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).
+- `scripts/build-app.sh --install` does the same and also copies the app to `/Applications`.
+- Without a signing identity the app is signed ad-hoc, and macOS may reset granted permissions after
+  every rebuild. Run `scripts/make-signing-cert.sh` once to create the stable self-signed identity
+  `Mainternance Local Signing` in your login keychain (it asks for your password once; use `--dry-run`
+  to preview). Later builds pick it up automatically.
+- To open it at login, add it under System Settings > General > Login Items. A later plan adds a
+  Settings toggle wired to the system.
+- Full Disk Access is not needed yet; it is granted later, in the scanner plan.
 
 ## Building
 
