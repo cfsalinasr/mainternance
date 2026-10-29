@@ -33,7 +33,9 @@ public final class OverviewViewModel {
     @ObservationIgnored private var isVisible = false
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var isLoading = false
-    @ObservationIgnored private var joiners: [CheckedContinuation<Overview?, Never>] = []
+    @ObservationIgnored private var joiners: [CheckedContinuation<Void, Never>] = []
+    /// A finished load its (cancelled) starter did not publish; the first active joiner claims it.
+    @ObservationIgnored private var unpublished: Overview?
 
     public init(
         load: LoadOverview,
@@ -53,23 +55,30 @@ public final class OverviewViewModel {
     /// overlaps the loop's refresh produces one load and one history sample.
     public func refresh() async {
         if isLoading {
-            // A result the (cancelled) starter did not publish is handed to the first joiner.
-            if let unpublished = await withCheckedContinuation({ joiners.append($0) }), !Task.isCancelled {
-                publish(unpublished)
+            // A result the (cancelled) starter did not publish goes to the first joiner that is still
+            // active; cancelled joiners never consume it.
+            await withCheckedContinuation { joiners.append($0) }
+            if !Task.isCancelled, let claimed = unpublished {
+                unpublished = nil
+                publish(claimed)
             }
             return
         }
         isLoading = true
+        unpublished = nil
         let loaded = await load()
         isLoading = false
         let published = !Task.isCancelled
         if published {
             publish(loaded)
         }
+        if !published, !joiners.isEmpty {
+            unpublished = loaded
+        }
         let waiting = joiners
         joiners.removeAll()
-        for (index, joiner) in waiting.enumerated() {
-            joiner.resume(returning: index == 0 && !published ? loaded : nil)
+        for joiner in waiting {
+            joiner.resume()
         }
     }
 

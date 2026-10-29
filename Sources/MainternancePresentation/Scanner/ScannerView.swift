@@ -43,7 +43,7 @@ public struct ScannerView: View {
     }
 
     private var scanButtons: some View {
-        let hint = state.canStartScan ? "" : ScannerHelp.engineNotConnected
+        let hint = state.scanHelpText ?? ""
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Button("Quick scan") {

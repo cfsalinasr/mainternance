@@ -73,4 +73,52 @@ struct OverviewRefreshCoalescingTests {
         #expect(model.history.count == 1)
         model.stop()
     }
+
+    @Test func activeJoinerClaimsTheResultWhenACancelledJoinerIsFirst() async {
+        let gate = LoadGate()
+        let model = makeGatedModel(gate: gate)
+        model.setVisible(true)
+        let starter = Task { await model.refresh() }
+        await gate.waitForEntry()
+        let cancelledJoiner = Task { await model.refresh() }
+        await settle()
+        let activeJoiner = Task { await model.refresh() }
+        await settle()
+        starter.cancel()
+        cancelledJoiner.cancel()
+        await gate.open()
+        await starter.value
+        await cancelledJoiner.value
+        await activeJoiner.value
+        #expect(await gate.entered == 1)
+        #expect(model.overview != nil)
+        #expect(model.history.count == 1)
+    }
+
+    @Test func nothingIsPublishedWhenEveryCallerWasCancelled() async {
+        let gate = LoadGate()
+        let model = makeGatedModel(gate: gate)
+        model.setVisible(true)
+        let starter = Task { await model.refresh() }
+        await gate.waitForEntry()
+        let joiner = Task { await model.refresh() }
+        await settle()
+        starter.cancel()
+        joiner.cancel()
+        await gate.open()
+        await starter.value
+        await joiner.value
+        #expect(model.overview == nil)
+        #expect(model.history.isEmpty)
+    }
+
+    @Test func aSingleActiveCallerPublishesOnce() async {
+        let gate = LoadGate()
+        let model = makeGatedModel(gate: gate)
+        model.setVisible(true)
+        await gate.open()
+        await model.refresh()
+        #expect(model.overview != nil)
+        #expect(model.history.count == 1)
+    }
 }

@@ -266,6 +266,11 @@ public final class ScannerViewState {
         engine.canScan && engineConnected
     }
 
+    /// The help shown (and spoken) for the disabled scan buttons; nil when scans can start.
+    var scanHelpText: String? {
+        canStartScan ? nil : ScannerHelp.engineNotConnected
+    }
+
     /// Visible in the scanner header while no engine is connected.
     static let sampleNote = "Sample only: no scans run yet"
 

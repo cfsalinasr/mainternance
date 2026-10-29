@@ -129,3 +129,17 @@ struct ScanGatingTests {
         #expect(ScanScheduleStore.previewCaption == "Preview: nothing is scheduled yet")
     }
 }
+
+@MainActor
+struct ScanHelpTextTests {
+    @Test func helpTextIsPresentExactlyWhileScansCannotStart() {
+        let offline = ScannerViewState()
+        #expect(offline.scanHelpText == "Available when the scanner engine is connected")
+        let connected = ScannerViewState(engineConnected: true)
+        connected.select(previewID: "ready-idle")
+        #expect(connected.canStartScan)
+        #expect(connected.scanHelpText == nil)
+        connected.select(previewID: "not-installed")
+        #expect(connected.scanHelpText == ScannerHelp.engineNotConnected)
+    }
+}
