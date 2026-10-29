@@ -1,6 +1,11 @@
 import SwiftUI
 
 public struct SettingsView: View {
+    private static let refreshNote = [
+        "Metrics refresh every 2 s while this window or the menu bar popover is open,",
+        "and about every 45 s otherwise."
+    ].joined(separator: " ")
+
     private let state: SettingsViewState
 
     public init(state: SettingsViewState) {
@@ -14,11 +19,9 @@ public struct SettingsView: View {
                 general
                 schedule
                 notifications
-                Text(
-                    "Metrics refresh every 2 s while this window or the menu bar popover is open, and about every 45 s otherwise."
-                )
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                Text(Self.refreshNote)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
             .padding(20)
         }
