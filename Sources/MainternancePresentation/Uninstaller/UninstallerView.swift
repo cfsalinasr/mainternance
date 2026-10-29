@@ -8,13 +8,16 @@ public struct UninstallerView: View {
     }
 
     public var body: some View {
-        if state.apps.isEmpty {
-            ContentUnavailableView("No apps found", systemImage: "trash")
-        } else {
-            HStack(alignment: .top, spacing: 0) {
-                list.frame(width: 240)
-                Divider()
-                detail.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        VStack(alignment: .leading, spacing: 0) {
+            SampleDataBadge().padding([.top, .horizontal], 12)
+            if state.apps.isEmpty {
+                ContentUnavailableView("No apps found", systemImage: "trash")
+            } else {
+                HStack(alignment: .top, spacing: 0) {
+                    list.frame(width: 240)
+                    Divider()
+                    detail.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
             }
         }
     }

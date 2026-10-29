@@ -64,6 +64,7 @@ public struct SettingsView: View {
                 .accessibilityHint("Saved in this preview only")
             Toggle("Weekly digest", isOn: Binding(get: { state.weeklyDigest }, set: { state.weeklyDigest = $0 }))
                 .accessibilityHint("Saved in this preview only")
+            Text(SampleDataCopy.settingsNote).font(.system(size: 12)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
