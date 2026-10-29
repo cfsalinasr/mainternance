@@ -25,6 +25,8 @@ struct WindowVisibilityObserver: NSViewRepresentable {
         var onChange: (@MainActor (Bool) -> Void)?
         private var state = WindowVisibilityState()
         private var lastReported: Bool?
+        /// Counts `didBecomeKey` events; a change since a fallback was scheduled means the user reopened.
+        private var reopenCount = 0
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -73,6 +75,7 @@ struct WindowVisibilityObserver: NSViewRepresentable {
         }
 
         @objc private func becameKey() {
+            reopenCount += 1
             handle(.becameKey)
         }
 
@@ -113,12 +116,18 @@ struct WindowVisibilityObserver: NSViewRepresentable {
         }
 
         /// A single delayed check (not polling): if the click left the popover on screen, order out that
-        /// same window and keep the reported state hidden. It never touches any other window.
+        /// same window and keep the reported state hidden. A reopen in the meantime (a `didBecomeKey`) cancels it.
+        /// Runtime behavior of this cancel is unverified. It never touches any other window.
         private func scheduleFallbackCheck(for popover: NSWindow) {
+            let scheduledAt = reopenCount
             Task { @MainActor [weak self, weak popover] in
                 try? await Task.sleep(for: .milliseconds(300))
-                guard let self, let popover, window === popover,
-                      PopoverDismissFallback.afterClick(stillOrderedIn: popover.isVisible) == .orderOut
+                guard let self, let popover,
+                      PopoverDismissFallback.afterClick(
+                          stillOrderedIn: popover.isVisible,
+                          isPopoverWindow: window === popover,
+                          reopened: reopenCount != scheduledAt
+                      ) == .orderOut
                 else { return }
                 popover.orderOut(nil)
                 handle(.dismissed)

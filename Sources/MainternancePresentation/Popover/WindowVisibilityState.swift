@@ -54,8 +54,12 @@ public enum PopoverDismissFallback: Equatable, Sendable {
     /// The click did not close it: order the popover's own window out so it cannot overlap the main window.
     case orderOut
 
-    /// One-shot check after the click; `stillOrderedIn` is the popover window's `isVisible` at that moment.
-    public static func afterClick(stillOrderedIn: Bool) -> Self {
-        stillOrderedIn ? .orderOut : .none
+    /// One-shot check after the click. `stillOrderedIn` is the popover window's `isVisible` at that moment;
+    /// `isPopoverWindow` is whether the observed window is still the one the click was meant to dismiss;
+    /// `reopened` is whether a `didBecomeKey` arrived since the check was scheduled. A legitimate reopen
+    /// (`MenuBarExtra` reuses the same window) must not be closed again, or `MenuBarExtra`'s own presented
+    /// state would go out of sync. Not verified at runtime: the event order is inferred from AppKit docs.
+    public static func afterClick(stillOrderedIn: Bool, isPopoverWindow: Bool = true, reopened: Bool = false) -> Self {
+        isPopoverWindow && stillOrderedIn && !reopened ? .orderOut : .none
     }
 }

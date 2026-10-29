@@ -99,4 +99,16 @@ extension WindowVisibilityStateTests {
         #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true) == .orderOut)
         #expect(PopoverDismissFallback.afterClick(stillOrderedIn: false) == PopoverDismissFallback.none)
     }
+
+    @Test func fallbackIsCancelledByAReopenButStillFiresWithoutOne() {
+        let none = PopoverDismissFallback.none
+        // (a) click, no reopen, still visible -> fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true, reopened: false) == .orderOut)
+        // (b) click, then becameKey before the check -> no fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true, reopened: true) == none)
+        // (c) click worked -> no fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: false, reopened: false) == none)
+        // (d) not the popover's window -> no fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true, isPopoverWindow: false) == none)
+    }
 }
