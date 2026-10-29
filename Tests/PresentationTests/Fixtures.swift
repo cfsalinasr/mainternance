@@ -126,3 +126,48 @@ actor FakeSleeper {
         await withCheckedContinuation { waiters.append((count, $0)) }
     }
 }
+
+/// Holds a load open until the test lets it through, so a refresh can be observed mid-flight.
+actor LoadGate {
+    private var entered = 0
+    private var isOpen = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var openWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func pass() async {
+        entered += 1
+        let waiting = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in waiting {
+            waiter.resume()
+        }
+        if isOpen {
+            return
+        }
+        await withCheckedContinuation { openWaiters.append($0) }
+    }
+
+    func waitForEntry() async {
+        if entered > 0 {
+            return
+        }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let waiting = openWaiters
+        openWaiters.removeAll()
+        for waiter in waiting {
+            waiter.resume()
+        }
+    }
+}
+
+struct GatedSnapshots: SystemSnapshotProviding {
+    let gate: LoadGate
+    func currentSnapshot() async -> SystemSnapshot {
+        await gate.pass()
+        return makeSnapshot()
+    }
+}

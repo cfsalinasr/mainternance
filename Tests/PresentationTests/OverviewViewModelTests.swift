@@ -146,12 +146,99 @@ struct OverviewViewModelTests {
         let counter = CallCounter()
         let model = makeModel(sleeper: sleeper, counter: counter)
         model.start()
-        model.start()
         await sleeper.waitForSleeps(1)
+        // A second start while the first loop is already sleeping must not add a loop.
+        model.start()
         await settle()
         #expect(counter.count == 1)
         #expect(await sleeper.durations.count == 1)
         model.stop()
+    }
+
+    @Test func hidingDoesNotRefreshAndSleepsFortyFiveSeconds() async {
+        let sleeper = FakeSleeper()
+        let counter = CallCounter()
+        let model = makeModel(sleeper: sleeper, counter: counter)
+        model.setVisible(true)
+        model.start()
+        await sleeper.waitForSleeps(1)
+        #expect(counter.count == 1)
+
+        model.setVisible(false)
+        await sleeper.waitForSleeps(2)
+        await settle()
+        #expect(await sleeper.durations == [.seconds(2), .seconds(45)])
+        #expect(counter.count == 1)
+        model.stop()
+    }
+
+    @Test func refreshInFlightWhenStoppedDoesNotAssign() async {
+        let gate = LoadGate()
+        let model = OverviewViewModel(
+            load: LoadOverview(snapshots: GatedSnapshots(gate: gate), scans: FakeScans(), actions: FakeActions()),
+            sleep: { _ in }
+        )
+        model.setVisible(true)
+        model.start()
+        await gate.waitForEntry()
+        model.stop()
+        await gate.open()
+        await settle()
+        #expect(model.overview == nil)
+        #expect(model.history.isEmpty)
+    }
+
+    @Test func refreshInFlightWhenVisibilityChangesDoesNotAssignStaleResult() async {
+        let gate = LoadGate()
+        let model = OverviewViewModel(
+            load: LoadOverview(snapshots: GatedSnapshots(gate: gate), scans: FakeScans(), actions: FakeActions()),
+            sleep: { _ in try await Task.sleep(for: .seconds(60)) }
+        )
+        model.setVisible(true)
+        model.start()
+        await gate.waitForEntry()
+        model.setVisible(false) // restarts the loop; the in-flight load belongs to the cancelled one
+        await gate.open()
+        await settle()
+        #expect(model.overview == nil)
+        model.stop()
+    }
+
+    @Test func modelIsReleasedWhileLoopSleeps() async {
+        let sleeper = FakeSleeper()
+        var model: OverviewViewModel? = makeModel(sleeper: sleeper, counter: CallCounter())
+        weak var weakModel = model
+        model?.start()
+        await sleeper.waitForSleeps(1)
+        model = nil
+        #expect(weakModel == nil)
+    }
+
+    @Test func historyAppendsWhileVisible() async {
+        let model = makeModel(sleeper: FakeSleeper(), counter: CallCounter())
+        model.setVisible(true)
+        await model.refresh()
+        await model.refresh()
+        #expect(model.history.count == 2)
+        #expect(model.history.last?.cpu == 0.1)
+        #expect(model.history.last?.gpu == nil)
+        #expect(model.history.last?.memoryPressure == .normal)
+    }
+
+    @Test func historyIsNotAppendedWhileHidden() async {
+        let model = makeModel(sleeper: FakeSleeper(), counter: CallCounter())
+        await model.refresh()
+        #expect(model.overview != nil)
+        #expect(model.history.isEmpty)
+    }
+
+    @Test func historyIsCappedAtThirty() async {
+        let model = makeModel(sleeper: FakeSleeper(), counter: CallCounter())
+        model.setVisible(true)
+        for _ in 0 ..< 35 {
+            await model.refresh()
+        }
+        #expect(model.history.count == 30)
     }
 
     @Test func canRestartAfterStop() async {
