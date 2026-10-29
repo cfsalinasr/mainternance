@@ -79,11 +79,6 @@ public struct PopoverModel: Equatable, Sendable {
         }
         self.metrics = metrics
 
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = locale
-        formatter.dateTimeStyle = .named
-        formatter.unitsStyle = .full
-
         var rows = [
             Row(
                 title: "Disk free", value: formatFreeSpace(snapshot.diskFreeBytes), symbol: "internaldrive",
@@ -98,23 +93,31 @@ public struct PopoverModel: Equatable, Sendable {
         }
         rows.append(Row(
             title: "Last scan",
-            value: overview.scan.lastScan.map { formatter.localizedString(for: $0, relativeTo: now) } ?? "Never",
+            value: overview.scan.lastScan.map { Self.relative($0, now: now, locale: locale) } ?? "Never",
             symbol: "clock", state: .good
         ))
         rows.append(Row(
             title: "Next scan",
-            value: overview.scan.nextScan
-                .map { formatter.localizedString(for: $0, relativeTo: now) } ?? "Not scheduled",
+            value: overview.scan.nextScan.map { Self.relative($0, now: now, locale: locale) } ?? "Not scheduled",
             symbol: "calendar", state: .good
         ))
         self.rows = rows
+    }
+
+    /// "3 days ago" / "in 2 days"; the one relative-date wording shared by the popover and Home.
+    static func relative(_ date: Date, now: Date, locale: Locale) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.dateTimeStyle = .named
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
     private static func percent(_ fraction: Double) -> String {
         "\(Int((fraction * 100).rounded()))%"
     }
 
-    private static func memoryName(_ pressure: MemoryPressure) -> String {
+    static func memoryName(_ pressure: MemoryPressure) -> String {
         switch pressure {
         case .normal: "Green"
         case .warning: "Amber"
@@ -122,7 +125,7 @@ public struct PopoverModel: Equatable, Sendable {
         }
     }
 
-    private static func thermalName(_ level: ThermalLevel) -> String {
+    static func thermalName(_ level: ThermalLevel) -> String {
         switch level {
         case .nominal: "Nominal"
         case .fair: "Fair"

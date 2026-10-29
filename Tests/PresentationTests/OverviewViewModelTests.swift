@@ -207,7 +207,7 @@ struct OverviewViewModelTests {
     @Test func modelIsReleasedWhileLoopSleeps() async {
         let sleeper = FakeSleeper()
         var model: OverviewViewModel? = makeModel(sleeper: sleeper, counter: CallCounter())
-        weak var weakModel = model
+        weak let weakModel = model
         model?.start()
         await sleeper.waitForSleeps(1)
         model = nil

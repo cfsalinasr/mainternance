@@ -1,0 +1,89 @@
+import MainternanceDomain
+import SwiftUI
+
+/// Chrome-level status banner: glass tinted by the overall state.
+struct HealthBanner: View {
+    let banner: HomeModel.Banner
+    let open: (AppDestination) -> Void
+    let scanNow: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: banner.symbol)
+                .font(.system(size: 28))
+                .foregroundStyle(banner.state.color)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(banner.title).font(.system(size: 16, weight: .semibold))
+                reasons
+            }
+            Spacer()
+            Button("Scan now", action: scanNow)
+                .buttonStyle(.glass)
+        }
+        .padding(16)
+        .glassEffect(
+            .regular.tint(banner.state.color.opacity(0.22)),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var reasons: some View {
+        if banner.reasons.isEmpty {
+            Text(banner.goodText).font(.system(size: 13)).foregroundStyle(.secondary)
+        } else {
+            WrapLayout(spacing: 4) {
+                ForEach(Array(banner.reasons.enumerated()), id: \.element.id) { index, reason in
+                    HStack(spacing: 4) {
+                        if index > 0 {
+                            Text("·").foregroundStyle(.secondary)
+                        }
+                        Button(reason.text) { open(reason.destination) }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHint("Opens the related section")
+                    }
+                }
+            }
+            .font(.system(size: 13))
+        }
+    }
+}
+
+/// Left-to-right layout that wraps to new lines, so many reasons never overflow the banner.
+struct WrapLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        arrange(width: proposal.width ?? .infinity, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        let result = arrange(width: bounds.width, subviews: subviews)
+        for (subview, origin) in zip(subviews, result.origins) {
+            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var maxX: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            maxX = max(maxX, x - spacing)
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (CGSize(width: maxX, height: y + rowHeight), origins)
+    }
+}
