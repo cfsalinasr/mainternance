@@ -1,24 +1,41 @@
 import MainternanceDomain
-import MainternancePresentation
+@testable import MainternancePresentation
 import Testing
 
 /// `refresh()` calls that overlap (the loop and a manual refresh) share one load and one history sample.
 @MainActor
 struct OverviewRefreshCoalescingTests {
-    /// Polls observable state with a bound (never a fixed delay) until `condition` holds.
-    private func waitUntil(_ condition: () async -> Bool) async {
+    /// Polls observable state with a bound (never an unbounded loop) and fails the test if it never holds.
+    private func waitUntil(
+        _ what: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ condition: () async -> Bool
+    ) async {
         for _ in 0 ..< 2000 {
             if await condition() {
                 return
             }
             try? await Task.sleep(for: .milliseconds(5))
         }
+        Issue.record("Timed out waiting for \(what)", sourceLocation: sourceLocation)
     }
 
-    private func settle() async {
-        for _ in 0 ..< 50 {
+    /// Waits (main-actor yields only, bounded) until `count` callers are suspended on the in-flight load.
+    private func waitForJoiners(
+        _ count: Int,
+        in model: OverviewViewModel,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
+        for _ in 0 ..< 100_000 {
+            if model.pendingJoinerCount >= count {
+                return
+            }
             await Task.yield()
         }
+        Issue.record(
+            "Only \(model.pendingJoinerCount) of \(count) callers joined the in-flight load",
+            sourceLocation: sourceLocation
+        )
     }
 
     private func makeGatedModel(
@@ -38,7 +55,7 @@ struct OverviewRefreshCoalescingTests {
         let first = Task { await model.refresh() }
         await gate.waitForEntry()
         let second = Task { await model.refresh() } // e.g. a manual refresh while the loop is loading
-        await settle()
+        await waitForJoiners(1, in: model)
         #expect(await gate.entered == 1)
         await gate.open()
         await first.value
@@ -65,9 +82,9 @@ struct OverviewRefreshCoalescingTests {
         model.start() // hidden: the first load is held at the gate
         await gate.waitForEntry()
         model.setVisible(true) // restarts the loop; its refresh joins the in-flight load
-        await settle()
+        await waitForJoiners(1, in: model)
         await gate.open()
-        await waitUntil { model.overview != nil }
+        await waitUntil("the overview to be published") { model.overview != nil }
         #expect(await gate.entered == 1)
         #expect(model.overview != nil)
         #expect(model.history.count == 1)
@@ -81,9 +98,9 @@ struct OverviewRefreshCoalescingTests {
         let starter = Task { await model.refresh() }
         await gate.waitForEntry()
         let cancelledJoiner = Task { await model.refresh() }
-        await settle()
+        await waitForJoiners(1, in: model)
         let activeJoiner = Task { await model.refresh() }
-        await settle()
+        await waitForJoiners(2, in: model)
         starter.cancel()
         cancelledJoiner.cancel()
         await gate.open()
@@ -102,7 +119,7 @@ struct OverviewRefreshCoalescingTests {
         let starter = Task { await model.refresh() }
         await gate.waitForEntry()
         let joiner = Task { await model.refresh() }
-        await settle()
+        await waitForJoiners(1, in: model)
         starter.cancel()
         joiner.cancel()
         await gate.open()

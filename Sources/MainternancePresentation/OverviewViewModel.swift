@@ -34,6 +34,11 @@ public final class OverviewViewModel {
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var isLoading = false
     @ObservationIgnored private var joiners: [CheckedContinuation<Void, Never>] = []
+    /// Callers currently suspended on an in-flight load; lets tests wait for a join instead of guessing.
+    var pendingJoinerCount: Int {
+        joiners.count
+    }
+
     /// A finished load its (cancelled) starter did not publish; the first active joiner claims it.
     @ObservationIgnored private var unpublished: Overview?
 
