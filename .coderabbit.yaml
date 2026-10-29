@@ -1,0 +1,74 @@
+language: "en-US"
+
+tone_instructions: >
+  Native macOS app in Swift and SwiftUI with a clean architecture. Reviews must be
+  technically rigorous: flag layer-boundary violations, unsafe file deletion, and
+  business logic leaking into views. Correctness and data safety are paramount.
+
+knowledge_base:
+  learnings:
+    scope: local
+  pull_requests:
+    scope: local
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+    ignore_title_keywords:
+      - "WIP"
+      - "wip"
+      - "DO NOT MERGE"
+      - "DRAFT"
+
+  path_instructions:
+    - path: "Sources/MainternanceDomain/**"
+      instructions: >
+        Domain layer must stay Foundation-only with no I/O (no file system, network,
+        process or UI access). Flag any import other than Foundation and any dependency
+        on another Mainternance target. Domain defines the protocols that Data implements.
+
+    - path: "Sources/MainternanceData/**"
+      instructions: >
+        Data layer implements Domain protocols. Every deletion must go through the
+        protected-paths guard and move items to the Trash; permanent deletion
+        (removeItem, unlink, rm) is forbidden. Flag any file operation that bypasses the
+        guard, any path built from unvalidated input, and any shell invocation that
+        interpolates user-controlled strings.
+
+    - path: "Sources/MainternancePresentation/**"
+      instructions: >
+        Presentation must not import MainternanceData. There must be no business logic in
+        views; they render view-model state and forward user intents. Flag file system
+        access or decision rules written directly in a view.
+
+    - path: "Sources/MainternanceApp/**"
+      instructions: >
+        The app target is the composition root only: it wires Data implementations into
+        Presentation through Domain protocols. Flag any logic beyond construction and wiring.
+
+    - path: ".github/workflows/**"
+      instructions: >
+        All third-party actions must be pinned to a full commit SHA, not a branch or tag
+        (supply-chain security). SONAR_TOKEN and GITHUB_TOKEN must only be passed as
+        environment variables to the steps that need them, never echoed or logged.
+        Permissions must stay minimal. Flag any run step that interpolates untrusted
+        expressions directly into a shell script.
+
+    - path: "Tests/**"
+      instructions: >
+        Tests must not mock Domain logic; use real Domain types and fakes only at the
+        Data boundary. Filesystem tests must use temporary directories and never touch
+        real user paths. Flag tests that assert floating-point values without a tolerance.
+
+chat:
+  auto_reply: true
