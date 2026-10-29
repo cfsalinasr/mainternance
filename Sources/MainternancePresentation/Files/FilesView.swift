@@ -5,12 +5,7 @@ public struct FilesView: View {
     private let navigation: Navigation
     private let state: FilesViewState
 
-    public init(navigation: Navigation) {
-        self.navigation = navigation
-        state = FilesViewState()
-    }
-
-    init(navigation: Navigation, state: FilesViewState) {
+    public init(navigation: Navigation, state: FilesViewState) {
         self.navigation = navigation
         self.state = state
     }
@@ -57,12 +52,16 @@ public struct FilesView: View {
     private func duplicatesPane(_ state: FilesViewState) -> some View {
         @Bindable var state = state
         return VStack(alignment: .leading, spacing: 12) {
-            Picker("Keep", selection: $state.keepRule) {
-                ForEach(KeepRule.allCases) { Text($0.title).tag($0) }
+            HStack(spacing: 8) {
+                Text("Keep:").font(.system(size: 13, weight: .medium))
+                Picker("Keep", selection: $state.keepRule) {
+                    ForEach(KeepRule.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel("Keep rule")
             }
-            .pickerStyle(.menu)
-            .fixedSize()
-            .accessibilityLabel("Keep rule")
             if state.duplicates.isEmpty {
                 ContentUnavailableView("No duplicates found", systemImage: "doc.on.doc")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

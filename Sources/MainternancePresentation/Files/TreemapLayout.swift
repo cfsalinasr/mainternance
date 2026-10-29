@@ -8,6 +8,14 @@ struct TreemapItem: Equatable, Sendable {
 struct TreemapTile: Equatable, Sendable {
     var id: String
     var rect: CGRect
+
+    /// The rectangle to draw (and hit-test), or nil when the tile is too small to inset and show.
+    func drawRect(inset: CGFloat = 1) -> CGRect? {
+        let minimum = max(inset * 2, 2)
+        guard rect.width.isFinite, rect.height.isFinite, rect.width >= minimum,
+              rect.height >= minimum else { return nil }
+        return rect.insetBy(dx: inset, dy: inset)
+    }
 }
 
 /// Squarified treemap. Areas are proportional to sizes and tiles cover the container without overlap.

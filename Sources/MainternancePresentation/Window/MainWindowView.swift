@@ -6,16 +6,18 @@ public struct MainWindowView: View {
     private let overview: OverviewViewModel
     private let scanNow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
-    private let filesState = FilesViewState()
+    private let filesState: FilesViewState
 
     public init(
         navigation: Navigation,
         overview: OverviewViewModel,
+        filesState: FilesViewState,
         scanNow: @escaping () -> Void = {},
         onVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
         self.navigation = navigation
         self.overview = overview
+        self.filesState = filesState
         self.scanNow = scanNow
         self.onVisibilityChange = onVisibilityChange
     }

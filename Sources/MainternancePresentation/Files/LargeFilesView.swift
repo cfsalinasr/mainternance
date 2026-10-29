@@ -6,7 +6,7 @@ struct LargeFilesView: View {
     var body: some View {
         VStack(spacing: 12) {
             DiskTreemapView(state: state)
-                .frame(height: 220)
+                .frame(height: 260)
             if state.largest.isEmpty {
                 ContentUnavailableView("No large files", systemImage: "doc")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

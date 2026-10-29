@@ -161,6 +161,31 @@ struct TreemapLayoutTests {
         }
     }
 
+    @Test func hugeItemAmongTinyOnesStaysFiniteAndProportional() throws {
+        var many = [TreemapItem(id: "huge", size: 1_000_000_000_000)]
+        many += (0 ..< 40).map { TreemapItem(id: "t\($0)", size: 1) }
+        let tiles = TreemapLayout.layout(many, in: container)
+        #expect(tiles.count == many.count)
+        let total = Double(many.reduce(0) { $0 + $1.size })
+        for tile in tiles {
+            #expect(!tile.rect.isNull && !tile.rect.isInfinite)
+            #expect(tile.rect.width.isFinite && tile.rect.height.isFinite)
+            let size = try Double(#require(many.first { $0.id == tile.id }?.size))
+            let expected = Double(container.width * container.height) * size / total
+            #expect(abs(Double(tile.rect.width * tile.rect.height) - expected) < 0.01)
+        }
+        // Tiny tiles are skipped when drawing; the huge one is not.
+        #expect(tiles.first { $0.id == "huge" }?.drawRect() != nil)
+        #expect(tiles.filter { $0.id != "huge" }.allSatisfy { $0.drawRect() == nil })
+    }
+
+    @Test func drawRectInsetsOrReturnsNil() {
+        let big = TreemapTile(id: "a", rect: CGRect(x: 0, y: 0, width: 10, height: 10))
+        #expect(big.drawRect() == CGRect(x: 1, y: 1, width: 8, height: 8))
+        #expect(TreemapTile(id: "b", rect: CGRect(x: 0, y: 0, width: 1.5, height: 50)).drawRect() == nil)
+        #expect(TreemapTile(id: "c", rect: CGRect(x: 0, y: 0, width: 50, height: 0.2)).drawRect() == nil)
+    }
+
     @Test func singleItemFillsContainer() {
         let tiles = TreemapLayout.layout([TreemapItem(id: "only", size: 1)], in: container)
         #expect(tiles.count == 1)

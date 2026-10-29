@@ -19,7 +19,7 @@ enum FilesSegment: String, CaseIterable, Identifiable, Sendable {
 
 @MainActor
 @Observable
-final class FilesViewState {
+public final class FilesViewState {
     var segment: FilesSegment = .search
     var criteria = FileSearchCriteria()
     var keepRule: KeepRule = .newest
@@ -31,6 +31,10 @@ final class FilesViewState {
     let largest: [SampleFile]
     let treemap: TreemapNode
     private let now: @Sendable () -> Date
+
+    public convenience init() {
+        self.init(files: FilesSampleData.files)
+    }
 
     init(
         files: [SampleFile] = FilesSampleData.files,

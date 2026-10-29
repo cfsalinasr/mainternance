@@ -3,7 +3,14 @@ import SwiftUI
 struct DiskTreemapView: View {
     let state: FilesViewState
 
-    private static let palette: [Color] = [.blue, .teal, .indigo, .orange, .purple, .green, .pink, .cyan]
+    /// Neutral dark blue/purple/slate fills (no green, amber or red) so white labels always reach strong contrast.
+    private static let palette: [Color] = [
+        Color(hue: 0.60, saturation: 0.55, brightness: 0.45),
+        Color(hue: 0.72, saturation: 0.45, brightness: 0.48),
+        Color(hue: 0.56, saturation: 0.40, brightness: 0.42),
+        Color(hue: 0.78, saturation: 0.40, brightness: 0.46),
+        Color(hue: 0.62, saturation: 0.15, brightness: 0.42)
+    ]
 
     var body: some View {
         let node = state.currentNode
@@ -19,24 +26,27 @@ struct DiskTreemapView: View {
                 } else {
                     Canvas { context, _ in
                         for (index, tile) in tiles.enumerated() {
-                            guard let child = node.children.first(where: { $0.id == tile.id }) else { continue }
-                            let rect = tile.rect.insetBy(dx: 1, dy: 1)
+                            guard let child = node.children.first(where: { $0.id == tile.id }),
+                                  let rect = tile.drawRect() else { continue }
                             context.fill(
                                 Path(roundedRect: rect, cornerRadius: 4),
-                                with: .color(Self.palette[index % Self.palette.count].opacity(0.75))
+                                with: .color(Self.palette[index % Self.palette.count])
                             )
                             if rect.width > 70, rect.height > 34 {
                                 let label = "\(child.name)\n\(formatFileSize(child.size))"
-                                context.draw(
-                                    Text(label).font(.caption).foregroundColor(.white),
-                                    at: CGPoint(x: rect.minX + 6, y: rect.minY + 6), anchor: .topLeading
-                                )
+                                context.drawLayer { layer in
+                                    layer.clip(to: Path(rect.insetBy(dx: 4, dy: 4)))
+                                    layer.draw(
+                                        Text(label).font(.caption).foregroundColor(.white),
+                                        at: CGPoint(x: rect.minX + 6, y: rect.minY + 6), anchor: .topLeading
+                                    )
+                                }
                             }
                         }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { location in
-                        if let hit = tiles.first(where: { $0.rect.contains(location) }) {
+                        if let hit = tiles.first(where: { $0.drawRect()?.contains(location) == true }) {
                             state.drillInto(hit.id)
                         }
                     }
@@ -50,6 +60,26 @@ struct DiskTreemapView: View {
             }
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            openButtons(node)
+        }
+    }
+
+    /// Keyboard and VoiceOver route into folders; the Canvas itself is a single read-only element.
+    @ViewBuilder
+    private func openButtons(_ node: TreemapNode) -> some View {
+        let folders = node.children.filter { !$0.children.isEmpty && $0.size > 0 }
+        if !folders.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(folders) { folder in
+                        Button { state.drillInto(folder.id) } label: {
+                            Label(folder.name, systemImage: "folder")
+                        }
+                        .controlSize(.small)
+                        .accessibilityLabel("Open \(folder.name)")
+                    }
+                }
+            }
         }
     }
 
