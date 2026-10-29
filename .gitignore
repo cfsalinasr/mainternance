@@ -7,3 +7,7 @@ Pasted *.tiff
 *.app
 dist/
 coverage.xml
+
+# Swift code-coverage output written by test runs
+*.profraw
+*.profdata
