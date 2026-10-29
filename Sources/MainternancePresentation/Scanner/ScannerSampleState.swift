@@ -80,7 +80,9 @@ enum ScanRunState: Equatable {
         case .idle: "Start a quick or full scan."
         case let .running(scanned, _): "\(max(scanned, 0).formatted()) files scanned"
         case let .finished(findings):
-            findings == 0 ? "Your Mac looks clean." : "\(findings) \(findings == 1 ? "item" : "items") need your attention."
+            findings == 0
+                ? "Your Mac looks clean."
+                : "\(findings) \(findings == 1 ? "item" : "items") need your attention."
         }
     }
 }

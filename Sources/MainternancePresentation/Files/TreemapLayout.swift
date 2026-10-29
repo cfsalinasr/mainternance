@@ -55,19 +55,7 @@ enum TreemapLayout {
                 tiles.append(TreemapTile(id: valid[index].id, rect: rect))
                 offset += length
             }
-            free = horizontalStrip
-                ? CGRect(
-                    x: free.minX + thickness,
-                    y: free.minY,
-                    width: max(free.width - thickness, 0),
-                    height: free.height
-                )
-                : CGRect(
-                    x: free.minX,
-                    y: free.minY + thickness,
-                    width: free.width,
-                    height: max(free.height - thickness, 0)
-                )
+            free = remainder(of: free, afterStrip: thickness, horizontal: horizontalStrip)
             start = end
             if free.width <= 0 || free.height <= 0 {
                 break
@@ -77,10 +65,24 @@ enum TreemapLayout {
         return tiles
     }
 
+    /// The container left over once a strip of the given thickness has been removed from its leading edge.
+    private static func remainder(of free: CGRect, afterStrip thickness: CGFloat, horizontal: Bool) -> CGRect {
+        if horizontal {
+            return CGRect(
+                x: free.minX + thickness, y: free.minY,
+                width: max(free.width - thickness, 0), height: free.height
+            )
+        }
+        return CGRect(
+            x: free.minX, y: free.minY + thickness,
+            width: free.width, height: max(free.height - thickness, 0)
+        )
+    }
+
     private static func worst(_ row: ArraySlice<Double>, _ side: Double) -> Double {
         let sum = row.reduce(0, +)
         guard let low = row.min(), let high = row.max(), low > 0, side > 0 else { return .infinity }
-        let s2 = sum * sum
-        return max(side * side * high / s2, s2 / (side * side * low))
+        let sumSquared = sum * sum
+        return max(side * side * high / sumSquared, sumSquared / (side * side * low))
     }
 }

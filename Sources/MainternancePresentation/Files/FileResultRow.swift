@@ -35,9 +35,13 @@ struct FileResultRow: View {
         }
         .solidCard()
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(file.name), \(formatFileSize(file.size)), modified \(file.modified.formatted(date: .abbreviated, time: .omitted)), \(file.path)\(badge.map { ", \($0)" } ?? "")"
-        )
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        let modified = file.modified.formatted(date: .abbreviated, time: .omitted)
+        let suffix = badge.map { ", \($0)" } ?? ""
+        return "\(file.name), \(formatFileSize(file.size)), modified \(modified), \(file.path)\(suffix)"
     }
 }
 

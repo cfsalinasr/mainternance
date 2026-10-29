@@ -69,10 +69,10 @@ enum FilesSampleData {
         Date(timeIntervalSinceNow: -days * day)
     }
 
-    private static func file(_ path: String, _ mb: Double, _ days: Double, _ kind: FileKind) -> SampleFile {
+    private static func file(_ path: String, _ megabytes: Double, _ days: Double, _ kind: FileKind) -> SampleFile {
         SampleFile(
             name: (path as NSString).lastPathComponent, path: path,
-            size: Int64(mb * 1_000_000), modified: ago(days), kind: kind
+            size: Int64(megabytes * 1_000_000), modified: ago(days), kind: kind
         )
     }
 

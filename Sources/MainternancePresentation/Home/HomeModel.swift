@@ -57,6 +57,14 @@ public struct HomeModel: Equatable, Sendable {
             goodText: "All checks passed"
         )
 
+        tiles = Self.makeTiles(snapshot: snapshot, report: report)
+        scan = Self.makeScan(overview: overview, now: now, locale: locale)
+
+        actions = overview.actions
+        temperatureText = snapshot.temperatureCelsius.map { "\(Int($0.rounded())) °C" }
+    }
+
+    private static func makeTiles(snapshot: SystemSnapshot, report: HealthReport) -> [Tile] {
         func check(_ id: CheckID) -> HealthCheck? {
             report.checks.first { $0.id == id }
         }
@@ -92,12 +100,18 @@ public struct HomeModel: Equatable, Sendable {
                 destination: check(.batteryHealth)?.destination ?? .home
             ))
         }
-        self.tiles = tiles
+        return tiles
+    }
+
+    private static func makeScan(overview: Overview, now: Date, locale: Locale) -> ScanSummary {
+        func check(_ id: CheckID) -> HealthCheck? {
+            overview.report.checks.first { $0.id == id }
+        }
 
         let scanState = max(check(.lastScan)?.state ?? .good, check(.scannerFindings)?.state ?? .good)
         let findings = overview.scan.unresolvedFindings
         let outcome = findings > 0 ? (findings == 1 ? "1 finding" : "\(findings) findings") : "clean"
-        scan = ScanSummary(
+        return ScanSummary(
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,
             last: overview.scan.lastScan.map {
@@ -105,9 +119,6 @@ public struct HomeModel: Equatable, Sendable {
             } ?? "Never scanned",
             next: overview.scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
         )
-
-        actions = overview.actions
-        temperatureText = snapshot.temperatureCelsius.map { "\(Int($0.rounded())) °C" }
     }
 
     /// Locale decides the clock (12 h with AM/PM or 24 h); no fixed pattern.

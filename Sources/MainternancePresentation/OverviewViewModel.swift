@@ -7,13 +7,13 @@ public struct OverviewSample: Equatable, Sendable {
     public var cpu: Double
     public var gpu: Double?
     public var memoryPressure: MemoryPressure
-    public var at: Date
+    public var date: Date
 
-    public init(cpu: Double, gpu: Double?, memoryPressure: MemoryPressure, at: Date) {
+    public init(cpu: Double, gpu: Double?, memoryPressure: MemoryPressure, at date: Date) {
         self.cpu = cpu
         self.gpu = gpu
         self.memoryPressure = memoryPressure
-        self.at = at
+        self.date = date
     }
 }
 

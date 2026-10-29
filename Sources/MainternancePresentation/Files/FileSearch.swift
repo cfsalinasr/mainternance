@@ -67,14 +67,15 @@ struct FileSearchCriteria: Equatable, Sendable {
 
 enum FileSearch {
     /// Case-insensitive match on name and path, combined with the type, size and date filters.
+    private static func matches(_ file: SampleFile, query: String) -> Bool {
+        file.name.localizedCaseInsensitiveContains(query) || file.path.localizedCaseInsensitiveContains(query)
+    }
+
     static func filter(_ files: [SampleFile], criteria: FileSearchCriteria, now: Date = Date()) -> [SampleFile] {
         let query = criteria.text.trimmingCharacters(in: .whitespaces)
         let cutoff = criteria.date.days.map { now.addingTimeInterval(-$0 * 86400) }
         return files.filter { file in
-            if !query.isEmpty,
-               !file.name.localizedCaseInsensitiveContains(query),
-               !file.path.localizedCaseInsensitiveContains(query)
-            {
+            if !query.isEmpty, !matches(file, query: query) {
                 return false
             }
             if let kind = criteria.kind, file.kind != kind {

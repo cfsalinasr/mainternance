@@ -19,8 +19,8 @@ struct HomeModelTests {
         )
     }
 
-    private func check(_ id: CheckID, _ state: HealthState, _ reason: String, _ to: AppDestination) -> HealthCheck {
-        HealthCheck(id: id, state: state, title: reason, reason: reason, destination: to)
+    private func check(_ id: CheckID, _ state: HealthState, _ reason: String, _ target: AppDestination) -> HealthCheck {
+        HealthCheck(id: id, state: state, title: reason, reason: reason, destination: target)
     }
 
     @Test func bannerJoinsAttentionReasonsAsDeepLinks() {
@@ -115,10 +115,10 @@ struct HomeModelTests {
     @Test func nextScanTimeFollowsLocaleClock() {
         // Sunday 2027-01-10 14:00 UTC; the formatter below uses the same fixed zone as the date.
         let sunday = Date(timeIntervalSince1970: 1_799_589_600)
-        let us = HomeModel.nextText(sunday, locale: Locale(identifier: "en_US"), timeZone: .gmt)
-        let gb = HomeModel.nextText(sunday, locale: Locale(identifier: "en_GB"), timeZone: .gmt)
-        #expect(us.contains("2:00") && us.contains("PM") && us.hasPrefix("Next: Sun"))
-        #expect(gb == "Next: Sun 14:00")
+        let usText = HomeModel.nextText(sunday, locale: Locale(identifier: "en_US"), timeZone: .gmt)
+        let gbText = HomeModel.nextText(sunday, locale: Locale(identifier: "en_GB"), timeZone: .gmt)
+        #expect(usText.contains("2:00") && usText.contains("PM") && usText.hasPrefix("Next: Sun"))
+        #expect(gbText == "Next: Sun 14:00")
     }
 
     @Test func scanSummaryWithoutDatesIsSafe() {
@@ -142,16 +142,16 @@ struct HomeModelTests {
     }
 
     @Test func seriesOmitsGpuWithoutValuesAndClamps() {
-        let at = Date()
+        let stamp = Date()
         let samples = [
-            OverviewSample(cpu: 1.4, gpu: nil, memoryPressure: .normal, at: at),
-            OverviewSample(cpu: 0.2, gpu: nil, memoryPressure: .critical, at: at)
+            OverviewSample(cpu: 1.4, gpu: nil, memoryPressure: .normal, at: stamp),
+            OverviewSample(cpu: 0.2, gpu: nil, memoryPressure: .critical, at: stamp)
         ]
         let series = HistorySeries(history: samples)
         #expect(series.cpu == [1, 0.2])
         #expect(series.gpu == nil)
         #expect(series.memory == [0, 1])
-        let withGpu = HistorySeries(history: [OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: at)])
+        let withGpu = HistorySeries(history: [OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp)])
         #expect(withGpu.gpu == [0.5])
     }
 }

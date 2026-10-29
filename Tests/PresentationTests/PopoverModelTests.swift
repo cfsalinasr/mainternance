@@ -44,66 +44,66 @@ struct PopoverModelTests {
     }
 
     @Test func fullSnapshotProducesRealValues() {
-        let m = model(overview(
+        let popover = model(overview(
             snapshot: snapshot(), last: now.addingTimeInterval(-3 * 86400), next: now.addingTimeInterval(86400)
         ))
-        #expect(m.hero.title == "Needs attention")
-        #expect(m.hero.symbol == "exclamationmark.shield")
-        #expect(m.hero.checkCount == 2)
-        #expect(m.hero.checksText == "2 checks")
-        #expect(m.metrics.map(\.title) == ["CPU", "Memory", "Thermal", "Battery"])
-        #expect(m.metrics.map(\.value) == ["23%", "Green", "Nominal", "82%"])
-        #expect(m.metrics.map(\.state) == [.good, .good, .good, .needsAttention])
-        #expect(m.metrics[3].symbol == "battery.100percent.bolt")
-        #expect(m.rows.map(\.title) == ["Disk free", "Battery health", "Last scan", "Next scan"])
-        #expect(m.rows[0].value == "41 GB")
-        #expect(m.rows[0].state == .needsAttention)
-        #expect(m.rows[1].value == "91%")
-        #expect(m.rows[2].value == "3 days ago")
-        #expect(m.rows[3].value == "tomorrow")
+        #expect(popover.hero.title == "Needs attention")
+        #expect(popover.hero.symbol == "exclamationmark.shield")
+        #expect(popover.hero.checkCount == 2)
+        #expect(popover.hero.checksText == "2 checks")
+        #expect(popover.metrics.map(\.title) == ["CPU", "Memory", "Thermal", "Battery"])
+        #expect(popover.metrics.map(\.value) == ["23%", "Green", "Nominal", "82%"])
+        #expect(popover.metrics.map(\.state) == [.good, .good, .good, .needsAttention])
+        #expect(popover.metrics[3].symbol == "battery.100percent.bolt")
+        #expect(popover.rows.map(\.title) == ["Disk free", "Battery health", "Last scan", "Next scan"])
+        #expect(popover.rows[0].value == "41 GB")
+        #expect(popover.rows[0].state == .needsAttention)
+        #expect(popover.rows[1].value == "91%")
+        #expect(popover.rows[2].value == "3 days ago")
+        #expect(popover.rows[3].value == "tomorrow")
     }
 
     @Test func columnStatesComeFromReportChecks() {
-        let m = model(overview(snapshot: snapshot(), checks: [
+        let popover = model(overview(snapshot: snapshot(), checks: [
             check(.memoryPressure, .problem), check(.thermal, .needsAttention)
         ]))
-        #expect(m.metrics.first { $0.title == "Memory" }?.state == .problem)
-        #expect(m.metrics.first { $0.title == "Thermal" }?.state == .needsAttention)
-        #expect(m.metrics.first { $0.title == "Battery" }?.state == .good)
+        #expect(popover.metrics.first { $0.title == "Memory" }?.state == .problem)
+        #expect(popover.metrics.first { $0.title == "Thermal" }?.state == .needsAttention)
+        #expect(popover.metrics.first { $0.title == "Battery" }?.state == .good)
     }
 
     @Test func missingChecksOmitColumnsInsteadOfDefaultingToGood() {
-        let m = model(overview(snapshot: snapshot(), checks: []))
-        #expect(m.metrics.map(\.title) == ["CPU", "Battery"])
-        #expect(m.hero.checksText == nil)
-        #expect(m.hero.symbol == "checkmark.shield")
+        let popover = model(overview(snapshot: snapshot(), checks: []))
+        #expect(popover.metrics.map(\.title) == ["CPU", "Battery"])
+        #expect(popover.hero.checksText == nil)
+        #expect(popover.hero.symbol == "checkmark.shield")
     }
 
     @Test func nilBatteryOmitsColumnAndHealthRow() {
-        let m = model(overview(snapshot: snapshot(battery: nil)))
-        #expect(!m.metrics.map(\.title).contains("Battery"))
-        #expect(!m.rows.map(\.title).contains("Battery health"))
+        let popover = model(overview(snapshot: snapshot(battery: nil)))
+        #expect(!popover.metrics.map(\.title).contains("Battery"))
+        #expect(!popover.rows.map(\.title).contains("Battery health"))
     }
 
     @Test func nilHealthPercentOmitsOnlyHealthRow() {
         let battery = BatterySnapshot(percent: 50, isCharging: false, healthPercent: nil, cycleCount: nil)
-        let m = model(overview(snapshot: snapshot(battery: battery)))
-        #expect(m.metrics.map(\.title).contains("Battery"))
-        #expect(!m.rows.map(\.title).contains("Battery health"))
+        let popover = model(overview(snapshot: snapshot(battery: battery)))
+        #expect(popover.metrics.map(\.title).contains("Battery"))
+        #expect(!popover.rows.map(\.title).contains("Battery health"))
     }
 
     @Test func nilScansShowNeverAndNotScheduled() {
-        let m = model(overview(snapshot: snapshot()))
-        #expect(m.rows.first { $0.title == "Last scan" }?.value == "Never")
-        #expect(m.rows.first { $0.title == "Next scan" }?.value == "Not scheduled")
+        let popover = model(overview(snapshot: snapshot()))
+        #expect(popover.rows.first { $0.title == "Last scan" }?.value == "Never")
+        #expect(popover.rows.first { $0.title == "Next scan" }?.value == "Not scheduled")
     }
 
     @Test func thermalShowsLevelWordEvenWithTemperature() {
-        var s = snapshot()
-        s.temperatureCelsius = 71
-        s.thermal = .serious
-        let m = model(overview(snapshot: s, checks: [check(.thermal, .needsAttention)]))
-        #expect(m.metrics.first { $0.title == "Thermal" }?.value == "Serious")
+        var hot = snapshot()
+        hot.temperatureCelsius = 71
+        hot.thermal = .serious
+        let popover = model(overview(snapshot: hot, checks: [check(.thermal, .needsAttention)]))
+        #expect(popover.metrics.first { $0.title == "Thermal" }?.value == "Serious")
     }
 
     @Test func visibilityDecision() {

@@ -68,22 +68,22 @@ struct WrapLayout: Layout {
 
     private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
         var origins: [CGPoint] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
+        var originX: CGFloat = 0
+        var originY: CGFloat = 0
         var rowHeight: CGFloat = 0
         var maxX: CGFloat = 0
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
+            if originX > 0, originX + size.width > width {
+                originX = 0
+                originY += rowHeight + spacing
                 rowHeight = 0
             }
-            origins.append(CGPoint(x: x, y: y))
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
+            origins.append(CGPoint(x: originX, y: originY))
+            originX += size.width + spacing
+            maxX = max(maxX, originX - spacing)
             rowHeight = max(rowHeight, size.height)
         }
-        return (CGSize(width: maxX, height: y + rowHeight), origins)
+        return (CGSize(width: maxX, height: originY + rowHeight), origins)
     }
 }

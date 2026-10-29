@@ -153,8 +153,8 @@ struct TreemapLayoutTests {
         for tile in tiles {
             #expect(bounds.contains(tile.rect))
         }
-        for (i, lhs) in tiles.enumerated() {
-            for rhs in tiles[(i + 1)...] {
+        for (index, lhs) in tiles.enumerated() {
+            for rhs in tiles[(index + 1)...] {
                 let overlap = lhs.rect.insetBy(dx: eps, dy: eps).intersection(rhs.rect.insetBy(dx: eps, dy: eps))
                 #expect(overlap.isNull || overlap.isEmpty)
             }

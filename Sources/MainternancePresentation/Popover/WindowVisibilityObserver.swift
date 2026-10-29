@@ -31,6 +31,8 @@ struct WindowVisibilityObserver: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            // Removal on window change is required: the observer re-registers for each new window.
+            // swiftlint:disable:next notification_center_detachment
             NotificationCenter.default.removeObserver(self)
             guard let window else {
                 report(false)
