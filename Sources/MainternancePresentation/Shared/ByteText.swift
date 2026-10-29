@@ -17,7 +17,12 @@ func formatBytes(_ bytes: Int64) -> String {
     byteFormatter.withLock { $0.string(fromByteCount: max(bytes, 0)) }
 }
 
-/// Free disk space as text, or `Unavailable` when the total is unknown (a failed read), never "0 GB".
+/// The single rule for the disk reading: nil when the total is unknown (a failed read), never "0 GB".
+func diskFreeKnownText(_ snapshot: SystemSnapshot) -> String? {
+    snapshot.diskTotalBytes > 0 ? formatBytes(snapshot.diskFreeBytes) : nil
+}
+
+/// Free disk space for rows and tiles: `Unavailable` when unknown.
 func diskFreeText(_ snapshot: SystemSnapshot) -> String {
-    snapshot.diskTotalBytes > 0 ? formatBytes(snapshot.diskFreeBytes) : "Unavailable"
+    diskFreeKnownText(snapshot) ?? "Unavailable"
 }

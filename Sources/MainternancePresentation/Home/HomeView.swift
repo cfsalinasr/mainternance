@@ -26,9 +26,12 @@ public struct HomeView: View {
                         MetricTile(tile: tile) { navigation.open(tile.destination) }
                     }
                 }
-                SuggestedActionsCard(actions: model.actions, open: navigation.open)
+                SuggestedActionsCard(
+                    actions: model.actions, emptyText: model.suggestionsEmptyText, open: navigation.open
+                )
                 ScanSummaryCard(summary: model.scan)
                 DetailsDisclosure(
+                    state: DetailsState(history: viewModel.history),
                     series: HistorySeries(history: viewModel.history),
                     temperatureText: model.temperatureText
                 )

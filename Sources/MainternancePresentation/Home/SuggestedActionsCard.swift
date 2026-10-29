@@ -3,13 +3,14 @@ import SwiftUI
 
 struct SuggestedActionsCard: View {
     let actions: [SuggestedAction]
+    let emptyText: String?
     let open: (AppDestination) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Suggested").font(.caption).foregroundStyle(.secondary)
-            if actions.isEmpty {
-                Text(HomeModel.noSuggestionsText).font(.system(size: 13)).foregroundStyle(.secondary)
+            if let emptyText {
+                Text(emptyText).font(.system(size: 13)).foregroundStyle(.secondary)
             }
             ForEach(actions) { action in
                 Button { open(action.destination) } label: {

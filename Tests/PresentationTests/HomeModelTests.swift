@@ -161,8 +161,11 @@ struct HomeModelTests {
         expectClose(series.cpu ?? [], [1, 0.2])
         #expect(series.gpu == nil)
         #expect(series.memory == [0, 1])
-        let withGpu = HistorySeries(history: [OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp)])
-        expectClose(withGpu.gpu ?? [], [0.5])
+        let withGpu = HistorySeries(history: [
+            OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp),
+            OverviewSample(cpu: 0, gpu: 1.5, memoryPressure: .warning, at: stamp)
+        ])
+        expectClose(withGpu.gpu ?? [], [0.5, 1])
     }
 
     private func expectClose(
@@ -220,7 +223,7 @@ struct HomeModelTests {
         ]
         let series = HistorySeries(history: samples)
         expectClose(series.cpu ?? [], [0.5, 0.25])
-        expectClose(series.memory ?? [], [0.5])
+        #expect(series.memory == nil) // Only one sample knows the pressure: nothing to draw.
         let none = HistorySeries(history: [OverviewSample(cpu: nil, gpu: nil, memoryPressure: nil, at: stamp)])
         #expect(none.cpu == nil)
         #expect(none.memory == nil)
@@ -235,7 +238,28 @@ struct HomeModelTests {
     }
 
     @Test func emptySuggestionsHaveAOneLineEmptyState() {
-        #expect(HomeModel.noSuggestionsText == "Nothing to suggest yet")
         #expect(HomeModel(overview: overview()).actions.isEmpty)
+        #expect(HomeModel(overview: overview()).suggestionsEmptyText == "Nothing to suggest yet")
+    }
+}
+
+extension HomeModelTests {
+    @Test func suggestionsEmptyTextAppearsOnlyWithoutActions() {
+        let empty = HomeModel(overview: overview())
+        #expect(empty.suggestionsEmptyText == "Nothing to suggest yet")
+        let action = SuggestedAction(
+            id: "x", title: "Free space", detail: "d", symbol: "sparkles", destination: .cleanup
+        )
+        let full = HomeModel(overview: Overview(
+            snapshot: makeSnapshot(), scan: nil, report: HealthReport(checks: []), actions: [action]
+        ))
+        #expect(full.suggestionsEmptyText == nil)
+    }
+
+    @Test func goodBannerSaysAvailableWhenSomeChecksAreMissing() {
+        let partial = HomeModel(overview: overview(checks: [check(.diskSpace, .good, "ok", .home)]))
+        #expect(partial.banner.goodText == "All available checks passed")
+        let all = CheckID.allCases.map { check($0, .good, "ok", .home) }
+        #expect(HomeModel(overview: overview(checks: all)).banner.goodText == "All checks passed")
     }
 }

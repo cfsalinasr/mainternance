@@ -43,6 +43,11 @@ public struct HomeModel: Equatable, Sendable {
     public static let noSuggestionsText = "Nothing to suggest yet"
 
     public var banner: Banner
+    /// Non-nil when there is nothing to suggest, so the card is never silently blank.
+    public var suggestionsEmptyText: String? {
+        actions.isEmpty ? Self.noSuggestionsText : nil
+    }
+
     public var tiles: [Tile]
     public var scan: ScanSummary
     public var actions: [SuggestedAction]
@@ -58,7 +63,7 @@ public struct HomeModel: Equatable, Sendable {
             state: state, title: state.title,
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             reasons: report.attentionChecks.map { Reason(id: $0.id, text: $0.reason, destination: $0.destination) },
-            goodText: "All checks passed"
+            goodText: Self.goodText(report: report)
         )
 
         tiles = Self.makeTiles(snapshot: snapshot, report: report)
@@ -66,6 +71,12 @@ public struct HomeModel: Equatable, Sendable {
 
         actions = overview.actions
         temperatureText = Self.temperatureText(snapshot.temperatureCelsius)
+    }
+
+    /// Honest wording: when some checks cannot be made, "all" would overstate what was measured.
+    static func goodText(report: HealthReport) -> String {
+        let measured = Set(report.checks.map(\.id))
+        return measured.count == CheckID.allCases.count ? "All checks passed" : "All available checks passed"
     }
 
     /// Nil for a missing or non-finite reading (a sensor can report NaN or infinity), so the row is omitted.
@@ -151,18 +162,21 @@ public struct HomeModel: Equatable, Sendable {
 
 /// Plain numeric series for the Details sparklines, all in 0...1.
 public struct HistorySeries: Equatable, Sendable {
-    /// Nil when no sample has a CPU value, so the row is omitted.
+    /// Nil when fewer than two samples have a CPU value, so the row is omitted.
     public var cpu: [Double]?
-    /// Nil when no sample has a GPU value, so the row is omitted.
+    /// Nil when fewer than two samples have a GPU value, so the row is omitted.
     public var gpu: [Double]?
-    /// Nil when no sample knows the memory pressure, so the row is omitted.
+    /// Nil when fewer than two samples know the memory pressure, so the row is omitted.
     public var memory: [Double]?
+
+    /// A line needs two points; a row with nothing drawn must not appear.
+    static let minimumPoints = 2
 
     public init(history: [OverviewSample]) {
         let cpuValues = history.compactMap(\.cpu)
-        cpu = cpuValues.isEmpty ? nil : cpuValues.map(Self.clamp)
+        cpu = cpuValues.count < Self.minimumPoints ? nil : cpuValues.map(Self.clamp)
         let gpuValues = history.compactMap(\.gpu)
-        gpu = gpuValues.isEmpty ? nil : gpuValues.map(Self.clamp)
+        gpu = gpuValues.count < Self.minimumPoints ? nil : gpuValues.map(Self.clamp)
         let memoryValues: [Double] = history.compactMap {
             switch $0.memoryPressure {
             case .normal: 0
@@ -171,7 +185,7 @@ public struct HistorySeries: Equatable, Sendable {
             case nil: nil
             }
         }
-        memory = memoryValues.isEmpty ? nil : memoryValues
+        memory = memoryValues.count < Self.minimumPoints ? nil : memoryValues
     }
 
     private static func clamp(_ value: Double) -> Double {

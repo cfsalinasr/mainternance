@@ -2,12 +2,19 @@ import SwiftUI
 
 /// Collapsed by default; the system disclosure group keeps its own expansion state.
 struct DetailsDisclosure: View {
+    let state: DetailsState
     let series: HistorySeries
     let temperatureText: String?
 
     var body: some View {
         DisclosureGroup("Details") {
             VStack(spacing: 10) {
+                if state == .collecting {
+                    Text(DetailsState.collectingText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let cpu = series.cpu {
                     SparklineRow(title: "CPU", values: cpu)
                 }
