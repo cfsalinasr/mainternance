@@ -239,9 +239,9 @@ struct SettingsViewStateTests {
         state.setWeekday(2)
         state.setTime(hour: 14, minute: 5)
         #expect(state.scheduleSummary(locale: Locale(identifier: "en_GB"), timeZone: utc) == "Weekly, Monday 14:05")
-        let us = state.scheduleSummary(locale: Locale(identifier: "en_US"), timeZone: utc)
-        #expect(us.hasPrefix("Weekly, Monday 2:05"))
-        #expect(us.contains("PM"))
+        let usSummary = state.scheduleSummary(locale: Locale(identifier: "en_US"), timeZone: utc)
+        #expect(usSummary.hasPrefix("Weekly, Monday 2:05"))
+        #expect(usSummary.contains("PM"))
     }
 
     @Test func defaults() {
