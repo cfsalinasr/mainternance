@@ -7,17 +7,20 @@ public struct MainWindowView: View {
     private let scanNow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
     private let filesState: FilesViewState
+    private let scannerState: ScannerViewState
 
     public init(
         navigation: Navigation,
         overview: OverviewViewModel,
         filesState: FilesViewState,
+        scannerState: ScannerViewState,
         scanNow: @escaping () -> Void = {},
         onVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
         self.navigation = navigation
         self.overview = overview
         self.filesState = filesState
+        self.scannerState = scannerState
         self.scanNow = scanNow
         self.onVisibilityChange = onVisibilityChange
     }
@@ -41,7 +44,9 @@ public struct MainWindowView: View {
             HomeView(viewModel: overview, navigation: navigation, scanNow: scanNow)
         case .files:
             FilesView(navigation: navigation, state: filesState)
-        case .cleanup, .scanner, .startup, .uninstaller, .settings:
+        case .scanner:
+            ScannerView(state: scannerState)
+        case .cleanup, .startup, .uninstaller, .settings:
             ComingSoonView(destination: navigation.selection)
         }
     }

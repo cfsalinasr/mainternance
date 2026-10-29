@@ -8,6 +8,7 @@ struct MainternanceApp: App {
     private let viewModel: OverviewViewModel
     private let navigation = Navigation()
     private let filesState = FilesViewState()
+    private let scannerState = ScannerViewState()
     private let visibility: VisibilityCoordinator
 
     init() {
@@ -33,6 +34,7 @@ struct MainternanceApp: App {
                 navigation: navigation,
                 overview: viewModel,
                 filesState: filesState,
+                scannerState: scannerState,
                 scanNow: { Task { await viewModel.refresh() } }, // Real scanning arrives in a later plan.
                 onVisibilityChange: { visibility.report(.window, visible: $0) }
             )
