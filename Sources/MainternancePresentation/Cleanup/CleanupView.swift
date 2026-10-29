@@ -102,9 +102,9 @@ struct CleanupReviewSheet: View {
             .accessibilityElement(children: .combine)
             HStack {
                 Spacer()
-                Button("Cancel") { state.cancelReview() }.keyboardShortcut(.cancelAction)
-                Button("Move to Trash") { state.confirmReview() }
-                    .keyboardShortcut(.defaultAction)
+                // Safety: Return triggers Cancel; Move to Trash must be an explicit click.
+                Button("Cancel") { state.cancelReview() }.keyboardShortcut(.defaultAction)
+                Button("Move to Trash", role: .destructive) { state.confirmReview() }
                     .accessibilityHint("Marks the listed categories as cleaned in this preview")
             }
         }
