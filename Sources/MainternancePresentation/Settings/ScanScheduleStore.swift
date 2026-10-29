@@ -21,6 +21,14 @@ public final class ScanScheduleStore {
         schedule.minute = ScheduleInput.minute(minute)
     }
 
+    /// Shown under the schedule controls and next to the Scanner's schedule line.
+    static let previewCaption = "Preview: nothing is scheduled yet"
+
+    /// VoiceOver text for the schedule line; identifies it as a sample, not an active schedule.
+    func accessibilityLabel(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        "Sample schedule: \(summary(locale: locale, timeZone: timeZone))"
+    }
+
     func summary(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         schedule.description(locale: locale, timeZone: timeZone)
     }

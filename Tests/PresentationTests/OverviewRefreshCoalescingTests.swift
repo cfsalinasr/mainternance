@@ -2,7 +2,7 @@ import MainternanceDomain
 import MainternancePresentation
 import Testing
 
-/// `refresh()` calls that overlap (the loop and "Scan now") share one load and one history sample.
+/// `refresh()` calls that overlap (the loop and a manual refresh) share one load and one history sample.
 @MainActor
 struct OverviewRefreshCoalescingTests {
     /// Polls observable state with a bound (never a fixed delay) until `condition` holds.
@@ -37,7 +37,7 @@ struct OverviewRefreshCoalescingTests {
         model.setVisible(true)
         let first = Task { await model.refresh() }
         await gate.waitForEntry()
-        let second = Task { await model.refresh() } // e.g. "Scan now" while the loop is loading
+        let second = Task { await model.refresh() } // e.g. a manual refresh while the loop is loading
         await settle()
         #expect(await gate.entered == 1)
         await gate.open()

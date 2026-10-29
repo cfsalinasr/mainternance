@@ -73,6 +73,10 @@ public final class SettingsViewState {
         calendar.date(from: DateComponents(hour: hour, minute: minute)) ?? Date(timeIntervalSinceReferenceDate: 0)
     }
 
+    func scheduleAccessibilityLabel(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        scheduleStore.accessibilityLabel(locale: locale, timeZone: timeZone)
+    }
+
     func scheduleSummary(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         scheduleStore.summary(locale: locale, timeZone: timeZone)
     }

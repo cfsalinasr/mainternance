@@ -3,18 +3,10 @@ import SwiftUI
 public struct HomeView: View {
     private let viewModel: OverviewViewModel
     private let navigation: Navigation
-    private let scanNow: () -> Void
 
-    public init(
-        viewModel: OverviewViewModel,
-        navigation: Navigation,
-        scanNow: @escaping () -> Void = {
-            // Default: no scan action (previews); the app passes the real one.
-        }
-    ) {
+    public init(viewModel: OverviewViewModel, navigation: Navigation) {
         self.viewModel = viewModel
         self.navigation = navigation
-        self.scanNow = scanNow
     }
 
     public var body: some View {
@@ -28,7 +20,7 @@ public struct HomeView: View {
     private func content(_ model: HomeModel) -> some View {
         ScrollView {
             VStack(spacing: 12) {
-                HealthBanner(banner: model.banner, open: navigation.open, scanNow: scanNow)
+                HealthBanner(banner: model.banner, open: navigation.open)
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(model.tiles) { tile in
                         MetricTile(tile: tile) { navigation.open(tile.destination) }

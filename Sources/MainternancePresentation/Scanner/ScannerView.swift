@@ -10,6 +10,9 @@ public struct ScannerView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if !state.engineConnected {
+                    Text(ScannerViewState.sampleNote).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
                 EngineStatusCard(engine: state.engine)
                 scanButtons
                 ScanProgressCard(run: state.run)
@@ -17,7 +20,8 @@ public struct ScannerView: View {
                 Text(state.scheduleSummary())
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Scheduled scan: \(state.scheduleSummary())")
+                    .accessibilityLabel(state.scheduleAccessibilityLabel())
+                Text(ScanScheduleStore.previewCaption).font(.system(size: 11)).foregroundStyle(.secondary)
                 designPreview
             }
             .padding(20)
@@ -39,20 +43,25 @@ public struct ScannerView: View {
     }
 
     private var scanButtons: some View {
-        HStack {
-            // The actions have no backend yet; enabled buttons simply do nothing.
-            Button("Quick scan") {
-                // Inert: the scanner engine arrives in a later plan.
+        let hint = state.canStartScan ? "" : ScannerHelp.engineNotConnected
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Button("Quick scan") {
+                    // Inert: the scanner engine arrives in a later plan; disabled until then.
+                }
+                .accessibilityHint(hint)
+                Button("Full scan") {
+                    // Inert: the scanner engine arrives in a later plan; disabled until then.
+                }
+                .accessibilityHint(hint)
+                Spacer()
             }
-            .accessibilityHint(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
-            Button("Full scan") {
-                // Inert: the scanner engine arrives in a later plan.
+            .disabled(!state.canStartScan)
+            .help(hint)
+            if !hint.isEmpty {
+                Text(hint).font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            .accessibilityHint(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
-            Spacer()
         }
-        .disabled(!state.engine.canScan)
-        .help(state.engine.canScan ? "" : ScannerHelp.engineNotConnected)
     }
 
     @ViewBuilder

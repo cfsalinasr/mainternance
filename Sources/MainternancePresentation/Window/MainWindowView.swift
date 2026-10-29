@@ -4,7 +4,6 @@ import SwiftUI
 public struct MainWindowView: View {
     private let navigation: Navigation
     private let overview: OverviewViewModel
-    private let scanNow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
     private let states: WindowStates
 
@@ -12,9 +11,6 @@ public struct MainWindowView: View {
         navigation: Navigation,
         overview: OverviewViewModel,
         states: WindowStates,
-        scanNow: @escaping () -> Void = {
-            // Default: no scan action (previews); the app passes the real one.
-        },
         onVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in
             // Default: visibility is not observed (previews); the app passes the real handler.
         }
@@ -22,7 +18,6 @@ public struct MainWindowView: View {
         self.navigation = navigation
         self.overview = overview
         self.states = states
-        self.scanNow = scanNow
         self.onVisibilityChange = onVisibilityChange
     }
 
@@ -42,7 +37,7 @@ public struct MainWindowView: View {
     private var detail: some View {
         switch navigation.selection {
         case .home:
-            HomeView(viewModel: overview, navigation: navigation, scanNow: scanNow)
+            HomeView(viewModel: overview, navigation: navigation)
         case .files:
             FilesView(navigation: navigation, state: states.files)
         case .scanner:

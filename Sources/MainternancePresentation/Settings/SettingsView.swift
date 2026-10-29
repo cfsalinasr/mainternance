@@ -50,7 +50,8 @@ public struct SettingsView: View {
             )
             .accessibilityLabel("Scan time")
             Text(state.scheduleSummary()).font(.system(size: 12)).foregroundStyle(.secondary)
-                .accessibilityLabel("Scheduled scan: \(state.scheduleSummary())")
+                .accessibilityLabel(state.scheduleAccessibilityLabel())
+            Text(ScanScheduleStore.previewCaption).font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()

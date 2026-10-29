@@ -4,18 +4,15 @@ import SwiftUI
 public struct PopoverView: View {
     private let viewModel: OverviewViewModel
     private let openWindow: () -> Void
-    private let scanNow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
 
     public init(
         viewModel: OverviewViewModel,
         openWindow: @escaping () -> Void,
-        scanNow: @escaping () -> Void,
         onVisibilityChange: @escaping @MainActor (Bool) -> Void
     ) {
         self.viewModel = viewModel
         self.openWindow = openWindow
-        self.scanNow = scanNow
         self.onVisibilityChange = onVisibilityChange
     }
 
@@ -50,7 +47,7 @@ public struct PopoverView: View {
             }
         }
         Divider()
-        actionButton("Scan now", symbol: "arrow.clockwise", action: scanNow)
+        actionButton("Scan now", symbol: "arrow.clockwise", disabledHint: ScannerHelp.engineNotConnected)
         actionButton("Open Mainternance", symbol: "chevron.right", action: openWindow)
     }
 
@@ -72,8 +69,14 @@ public struct PopoverView: View {
         }
     }
 
-    private func actionButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    /// With a `disabledHint` the button is inert and disabled, and the hint is its help and VoiceOver hint.
+    private func actionButton(
+        _ title: String,
+        symbol: String,
+        disabledHint: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        Button { action?() } label: {
             HStack {
                 Text(title)
                 Spacer()
@@ -83,5 +86,8 @@ public struct PopoverView: View {
         }
         .buttonStyle(.plain)
         .font(.system(size: 13))
+        .disabled(disabledHint != nil)
+        .help(disabledHint ?? "")
+        .accessibilityHint(disabledHint ?? "")
     }
 }

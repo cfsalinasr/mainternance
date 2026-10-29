@@ -83,18 +83,49 @@ struct ViewLogicTests {
         #expect(name("/") == "/")
         #expect(name("").isEmpty)
     }
+}
 
-    @Test func scanNowRefreshesTheOverview() async {
-        let model = OverviewViewModel(
-            load: LoadOverview(
-                snapshots: FakeSnapshots(counter: CallCounter()), scans: FakeScans(), actions: FakeActions()
-            ),
-            sleep: { _ in }
-        )
-        model.scanNow()
-        for _ in 0 ..< 2000 where model.overview == nil {
-            try? await Task.sleep(for: .milliseconds(5))
+@MainActor
+struct ScanGatingTests {
+    @Test func scansNeverStartWhileTheEngineIsNotConnected() {
+        let state = ScannerViewState()
+        #expect(!state.engineConnected)
+        for preview in ScannerPreview.all {
+            state.select(previewID: preview.id)
+            #expect(!state.canStartScan, "\(preview.id)")
         }
-        #expect(model.overview != nil)
+        // The sample "ready" engine can scan on its own; only the missing connection disables the buttons.
+        state.select(previewID: "ready-idle")
+        #expect(state.engine.canScan)
+    }
+
+    @Test func scansStartOnlyWhenTheEngineCanScanAndIsConnected() {
+        for connected in [false, true] {
+            let state = ScannerViewState(engineConnected: connected)
+            for preview in ScannerPreview.all {
+                state.select(previewID: preview.id)
+                #expect(state.canStartScan == (preview.engine.canScan && connected), "\(preview.id) \(connected)")
+            }
+        }
+    }
+
+    @Test func sampleNoteAndHelpTextAreExact() {
+        #expect(ScannerViewState.sampleNote == "Sample only: no scans run yet")
+        #expect(ScannerHelp.engineNotConnected == "Available when the scanner engine is connected")
+    }
+
+    @Test func scheduleIsLabelledAsASample() {
+        let states = WindowStates()
+        states.settings.setWeekday(2)
+        states.settings.setTime(hour: 9, minute: 5)
+        let british = Locale(identifier: "en_GB")
+        let utc = TimeZone(identifier: "UTC") ?? .gmt
+        let summary = states.settings.scheduleSummary(locale: british, timeZone: utc)
+        #expect(summary == "Weekly, Monday 09:05") // the displayed text is unchanged
+        #expect(states.settings
+            .scheduleAccessibilityLabel(locale: british, timeZone: utc) == "Sample schedule: \(summary)")
+        #expect(states.scanner
+            .scheduleAccessibilityLabel(locale: british, timeZone: utc) == "Sample schedule: \(summary)")
+        #expect(ScanScheduleStore.previewCaption == "Preview: nothing is scheduled yet")
     }
 }

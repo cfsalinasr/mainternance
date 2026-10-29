@@ -33,7 +33,6 @@ struct MainternanceApp: App {
                 navigation: navigation,
                 overview: viewModel,
                 states: states,
-                scanNow: { viewModel.scanNow() },
                 onVisibilityChange: { visibility.report(.window, visible: $0) }
             )
         }
@@ -54,7 +53,6 @@ private struct PopoverHost: View {
                 openWindow(id: "main")
                 NSApp.activate()
             },
-            scanNow: { viewModel.scanNow() },
             onVisibilityChange: { visibility.report(.popover, visible: $0) }
         )
     }

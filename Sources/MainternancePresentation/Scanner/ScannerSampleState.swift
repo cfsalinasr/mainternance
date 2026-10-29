@@ -235,7 +235,12 @@ public final class ScannerViewState {
         self.init(findings: ScannerSampleData.findings, schedule: schedule)
     }
 
-    init(findings: [ScanFinding] = ScannerSampleData.findings, schedule: ScanScheduleStore = ScanScheduleStore()) {
+    init(
+        findings: [ScanFinding] = ScannerSampleData.findings,
+        schedule: ScanScheduleStore = ScanScheduleStore(),
+        engineConnected: Bool = false
+    ) {
+        self.engineConnected = engineConnected
         self.findings = findings
         scheduleStore = schedule
         let first = ScannerPreview.all.first { $0.id == "ready-findings" } ?? ScannerPreview.all[0]
@@ -248,6 +253,21 @@ public final class ScannerViewState {
     func scheduleSummary(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         scheduleStore.summary(locale: locale, timeZone: timeZone)
     }
+
+    func scheduleAccessibilityLabel(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        scheduleStore.accessibilityLabel(locale: locale, timeZone: timeZone)
+    }
+
+    /// False until a real scanner engine is wired in; scans cannot start before that.
+    let engineConnected: Bool
+
+    /// The pure rule behind the Quick scan and Full scan buttons.
+    var canStartScan: Bool {
+        engine.canScan && engineConnected
+    }
+
+    /// Visible in the scanner header while no engine is connected.
+    static let sampleNote = "Sample only: no scans run yet"
 
     /// What the results area shows for the current run.
     enum ResultsContent: Equatable {

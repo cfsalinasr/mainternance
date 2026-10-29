@@ -49,7 +49,7 @@ public final class OverviewViewModel {
 
     /// Loads and publishes a fresh overview. A result that arrives after the calling task (such as the
     /// loop) was cancelled is dropped, so a stopped or restarted loop never writes stale state.
-    /// Calls made while a load is in flight join it instead of starting another, so a "Scan now" that
+    /// Calls made while a load is in flight join it instead of starting another, so a manual refresh that
     /// overlaps the loop's refresh produces one load and one history sample.
     public func refresh() async {
         if isLoading {
@@ -71,11 +71,6 @@ public final class OverviewViewModel {
         for (index, joiner) in waiting.enumerated() {
             joiner.resume(returning: index == 0 && !published ? loaded : nil)
         }
-    }
-
-    /// "Scan now": a fresh refresh without waiting for the loop. Real scanning arrives in a later plan.
-    public func scanNow() {
-        Task { await refresh() }
     }
 
     private func publish(_ loaded: Overview) {

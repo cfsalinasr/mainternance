@@ -5,7 +5,6 @@ import SwiftUI
 struct HealthBanner: View {
     let banner: HomeModel.Banner
     let open: (AppDestination) -> Void
-    let scanNow: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -17,8 +16,13 @@ struct HealthBanner: View {
                 reasons
             }
             Spacer()
-            Button("Scan now", action: scanNow)
-                .buttonStyle(.glass)
+            Button("Scan now") {
+                // Inert: the scanner engine arrives in a later plan; the button is disabled.
+            }
+            .buttonStyle(.glass)
+            .disabled(true)
+            .help(ScannerHelp.engineNotConnected)
+            .accessibilityHint(ScannerHelp.engineNotConnected)
         }
         .padding(16)
         .glassEffect(
