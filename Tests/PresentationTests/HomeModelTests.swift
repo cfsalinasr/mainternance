@@ -233,4 +233,9 @@ struct HomeModelTests {
         #expect(Sparkline(values: [0.5]).path(in: rect).isEmpty)
         #expect(!Sparkline(values: [0.5, 0.7]).path(in: rect).isEmpty)
     }
+
+    @Test func emptySuggestionsHaveAOneLineEmptyState() {
+        #expect(HomeModel.noSuggestionsText == "Nothing to suggest yet")
+        #expect(HomeModel(overview: overview()).actions.isEmpty)
+    }
 }

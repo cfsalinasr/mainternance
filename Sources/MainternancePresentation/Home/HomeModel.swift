@@ -39,6 +39,9 @@ public struct HomeModel: Equatable, Sendable {
         public var next: String?
     }
 
+    /// Shown in the Suggested card when there is nothing to suggest.
+    public static let noSuggestionsText = "Nothing to suggest yet"
+
     public var banner: Banner
     public var tiles: [Tile]
     public var scan: ScanSummary
