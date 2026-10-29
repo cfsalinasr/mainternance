@@ -27,6 +27,7 @@ public final class CPUReader: Sendable {
 
     /// Busy fraction `0...1` since the previous call. The first call only stores the baseline and returns nil,
     /// as does any call whose sample is unreadable or whose delta is unusable.
+    /// Assumes a single poller: overlapping calls from several threads can double-count an interval.
     public func usage() -> Double? {
         guard let current = readRaw() else { return nil }
         let before = previous.withLock { stored -> CPUTicks? in
@@ -53,6 +54,10 @@ public final class CPUReader: Sendable {
         return min(max(fraction, 0), 1)
     }
 
+    /// `mach_host_self()` returns a NEW send right on every call and nothing releases it, so calling it per poll
+    /// would leak one port reference each time. The right is created once and kept for the process lifetime.
+    private static let hostPort = mach_host_self()
+
     /// Thin wrapper over `host_statistics(HOST_CPU_LOAD_INFO)`; any failure yields nil.
     @Sendable
     public static func readSystem() -> CPUTicks? {
@@ -62,7 +67,7 @@ public final class CPUReader: Sendable {
         )
         let status = withUnsafeMutablePointer(to: &info) { pointer in
             pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
+                host_statistics(hostPort, HOST_CPU_LOAD_INFO, $0, &count)
             }
         }
         guard status == KERN_SUCCESS else { return nil }

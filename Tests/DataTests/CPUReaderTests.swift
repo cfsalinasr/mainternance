@@ -72,12 +72,10 @@ struct CPUReaderTests {
             previous: ticks(big, big, big, 0), current: ticks(big + 100, big + 100, big + 200, 0)
         ))
         #expect(abs(value - 0.5) < 1e-9)
-        let extreme = CPUReader.usage(
+        let extreme = try #require(CPUReader.usage(
             previous: ticks(0, 0, 0, 0), current: ticks(UInt64.max, UInt64.max, UInt64.max, UInt64.max)
-        )
-        if let extreme {
-            #expect(extreme.isFinite && (0 ... 1).contains(extreme))
-        }
+        ))
+        #expect(extreme.isFinite && (0 ... 1).contains(extreme))
     }
 
     @Test func systemReaderSmoke() {
@@ -85,6 +83,22 @@ struct CPUReaderTests {
         #expect(sut.usage() == nil)
         if let value = sut.usage() {
             #expect(value.isFinite && (0 ... 1).contains(value))
+        }
+    }
+
+    /// A per-call Mach port leak cannot be asserted directly; this exercises the real reader heavily so a
+    /// regression toward port exhaustion would surface.
+    @Test func systemReaderSurvivesManyCalls() {
+        for _ in 0 ..< 2000 {
+            let ticks = CPUReader.readSystem()
+            #expect(ticks != nil)
+        }
+        let sut = CPUReader()
+        _ = sut.usage()
+        for _ in 0 ..< 2000 {
+            if let value = sut.usage() {
+                #expect(value.isFinite && (0 ... 1).contains(value))
+            }
         }
     }
 }
