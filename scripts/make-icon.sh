@@ -2,6 +2,7 @@
 # Generates AppIcon.icns (no Xcode): Swift renders a 1024px PNG, sips resizes, iconutil packs.
 # Output goes to the build dir, never into the repo.
 set -euo pipefail
+# MAINTERNANCE_BUILD_DIR is the cache ROOT (default ~/Library/Caches/mainternance); build, dist and icon live under it.
 cd "$(dirname "$0")/.."
 
 OUT_ROOT="${MAINTERNANCE_BUILD_DIR:-$HOME/Library/Caches/mainternance}"

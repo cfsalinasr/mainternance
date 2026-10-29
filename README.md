@@ -33,8 +33,9 @@ choose Open Mainternance to show the window.
 ## Building
 
 Build products go out-of-tree because an iCloud-synced Desktop corrupts in-repo `.build` output.
-`scripts/test.sh` uses `$MAINTERNANCE_BUILD_DIR`, defaulting to `~/Library/Caches/mainternance/build`.
-Use the same location for manual builds: `swift build --scratch-path ~/Library/Caches/mainternance/build`.
+`$MAINTERNANCE_BUILD_DIR` is the cache root (default `~/Library/Caches/mainternance`); the scripts use
+`build/`, `dist/` and `icon/` under it. For manual builds use
+`swift build --scratch-path ~/Library/Caches/mainternance/build`.
 
 ## Tooling
 

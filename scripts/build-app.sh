@@ -3,6 +3,7 @@
 # Everything is built out of the repo (an iCloud-synced Desktop breaks codesign).
 # Usage: scripts/build-app.sh [--install]   (--install also copies the app to /Applications)
 set -euo pipefail
+# MAINTERNANCE_BUILD_DIR is the cache ROOT (default ~/Library/Caches/mainternance); build, dist and icon live under it.
 cd "$(dirname "$0")/.."
 
 INSTALL=0
@@ -56,9 +57,23 @@ echo "Built and signed: $APP"
 
 if [[ "$INSTALL" -eq 1 ]]; then
     DEST="/Applications/$APP_NAME.app"
-    osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true
-    sleep 1
-    rm -rf "$DEST"
-    ditto "$APP" "$DEST"
+    STAGE="/Applications/.$APP_NAME.app.new"
+    OLD="/Applications/.$APP_NAME.app.old"
+    if pgrep -x "$APP_NAME" >/dev/null; then
+        osascript -e 'tell application id "com.cfsalinasr.mainternance" to quit' || true
+        for _ in $(seq 1 20); do
+            pgrep -x "$APP_NAME" >/dev/null || break
+            sleep 0.5
+        done
+        if pgrep -x "$APP_NAME" >/dev/null; then
+            echo "ERROR: $APP_NAME is still running; quit it and re-run. /Applications was not touched." >&2
+            exit 1
+        fi
+    fi
+    rm -rf "$STAGE" "$OLD"
+    ditto "$APP" "$STAGE" || { rm -rf "$STAGE"; echo "ERROR: copy failed; existing install untouched." >&2; exit 1; }
+    [[ -e "$DEST" ]] && mv "$DEST" "$OLD"
+    mv "$STAGE" "$DEST"
+    rm -rf "$OLD"
     echo "Installed: $DEST"
 fi

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Creates a self-signed code-signing identity "Mainternance Local Signing" in the login keychain,
 # so rebuilt apps keep a stable signature (and macOS keeps granted permissions such as Full Disk Access).
-# Idempotent. Use --dry-run to print the commands without running them.
+# Idempotent: handles a valid identity, a half-finished earlier run (certificate not trusted) and a fresh start.
+# Use --dry-run to print the detected case and the commands it would run (read-only probes only).
 set -euo pipefail
+umask 077
 
 NAME="Mainternance Local Signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
@@ -16,23 +18,42 @@ case "${1:-}" in
 esac
 
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$NAME\""; then
-    echo "Signing identity '$NAME' already exists in the keychain. Nothing to do."
+    echo "Case (a): valid signing identity '$NAME' already exists. Nothing to do."
     exit 0
 fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/mainternance-cert.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
-P12_PASS="mainternance-$$"
+P12_PASS="$(openssl rand -hex 16)"
 
+# Prints the command (secrets masked) and runs it unless --dry-run.
 run() {
-    echo "+ $*"
+    local shown="${*//$P12_PASS/****}"
+    echo "+ $shown"
     if [[ "$DRY_RUN" -eq 0 ]]; then
         "$@"
     fi
 }
 
-echo "Creating signing identity '$NAME' (valid $DAYS days)."
-[[ "$DRY_RUN" -eq 1 ]] && echo "Dry run: nothing below is executed."
+[[ "$DRY_RUN" -eq 1 ]] && echo "Dry run: commands are printed, not executed."
+
+if security find-certificate -c "$NAME" "$KEYCHAIN" >/dev/null 2>&1; then
+    echo "Case (b): a certificate '$NAME' is in the keychain but is not a valid identity"
+    echo "(trust step missing or cancelled, or the certificate expired). Not importing again."
+    echo "Re-running only the trust step for the existing certificate."
+    echo "+ security find-certificate -c '$NAME' -p '$KEYCHAIN' > cert.pem"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        security find-certificate -c "$NAME" -p "$KEYCHAIN" > "$WORK/cert.pem"
+    fi
+    run security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$WORK/cert.pem"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        echo "Trust step done. If it is still not valid the certificate may be expired: delete it in"
+        echo "Keychain Access and run this script again. Check: security find-identity -v -p codesigning"
+    fi
+    exit 0
+fi
+
+echo "Case (c): nothing found. Creating signing identity '$NAME' (valid $DAYS days)."
 
 cat > "$WORK/openssl.cnf" <<CNF
 [req]
@@ -61,7 +82,7 @@ echo "Trusting the certificate for code signing (macOS asks for your password)."
 run security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$WORK/cert.pem"
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "Dry run complete. Temporary files would be removed on exit."
+    echo "Dry run complete. Temporary files are removed on exit."
 else
     echo "Done. Verify with: security find-identity -v -p codesigning"
 fi
