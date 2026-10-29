@@ -27,7 +27,7 @@ private struct Readers {
     var thermal = ThermalReader(read: { .nominal })
     var battery = BatteryReader(read: {
         RawBattery(
-            currentPercent: 100, isCharging: false, externalConnected: true,
+            currentCapacity: 100, maxCapacity: 100, isCharging: false, externalConnected: true,
             cycleCount: 22, designCapacity: 4629, fullChargeCapacity: 4679
         )
     })
