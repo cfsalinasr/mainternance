@@ -34,4 +34,16 @@ struct MenuBarLabelTests {
         #expect(label.text == "41 GB")
         #expect(!label.text.hasPrefix("0"))
     }
+
+    @Test func zeroFreeBytesGivesNumericText() {
+        let snapshot = makeSnapshot(diskFreeBytes: 0)
+        let label = MenuBarLabel.make(from: makeOverview(state: .good, snapshot: snapshot))
+        #expect(label.text.first?.isNumber == true)
+        #expect(!label.text.contains("Zero"))
+    }
+
+    @Test func labelIsSendable() {
+        func requireSendable(_: (some Sendable).Type) {}
+        requireSendable(MenuBarLabel.self)
+    }
 }

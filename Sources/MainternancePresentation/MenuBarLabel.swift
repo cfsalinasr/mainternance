@@ -1,7 +1,8 @@
 import Foundation
 import MainternanceDomain
+import Synchronization
 
-public struct MenuBarLabel: Equatable {
+public struct MenuBarLabel: Equatable, Sendable {
     public var symbol: String
     public var state: HealthState
     public var text: String
@@ -17,14 +18,24 @@ public struct MenuBarLabel: Equatable {
             return MenuBarLabel(symbol: "shield", state: .good, text: "")
         }
         let state = overview.report.overall
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .decimal
-        formatter.allowedUnits = [.useGB]
-        formatter.includesUnit = true
         return MenuBarLabel(
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: state,
-            text: formatter.string(fromByteCount: max(overview.snapshot.diskFreeBytes, 0))
+            text: freeSpaceText(overview.snapshot.diskFreeBytes)
         )
     }
+}
+
+/// One formatter shared by every call; the lock keeps access safe under Swift 6.
+private let freeSpaceFormatter: Mutex<ByteCountFormatter> = {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .decimal
+    formatter.allowedUnits = [.useGB]
+    formatter.includesUnit = true
+    formatter.allowsNonnumericFormatting = false
+    return Mutex(formatter)
+}()
+
+private func freeSpaceText(_ bytes: Int64) -> String {
+    freeSpaceFormatter.withLock { $0.string(fromByteCount: max(bytes, 0)) }
 }
