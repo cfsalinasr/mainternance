@@ -9,7 +9,7 @@ private let gigabyte: Int64 = 1_000_000_000
 private func makeSnapshot(
     total: Int64 = 460 * gigabyte,
     free: Int64 = 200 * gigabyte,
-    memory: MemoryPressure = .normal,
+    memory: MemoryPressure? = .normal,
     thermal: ThermalLevel = .nominal,
     battery: BatterySnapshot? = BatterySnapshot(percent: 80, isCharging: false, healthPercent: 91, cycleCount: 100),
     startup: Int? = 0,
@@ -187,5 +187,23 @@ struct HealthEvaluatorTests {
         #expect(report.overall == .problem)
         #expect(Set(report.attentionChecks.map(\.id)) == [.memoryPressure, .startupItems, .scannerFindings])
         #expect(report.attentionChecks.allSatisfy { $0.state != .good })
+    }
+
+    @Test func unknownMemoryPressureOmitsTheCheck() {
+        let report = HealthEvaluator().evaluate(snapshot: makeSnapshot(memory: nil), scan: healthyScan(), now: now)
+        #expect(!report.checks.contains { $0.id == .memoryPressure })
+        #expect(report.checks.contains { $0.id == .diskSpace })
+        #expect(report.overall == .good)
+    }
+
+    @Test func everythingUnknownYieldsGoodWithOnlyDiskAndThermal() {
+        let snapshot = SystemSnapshot(
+            diskTotalBytes: 494 * gigabyte, diskFreeBytes: 278 * gigabyte, memoryPressure: nil,
+            thermal: .nominal, cpuUsage: nil, gpuUsage: nil, temperatureCelsius: nil, battery: nil,
+            newStartupItemCount: nil, osUpdateAvailable: nil
+        )
+        let report = HealthEvaluator().evaluate(snapshot: snapshot, scan: nil, now: now)
+        #expect(report.checks.map(\.id) == [.diskSpace, .thermal])
+        #expect(report.overall == .good)
     }
 }

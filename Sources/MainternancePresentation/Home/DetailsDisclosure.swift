@@ -8,11 +8,15 @@ struct DetailsDisclosure: View {
     var body: some View {
         DisclosureGroup("Details") {
             VStack(spacing: 10) {
-                SparklineRow(title: "CPU", values: series.cpu)
+                if let cpu = series.cpu {
+                    SparklineRow(title: "CPU", values: cpu)
+                }
                 if let gpu = series.gpu {
                     SparklineRow(title: "GPU", values: gpu)
                 }
-                SparklineRow(title: "RAM pressure", values: series.memory)
+                if let memory = series.memory {
+                    SparklineRow(title: "RAM pressure", values: memory)
+                }
                 if let temperatureText {
                     HStack {
                         Text("Temperature").foregroundStyle(.secondary)

@@ -68,14 +68,14 @@ public struct PopoverModel: Equatable, Sendable {
             report.checks.first { $0.id == id }?.state
         }
 
-        var metrics = [
+        var metrics: [Metric] = []
+        if let cpu = snapshot.cpuUsage {
             // No CPU check exists yet, so CPU is always neutral.
-            Metric(title: "CPU", symbol: "cpu", value: percent(snapshot.cpuUsage), state: .good)
-        ]
-        if let memory = checkState(.memoryPressure) {
+            metrics.append(Metric(title: "CPU", symbol: "cpu", value: percent(cpu), state: .good))
+        }
+        if let pressure = snapshot.memoryPressure, let memory = checkState(.memoryPressure) {
             metrics.append(Metric(
-                title: "Memory", symbol: "memorychip",
-                value: memoryName(snapshot.memoryPressure), state: memory
+                title: "Memory", symbol: "memorychip", value: memoryName(pressure), state: memory
             ))
         }
         if let thermal = checkState(.thermal) {
@@ -100,7 +100,7 @@ public struct PopoverModel: Equatable, Sendable {
 
         var rows = [
             Row(
-                title: "Disk free", value: formatBytes(overview.snapshot.diskFreeBytes), symbol: "internaldrive",
+                title: "Disk free", value: diskFreeText(overview.snapshot), symbol: "internaldrive",
                 state: checkState(.diskSpace) ?? .good
             )
         ]

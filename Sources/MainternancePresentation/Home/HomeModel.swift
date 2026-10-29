@@ -80,14 +80,14 @@ public struct HomeModel: Equatable, Sendable {
 
         var tiles = [
             Tile(
-                title: "Disk free", symbol: "internaldrive", value: formatBytes(snapshot.diskFreeBytes),
+                title: "Disk free", symbol: "internaldrive", value: diskFreeText(snapshot),
                 caption: snapshot.diskTotalBytes > 0 ? "of \(formatBytes(snapshot.diskTotalBytes))" : nil,
                 state: check(.diskSpace)?.state ?? .good, destination: check(.diskSpace)?.destination ?? .home
             )
         ]
-        if let memory = check(.memoryPressure) {
+        if let pressure = snapshot.memoryPressure, let memory = check(.memoryPressure) {
             tiles.append(Tile(
-                title: "Memory", symbol: "memorychip", value: PopoverModel.memoryName(snapshot.memoryPressure),
+                title: "Memory", symbol: "memorychip", value: PopoverModel.memoryName(pressure),
                 caption: "pressure", state: memory.state, destination: memory.destination
             ))
         }
@@ -148,22 +148,27 @@ public struct HomeModel: Equatable, Sendable {
 
 /// Plain numeric series for the Details sparklines, all in 0...1.
 public struct HistorySeries: Equatable, Sendable {
-    public var cpu: [Double]
+    /// Nil when no sample has a CPU value, so the row is omitted.
+    public var cpu: [Double]?
     /// Nil when no sample has a GPU value, so the row is omitted.
     public var gpu: [Double]?
-    public var memory: [Double]
+    /// Nil when no sample knows the memory pressure, so the row is omitted.
+    public var memory: [Double]?
 
     public init(history: [OverviewSample]) {
-        cpu = history.map { Self.clamp($0.cpu) }
+        let cpuValues = history.compactMap(\.cpu)
+        cpu = cpuValues.isEmpty ? nil : cpuValues.map(Self.clamp)
         let gpuValues = history.compactMap(\.gpu)
         gpu = gpuValues.isEmpty ? nil : gpuValues.map(Self.clamp)
-        memory = history.map {
+        let memoryValues: [Double] = history.compactMap {
             switch $0.memoryPressure {
             case .normal: 0
             case .warning: 0.5
             case .critical: 1
+            case nil: nil
             }
         }
+        memory = memoryValues.isEmpty ? nil : memoryValues
     }
 
     private static func clamp(_ value: Double) -> Double {

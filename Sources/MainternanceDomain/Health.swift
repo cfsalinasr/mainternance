@@ -52,7 +52,11 @@ public struct HealthEvaluator: Sendable {
     public init() {}
 
     public func evaluate(snapshot: SystemSnapshot, scan: ScanStatus?, now: Date) -> HealthReport {
-        var checks = [disk(snapshot), memory(snapshot), thermal(snapshot)]
+        var checks = [disk(snapshot)]
+        if let pressure = snapshot.memoryPressure {
+            checks.append(memory(pressure))
+        }
+        checks.append(thermal(snapshot))
         if let battery = snapshot.battery {
             checks.append(batteryHealth(battery))
         }
@@ -122,8 +126,8 @@ public struct HealthEvaluator: Sendable {
         return formatter.string(fromByteCount: bytes)
     }
 
-    private func memory(_ snapshot: SystemSnapshot) -> HealthCheck {
-        let (state, reason): (HealthState, String) = switch snapshot.memoryPressure {
+    private func memory(_ pressure: MemoryPressure) -> HealthCheck {
+        let (state, reason): (HealthState, String) = switch pressure {
         case .normal: (.good, "Pressure normal")
         case .warning: (.needsAttention, "Memory pressure elevated")
         case .critical: (.problem, "Memory pressure critical")

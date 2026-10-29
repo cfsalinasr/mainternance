@@ -25,9 +25,11 @@ public struct BatterySnapshot: Sendable, Equatable {
 public struct SystemSnapshot: Sendable, Equatable {
     public var diskTotalBytes: Int64
     public var diskFreeBytes: Int64
-    public var memoryPressure: MemoryPressure
+    /// Nil when unknown (the memory check is then omitted).
+    public var memoryPressure: MemoryPressure?
     public var thermal: ThermalLevel
-    public var cpuUsage: Double
+    /// Nil when unknown, such as before the first CPU delta exists (never shown as 0%).
+    public var cpuUsage: Double?
     public var gpuUsage: Double?
     public var temperatureCelsius: Double?
     public var battery: BatterySnapshot?
@@ -39,9 +41,9 @@ public struct SystemSnapshot: Sendable, Equatable {
     public init(
         diskTotalBytes: Int64,
         diskFreeBytes: Int64,
-        memoryPressure: MemoryPressure,
+        memoryPressure: MemoryPressure?,
         thermal: ThermalLevel,
-        cpuUsage: Double,
+        cpuUsage: Double?,
         gpuUsage: Double?,
         temperatureCelsius: Double?,
         battery: BatterySnapshot?,

@@ -135,4 +135,38 @@ struct PopoverModelTests {
             #expect(cpu?.value == text)
         }
     }
+
+    @Test func unknownCpuAndMemoryOmitTheirColumns() {
+        var unknown = snapshot()
+        unknown.cpuUsage = nil
+        unknown.memoryPressure = nil
+        let checks = [check(.diskSpace, .good), check(.thermal, .good), check(.batteryHealth, .good)]
+        let popover = model(overview(snapshot: unknown, checks: checks))
+        #expect(popover.metrics.map(\.title) == ["Thermal", "Battery"])
+        #expect(popover.metrics.map(\.value) == ["Nominal", "82%"])
+    }
+
+    @Test func columnCountsFromFourDownToOne() {
+        func titles(cpu: Double?, memory: MemoryPressure?, battery: BatterySnapshot?) -> [String] {
+            var shot = snapshot(battery: battery)
+            shot.cpuUsage = cpu
+            shot.memoryPressure = memory
+            let checks = [check(.memoryPressure, .good), check(.thermal, .good)]
+            return model(overview(snapshot: shot, checks: checks)).metrics.map(\.title)
+        }
+        let battery = BatterySnapshot(percent: 50, isCharging: false, healthPercent: nil, cycleCount: nil)
+        #expect(titles(cpu: 0.1, memory: .normal, battery: battery) == ["CPU", "Memory", "Thermal", "Battery"])
+        #expect(titles(cpu: nil, memory: .normal, battery: battery) == ["Memory", "Thermal", "Battery"])
+        #expect(titles(cpu: nil, memory: nil, battery: battery) == ["Thermal", "Battery"])
+        #expect(titles(cpu: nil, memory: nil, battery: nil) == ["Thermal"])
+    }
+
+    @Test func unreadableDiskShowsUnavailableInsteadOfZero() {
+        var broken = snapshot()
+        broken.diskTotalBytes = 0
+        broken.diskFreeBytes = 0
+        let popover = model(overview(snapshot: broken))
+        #expect(popover.rows.first?.title == "Disk free")
+        #expect(popover.rows.first?.value == "Unavailable")
+    }
 }
