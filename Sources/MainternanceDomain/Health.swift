@@ -62,23 +62,18 @@ public struct HealthEvaluator: Sendable {
 
     private func disk(_ snapshot: SystemSnapshot) -> HealthCheck {
         let total = snapshot.diskTotalBytes
-        let free = snapshot.diskFreeBytes
         let state: HealthState
         let reason: String
         if total <= 0 {
             state = .needsAttention
             reason = "Disk size unavailable"
         } else {
-            // Exact integer comparison of free/total against 15% and 5%.
-            let scaled = free.multipliedReportingOverflow(by: 100)
-            let freeTimes100 = scaled.overflow ? Int64.max : scaled.partialValue
-            let totalFloor = { (percent: Int64) -> Int64 in
-                let product = total.multipliedReportingOverflow(by: percent)
-                return product.overflow ? Int64.max : product.partialValue
-            }
-            if freeTimes100 < totalFloor(5) {
+            let free = min(max(snapshot.diskFreeBytes, 0), total)
+            // Exact integer comparison of free/total against 5% and 15%.
+            let freeTimes100 = Self.saturatingMultiply(free, 100)
+            if freeTimes100 < Self.saturatingMultiply(total, 5) {
                 state = .problem
-            } else if freeTimes100 < totalFloor(15) {
+            } else if freeTimes100 < Self.saturatingMultiply(total, 15) {
                 state = .needsAttention
             } else {
                 state = .good
@@ -86,11 +81,26 @@ public struct HealthEvaluator: Sendable {
             if state == .good {
                 reason = "\(Self.formatGigabytes(free)) free"
             } else {
-                let used = ((1 - Double(free) / Double(total)) * 100).rounded()
-                reason = "Disk \(Int(used))% full"
+                reason = "Disk \(Self.usedPercent(total: total, free: free))% full"
             }
         }
         return HealthCheck(id: .diskSpace, state: state, title: "Disk space", reason: reason, destination: .cleanup)
+    }
+
+    private static func saturatingMultiply(_ value: Int64, _ factor: Int64) -> Int64 {
+        let product = value.multipliedReportingOverflow(by: factor)
+        return product.overflow ? Int64.max : product.partialValue
+    }
+
+    /// Used percent rounded half up using integer math. Requires `total > 0` and `0...total` free.
+    private static func usedPercent(total: Int64, free: Int64) -> Int64 {
+        let used = total - free
+        let scaled = used.multipliedReportingOverflow(by: 100)
+        if scaled.overflow {
+            // Disks this large are not realistic; fall back to scaled-down division.
+            return (used / (total / 100 + 1)).clamped(to: 0 ... 100)
+        }
+        return (scaled.partialValue + total / 2) / total
     }
 
     private static func formatGigabytes(_ bytes: Int64) -> String {
@@ -179,5 +189,11 @@ public struct HealthEvaluator: Sendable {
             id: .scannerFindings, state: count > 0 ? .problem : .good,
             title: "Scanner findings", reason: reason, destination: .scanner
         )
+    }
+}
+
+private extension Int64 {
+    func clamped(to range: ClosedRange<Int64>) -> Int64 {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }

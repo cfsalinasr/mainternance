@@ -68,6 +68,23 @@ struct HealthEvaluatorTests {
             .reason == "100 GB free")
     }
 
+    @Test func diskCorruptInputsAreClamped() {
+        let negative = check(.diskSpace, snapshot: makeSnapshot(total: 100, free: -50))
+        #expect(negative?.state == .problem)
+        #expect(negative?.reason == "Disk 100% full")
+        let over = check(.diskSpace, snapshot: makeSnapshot(total: 100 * gigabyte, free: 150 * gigabyte))
+        #expect(over?.state == .good)
+        #expect(over?.reason == "100 GB free")
+    }
+
+    @Test func diskPercentRoundsHalfUp() {
+        // 12.5% used is not displayed (state good); pin .5 cases that are: 87.5% used -> 88.
+        let result = check(.diskSpace, snapshot: makeSnapshot(total: 8 * gigabyte, free: 7 * gigabyte))
+        #expect(result?.state == .good)
+        let exact = check(.diskSpace, snapshot: makeSnapshot(total: 200, free: 25))
+        #expect(exact?.reason == "Disk 88% full")
+    }
+
     @Test func diskSizeUnavailable() {
         for total: Int64 in [0, -5] {
             let result = check(.diskSpace, snapshot: makeSnapshot(total: total, free: 10))
