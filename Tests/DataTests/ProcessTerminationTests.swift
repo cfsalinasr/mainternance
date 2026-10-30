@@ -9,6 +9,7 @@ struct ProcessTerminationTests {
     @Test("terminate kills a long running child quickly and reaps it")
     func terminateKills() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.script("echo ready\nexec /bin/sleep 20"))
         let pid = try #require(process.processIdentifier)
         let result = await within(10, "terminate") { () -> Terminated? in
@@ -33,6 +34,7 @@ struct ProcessTerminationTests {
     @Test("a child that ignores SIGTERM is killed by the SIGKILL escalation")
     func killEscalation() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let body = "trap '' TERM\necho ready\ni=0\nwhile [ $i -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done"
         let process = try fixture.start(fixture.script(body))
         let pid = try #require(process.processIdentifier)
@@ -51,6 +53,7 @@ struct ProcessTerminationTests {
     @Test("cancelling the awaiting task terminates the child")
     func cancellation() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.script("echo ready\nexec /bin/sleep 20"))
         let pid = try #require(process.processIdentifier)
         let waiter = Task { await process.wait() }
@@ -66,6 +69,7 @@ struct ProcessTerminationTests {
     @Test("terminate after exit is a no-op and the status stays")
     func terminateAfterExit() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.script("exit 5"))
         let outcome = await within(10, "exit") { await collect(process) }
         #expect(outcome?.status == 5)
@@ -79,11 +83,12 @@ struct ProcessTerminationTests {
     @Test("dropping the handle of a running child kills it and its group")
     func droppedHandleKillsChild() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         var pids: [Int32] = []
         do {
             let process = try start(fixture.lingeringScript())
             pids = try [#require(process.processIdentifier)]
-            let grandchild = await within(10, "ready") { await awaitReady(process) }
+            let grandchild = await within(10, "ready") { await awaitGrandchild(process) }
             try pids.append(#require(grandchild ?? nil))
         }
         for pid in pids {
@@ -94,10 +99,11 @@ struct ProcessTerminationTests {
     @Test("terminate signals the whole group: a grandchild dies with the child")
     func terminateKillsGroup() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.lingeringScript())
         let pid = try #require(process.processIdentifier)
         let result = await within(10, "group terminate") { () -> Int32? in
-            guard let grandchild = await awaitReady(process) else { return nil }
+            guard let grandchild = await awaitGrandchild(process) else { return nil }
             await process.terminate()
             return grandchild
         }
@@ -110,6 +116,7 @@ struct ProcessTerminationTests {
     @Test("the child leads its own process group")
     func childLeadsGroup() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.script("echo ready\nexec /bin/sleep 20"))
         let pid = try #require(process.processIdentifier)
         _ = await within(10, "ready") { await awaitReady(process) }
@@ -120,14 +127,19 @@ struct ProcessTerminationTests {
     @Test("terminate(killGroup: false) signals only the child")
     func terminateChildOnly() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.lingeringScript())
         let result = await within(10, "child only") { () -> Int32? in
-            guard let grandchild = await awaitReady(process) else { return nil }
+            guard let grandchild = await awaitGrandchild(process) else { return nil }
             await process.terminate(killGroup: false)
             return grandchild
         }
         let grandchild = try #require(result ?? nil)
-        defer { kill(grandchild, SIGKILL) } // bounded fixture, but do not leave it for 20 s
+        defer {
+            if grandchild > 1 {
+                kill(grandchild, SIGKILL)
+            }
+        } // bounded fixture, but do not leave it for 20 s
         #expect(grandchild > 1)
         #expect(kill(grandchild, 0) == 0, "the grandchild must survive a child-only terminate")
     }
@@ -135,9 +147,10 @@ struct ProcessTerminationTests {
     @Test("terminateNow kills the child and its grandchild right away, and is idempotent")
     func terminateNowKillsGroup() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let process = try fixture.start(fixture.lingeringScript())
         let pid = try #require(process.processIdentifier)
-        let ready = await within(10, "ready") { await awaitReady(process) }
+        let ready = await within(10, "ready") { await awaitGrandchild(process) }
         let grandchild = try #require(ready ?? nil)
         process.terminateNow()
         process.terminateNow()

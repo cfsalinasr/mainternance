@@ -9,6 +9,7 @@ struct SystemProcessRunnerTests {
     @Test("streams stdout and stderr separately and in order")
     func separateStreams() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let tool = try fixture.script("echo o1; echo e1 >&2; echo o2; echo e2 >&2; echo o3")
         let outcome = await within(10, "collect") { await collect(start(tool)) }
         #expect(outcome?.stdout == ["o1", "o2", "o3"])
@@ -19,6 +20,7 @@ struct SystemProcessRunnerTests {
     @Test("output far larger than the pipe buffer does not deadlock")
     func largeOutput() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let tool = try fixture.script("/usr/bin/seq 1 50000 >&2 &\n/usr/bin/seq 1 200000\nwait")
         let outcome = await within(20, "large output") { await collect(start(tool)) }
         let result = try #require(outcome)
@@ -46,6 +48,7 @@ struct SystemProcessRunnerTests {
     @Test("reports a non-zero exit status and 128 + signal for a killed child")
     func exitStatuses() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let failing = try fixture.script("exit 3", name: "fail.sh")
         let killed = try fixture.script("kill -9 $$", name: "killed.sh")
         let failedOutcome = await within(10, "exit 3") { await collect(start(failing)) }
@@ -70,6 +73,7 @@ struct SystemProcessRunnerTests {
     @Test("hostile arguments reach the child verbatim and nothing is executed")
     func argumentsVerbatim() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let pwned = fixture.directory.appendingPathComponent("pwned-\(UUID().uuidString)").path
         let tool = try fixture.script("for a in \"$@\"; do printf 'ARG<%s>END\\n' \"$a\"; done")
         let hostile = [
@@ -87,6 +91,7 @@ struct SystemProcessRunnerTests {
     @Test("the environment is merged over the current one")
     func mergedEnvironment() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let tool = try fixture.script("echo \"PATH=$PATH\"; echo \"KEY=$MAINT_TEST_KEY\"")
         let currentPath = try #require(ProcessInfo.processInfo.environment["PATH"])
         let merged = await within(10, "env") { await collect(start(tool, env: ["MAINT_TEST_KEY": "va lue"])) }
@@ -98,6 +103,7 @@ struct SystemProcessRunnerTests {
     @Test("low priority still runs a fixture child to a clean exit")
     func lowPriority() async throws {
         let fixture = try Fixture()
+        defer { withExtendedLifetime(fixture) {} } // cleanup must not depend on debug-build lifetimes
         let tool = try fixture.script("echo hi")
         let process = runner.run(tool, arguments: [], environment: nil, lowPriority: true)
         let outcome = await within(10, "low priority") { await collect(process) }

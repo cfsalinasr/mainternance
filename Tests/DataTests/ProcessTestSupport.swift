@@ -158,3 +158,10 @@ func awaitReady(_ process: RunningProcess) async -> Int32? {
     }
     return nil
 }
+
+/// Like `awaitReady`, but returns the announced grandchild pid only when it is a real, signalable pid (> 1);
+/// nil otherwise, so a missing pid can never reach `kill(0, ...)` (which would signal the whole test runner group).
+func awaitGrandchild(_ process: RunningProcess) async -> Int32? {
+    guard let pid = await awaitReady(process), pid > 1 else { return nil }
+    return pid
+}
