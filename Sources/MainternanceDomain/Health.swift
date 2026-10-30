@@ -12,8 +12,17 @@ public enum CheckID: String, Sendable, CaseIterable {
     case diskSpace, memoryPressure, thermal, batteryHealth, startupItems, lastScan, osUpdate, scannerFindings
 }
 
-public enum AppDestination: String, Sendable {
+public enum AppDestination: String, Sendable, CaseIterable {
     case home, cleanup, files, scanner, startup, uninstaller, settings
+
+    /// Whether the screen is backed by a working engine. Screens that still run on invented sample data are
+    /// hidden from the sidebar and unreachable by links; their code stays in the repo and comes back one by one.
+    public var isAvailable: Bool {
+        switch self {
+        case .home, .settings: true
+        case .files, .cleanup, .startup, .uninstaller, .scanner: false
+        }
+    }
 }
 
 public struct HealthCheck: Sendable, Identifiable, Equatable {

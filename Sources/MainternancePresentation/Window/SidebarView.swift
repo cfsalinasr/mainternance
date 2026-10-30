@@ -7,7 +7,7 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: Binding(get: { navigation.selection }, set: { navigation.open($0 ?? navigation.selection) })) {
-            ForEach(SidebarItem.all) { item in
+            ForEach(SidebarItem.visible) { item in
                 HStack {
                     Label(item.title, systemImage: item.symbol)
                     if SampleDataCopy.isSample(item.destination) {

@@ -43,10 +43,14 @@ struct HealthBanner: View {
                         if index > 0 {
                             Text("·").foregroundStyle(.secondary)
                         }
-                        Button(reason.text) { open(reason.destination) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                            .accessibilityHint("Opens the related section")
+                        if reason.isLink {
+                            Button(reason.text) { open(reason.destination) }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHint("Opens the related section")
+                        } else {
+                            Text(reason.text).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

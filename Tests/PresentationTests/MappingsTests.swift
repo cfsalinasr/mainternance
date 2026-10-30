@@ -101,9 +101,9 @@ struct MappingsTests {
     @Test func navigationOpensAndIgnoresRepeats() {
         let navigation = Navigation()
         #expect(navigation.selection == .home)
-        navigation.open(.files)
-        navigation.open(.files)
-        #expect(navigation.selection == .files)
+        navigation.open(.settings)
+        navigation.open(.settings)
+        #expect(navigation.selection == .settings)
     }
 
     @Test func coordinatorCombinesSourcesBeforeTellingTheModel() async {

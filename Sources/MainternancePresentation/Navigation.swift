@@ -9,9 +9,11 @@ public final class Navigation {
 
     public init() {}
 
+    /// A destination without a working engine is never selected: opening one routes to Home.
     public func open(_ destination: AppDestination) {
-        guard destination != selection else { return }
-        selection = destination
+        let target = destination.isAvailable ? destination : .home
+        guard target != selection else { return }
+        selection = target
     }
 }
 
@@ -34,6 +36,11 @@ public struct SidebarItem: Equatable, Sendable, Identifiable {
         SidebarItem(destination: .uninstaller, title: "Uninstaller", symbol: "trash"),
         SidebarItem(destination: .settings, title: "Settings", symbol: "gearshape")
     ]
+
+    /// The items the sidebar shows: only destinations that are available, in sidebar order.
+    public static var visible: [SidebarItem] {
+        all.filter(\.destination.isAvailable)
+    }
 
     public static func item(for destination: AppDestination) -> SidebarItem {
         all.first { $0.destination == destination } ?? all[0]

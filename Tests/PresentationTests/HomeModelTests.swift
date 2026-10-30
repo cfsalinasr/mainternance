@@ -256,6 +256,30 @@ extension HomeModelTests {
         #expect(full.suggestionsEmptyText == nil)
     }
 
+    @Test func comingNextLineIsPinned() {
+        #expect(HomeModel.comingNextText
+            == "Coming next: malware scanner, file explorer, cleanup, startup items, uninstaller.")
+    }
+
+    @Test func linksToUnavailableDestinationsAreNotInteractive() {
+        let model = HomeModel(
+            overview: overview(checks: [
+                check(.diskSpace, .needsAttention, "Disk 91% full", .cleanup),
+                check(.memoryPressure, .needsAttention, "Memory amber", .settings),
+                check(.thermal, .good, "No throttling", .home)
+            ]),
+            now: now, locale: locale
+        )
+        let reasons = model.banner.reasons
+        #expect(reasons.map(\.isLink) == [false, true])
+        #expect(model.tiles.first { $0.title == "Disk free" }?.isLink == false)
+        #expect(model.tiles.first { $0.title == "Memory" }?.isLink == true)
+        let hidden = SuggestedAction(id: "a", title: "t", detail: "d", symbol: "s", destination: .files)
+        let shown = SuggestedAction(id: "b", title: "t", detail: "d", symbol: "s", destination: .settings)
+        #expect(!hidden.isLink)
+        #expect(shown.isLink)
+    }
+
     @Test func goodBannerSaysAvailableWhenSomeChecksAreMissing() {
         let partial = HomeModel(overview: overview(checks: [check(.diskSpace, .good, "ok", .home)]))
         #expect(partial.banner.goodText == "All available checks passed")

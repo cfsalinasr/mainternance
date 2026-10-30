@@ -7,6 +7,11 @@ public struct HomeModel: Equatable, Sendable {
         public var id: CheckID
         public var text: String
         public var destination: AppDestination
+
+        /// False when the destination has no working screen: the reason is then plain text.
+        public var isLink: Bool {
+            destination.isAvailable
+        }
     }
 
     public struct Banner: Equatable, Sendable {
@@ -29,6 +34,11 @@ public struct HomeModel: Equatable, Sendable {
         public var caption: String?
         public var state: HealthState
         public var destination: AppDestination
+
+        /// False when the destination has no working screen: the tile is then not a button.
+        public var isLink: Bool {
+            destination.isAvailable
+        }
     }
 
     public struct ScanSummary: Equatable, Sendable {
@@ -38,6 +48,10 @@ public struct HomeModel: Equatable, Sendable {
         /// Nil when there is no scanner, so only one line is shown.
         public var next: String?
     }
+
+    /// Honest roadmap line on Home; the screens listed here are hidden until their engines work.
+    public static let comingNextText =
+        "Coming next: malware scanner, file explorer, cleanup, startup items, uninstaller."
 
     /// Shown in the Suggested card when there is nothing to suggest.
     public static let noSuggestionsText = "Nothing to suggest yet"
@@ -157,6 +171,13 @@ public struct HomeModel: Equatable, Sendable {
     static func nextText(_ date: Date, locale: Locale, timeZone: TimeZone = .current) -> String {
         let style = Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute()
         return "Next: \(date.formatted(style))"
+    }
+}
+
+public extension SuggestedAction {
+    /// False when the destination has no working screen: the suggestion is then plain text.
+    var isLink: Bool {
+        destination.isAvailable
     }
 }
 

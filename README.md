@@ -16,7 +16,7 @@ and the `MainternanceApp` executable that wires them together.
 
 ## What is live
 
-Only part of the app reads your Mac today. The rest shows sample data and says so.
+Only part of the app reads your Mac today. Screens that are not backed by a working engine are hidden.
 
 **Live readings of this Mac** (Overview, popover and menu bar):
 
@@ -33,17 +33,23 @@ otherwise; both intervals are doubled in Low Power Mode.
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
 silicon), the startup-item count, macOS update status, scanner status and suggestions.
 
-**Sample data**, labelled "Sample data" in the app and not connected to your Mac yet: Files, Scanner,
-Cleanup, Startup and Uninstaller. Settings are not applied yet either.
+**Planned, not available yet** (hidden in the app until each one works; Home lists them under
+"Coming next"):
 
-Later plans replace these one by one: the cleanup, startup and uninstaller backends; the file explorer;
-the ClamAV scanner and quarantine; notifications, launch at login and scheduling.
+- Malware scanner
+- File explorer
+- Cleanup
+- Startup items
+- Uninstaller
+
+Settings are not applied yet either. Later plans bring these back one by one, plus notifications,
+launch at login and scheduling.
 
 ## Install
 
 Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar to see the
-popover with the live readings, then choose Open Mainternance to show the window. Several window
-sections show sample data (see What is live).
+popover with the live readings, then choose Open Mainternance to show the window, which has Home and
+Settings (see What is live).
 
 - `scripts/build-app.sh` builds a release binary and assembles and signs
   `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).
@@ -52,8 +58,8 @@ sections show sample data (see What is live).
   every rebuild. Run `scripts/make-signing-cert.sh` once to create the stable self-signed identity
   `Mainternance Local Signing` in your login keychain (it asks for your password once; use `--dry-run`
   to preview). Later builds pick it up automatically.
-- To open it at login, add it under System Settings > General > Login Items. The Settings toggle is sample
-  data for now; a later plan wires it to the system.
+- To open it at login, add it under System Settings > General > Login Items. The Settings toggle is not
+  connected yet; a later plan wires it to the system.
 - Full Disk Access is not needed yet; it is granted later, in the scanner plan.
 
 ## Building
