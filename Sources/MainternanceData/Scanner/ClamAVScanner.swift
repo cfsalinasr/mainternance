@@ -106,22 +106,22 @@ public final class ClamAVScanner: ScannerEngine {
     static let progressInterval: TimeInterval = 0.1
     static let busyMessage = "A scan is already running"
 
-    private struct State {
+    struct State {
         var busy = false
         var current: RunningProcess?
         var cancelRequested = false
         var quitRequested = false
     }
 
-    private let locator: ToolLocator
+    let locator: ToolLocator
     private let runner: ProcessRunning
-    private let paths: ClamAVPaths
+    let paths: ClamAVPaths
     private let definitions: DefinitionsStore
     private let installer: ClamAVInstaller
     private let now: @Sendable () -> Date
     private let home: URL
     private let fileExists: @Sendable (String) -> Bool
-    private let state = Mutex(State())
+    let state = Mutex(State())
 
     public init(
         locator: ToolLocator,
@@ -155,6 +155,14 @@ public final class ClamAVScanner: ScannerEngine {
         installer.updateDefinitions()
     }
 
+    func definitionsDateNow() -> Date? {
+        definitions.definitionsDate()
+    }
+
+    func statusNow(definitionsDate: Date?) -> EngineStatus {
+        status(definitionsDate: definitionsDate)
+    }
+
     private func status(definitionsDate: Date?) -> EngineStatus {
         EngineStatus.status(
             engineInstalled: installer.isInstalled(),
@@ -185,13 +193,25 @@ public final class ClamAVScanner: ScannerEngine {
         process?.terminateNow()
     }
 
-    public func scan(_ scope: ScanScope) -> AsyncStream<ScanEvent> {
-        let claimed = state.withLock { current -> Bool in
+    /// Claims the single-flight slot shared by scans and verifications.
+    func claimSlot() -> Bool {
+        state.withLock { current -> Bool in
             guard !current.busy else { return false }
             current.busy = true
             current.cancelRequested = false
             return true
         }
+    }
+
+    func releaseSlot() {
+        state.withLock {
+            $0.busy = false
+            $0.current = nil
+        }
+    }
+
+    public func scan(_ scope: ScanScope) -> AsyncStream<ScanEvent> {
+        let claimed = claimSlot()
         return AsyncStream { continuation in
             guard claimed else {
                 continuation.yield(.failed(message: Self.busyMessage))
@@ -201,10 +221,7 @@ public final class ClamAVScanner: ScannerEngine {
             let task = Task { [self] in
                 let last = await execute(scope, continuation)
                 // Release before the terminal event, so a consumer that reacts to it can start the next scan.
-                state.withLock {
-                    $0.busy = false
-                    $0.current = nil
-                }
+                releaseSlot()
                 continuation.yield(last)
                 continuation.finish()
             }
@@ -250,7 +267,10 @@ public final class ClamAVScanner: ScannerEngine {
 
     /// Starts the child inside the same critical section that checks the quit and cancel flags and records the
     /// process, so `terminateNow()` / `cancelScan()` can never slip between the check and the start.
-    private func launch(_ clamscan: String, _ arguments: [String]) -> RunningProcess? {
+    /// `runner.run` therefore executes WITH the lock held: a concurrent `terminateNow()` (the quit hook) or
+    /// `cancelScan()` may block for the duration of the spawn (milliseconds), and a runner must never call back
+    /// into the scanner.
+    func launch(_ clamscan: String, _ arguments: [String]) -> RunningProcess? {
         state.withLock { current -> RunningProcess? in
             guard !current.quitRequested, !current.cancelRequested, !Task.isCancelled else { return nil }
             let process = runner.run(clamscan, arguments: arguments, environment: nil, lowPriority: true)

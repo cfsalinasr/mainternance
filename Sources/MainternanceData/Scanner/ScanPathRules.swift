@@ -17,6 +17,12 @@ public enum ScanPathRules {
         return path == directory || path.hasPrefix(directory + "/")
     }
 
+    /// True when the path is a regular file itself (lstat: a symlink or a directory is not).
+    public static func isRegularFile(_ path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
     /// True when the path exists. lstat semantics: a symlink counts as existing, even a dangling one.
     @Sendable
     public static func lstatExists(_ path: String) -> Bool {

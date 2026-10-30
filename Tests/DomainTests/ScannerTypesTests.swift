@@ -68,6 +68,12 @@ struct ScannerTypesTests {
         #expect(make(unreadable: 2, denied: -1).permissionDenied == 0)
     }
 
+    @Test func verifyResultsCompareByValue() {
+        #expect(VerifyResult.confirmed(signature: "A") == .confirmed(signature: "A"))
+        #expect(VerifyResult.confirmed(signature: "A") != .confirmed(signature: "B"))
+        #expect(VerifyResult.clean != .failed(message: "x"))
+    }
+
     @Test func completedScanCountsAsLastScan() {
         #expect(ScanSummaryRules.lastScanDate(summary: summary(cancelled: false, end: now)) == now)
     }

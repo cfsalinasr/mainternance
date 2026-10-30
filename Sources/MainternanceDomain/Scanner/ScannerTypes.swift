@@ -76,6 +76,19 @@ public struct ScanSummary: Sendable, Equatable {
     }
 }
 
+/// Result of re-checking one file with the engine, before anything is done to it (for example quarantine).
+public enum VerifyResult: Sendable, Equatable {
+    /// The engine flagged this very file again, with this signature.
+    case confirmed(signature: String)
+    /// The engine scanned the file and found nothing.
+    case clean
+    case failed(message: String)
+}
+
+/// Events of one scan.
+///
+/// `.found` events delivered before a `.failed` are REAL findings: the consumer must keep them. A scan can fail
+/// after it already reported files (for example a fatal error late in the run), and those files are still flagged.
 public enum ScanEvent: Sendable, Equatable {
     case started(scope: ScanScope)
     case progress(scanned: Int, current: String)
