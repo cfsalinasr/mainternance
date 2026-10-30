@@ -34,7 +34,27 @@ struct ClamScanOutputParserTests {
         ("/p/skipped: Excluded", .ignored),
         ("/p/link: Symbolic link", .ignored),
         ("LibClamAV Warning: something odd", .ignored),
-        ("WARNING: Can't open file /p/x: Permission denied", .ignored),
+        ("WARNING: Can't open file /p/x: Permission denied", .unreadable(path: "/p/x", isPermission: true)),
+        (
+            "WARNING: Can't open file /p/a: b/x: Operation not permitted",
+            .unreadable(path: "/p/a: b/x", isPermission: true)
+        ),
+        (
+            "WARNING: Can't open file /p/gone: No such file or directory",
+            .unreadable(path: "/p/gone", isPermission: false)
+        ),
+        ("WARNING: Can't open file : Permission denied", .ignored),
+        ("/p/priv.txt: Access denied", .unreadable(path: "/p/priv.txt", isPermission: true)),
+        ("/p/a: OK: Access denied", .unreadable(path: "/p/a: OK", isPermission: true)),
+        ("/p/Library/Safari: Can't open directory.", .unreadable(path: "/p/Library/Safari", isPermission: true)),
+        (
+            "/p/x: lstat() failed: Permission denied. ERROR",
+            .unreadable(path: "/p/x: lstat() failed", isPermission: true)
+        ),
+        ("Scanning /p/a", .ignored),
+        ("Scanning /p/a: OK", .ignored),
+        ("Scanning /p/a: Eicar FOUND", .ignored),
+        ("relative/path: OK", .ignored),
         ("ERROR: Can't allocate memory", .ignored),
         ("", .ignored),
         ("   ", .ignored),

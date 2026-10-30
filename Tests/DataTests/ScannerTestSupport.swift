@@ -37,6 +37,7 @@ final class ControlledScan: Sendable {
     private let exitState = Mutex(Exit())
     private let signalLog = Mutex<[(signal: Int32, group: Bool)]>([])
     private let launches = Mutex(0)
+    private let root = Mutex<String?>(nil)
 
     init() {
         (stream, continuation) = AsyncStream.makeStream(of: ProcessLine.self)
@@ -60,14 +61,24 @@ final class ControlledScan: Sendable {
         return made.process
     }
 
+    /// Lines written as `/t/...` are rewritten to live under the scan root of the fixture.
+    func mapRoot(_ path: String) {
+        root.withLock { $0 = path }
+    }
+
+    private func mapped(_ line: String) -> String {
+        guard let prefix = root.withLock({ $0 }) else { return line }
+        return line.replacingOccurrences(of: "/t/", with: prefix + "/")
+    }
+
     func send(_ lines: [String]) {
         for line in lines {
-            continuation.yield(.stdout(line))
+            continuation.yield(.stdout(mapped(line)))
         }
     }
 
     func sendError(_ line: String) {
-        continuation.yield(.stderr(line))
+        continuation.yield(.stderr(mapped(line)))
     }
 
     /// The child exits by itself with `status` (also when called before the scanner launched it).
@@ -104,9 +115,10 @@ struct ScannerFixture {
         tools names: Set<String> = ["brew", "clamscan", "freshclam"],
         definitionsAge: TimeInterval? = 3600,
         clock: TestClock = TestClock(),
+        temp existing: TempDirectory? = nil,
         runner: FakeRunner
     ) throws {
-        temp = try TempDirectory()
+        temp = try existing ?? TempDirectory()
         paths = ClamAVPaths(supportDirectory: temp.url.appendingPathComponent("support"))
         tools = FakeTools(names)
         self.clock = clock
@@ -129,11 +141,31 @@ struct ScannerFixture {
         )
     }
 
-    /// A fixture whose runner replays `lines` and exits with `status`.
+    /// The scan root of `target` exactly as the scanner computes it.
+    var root: String {
+        ScanScopes.roots(for: .custom(target), home: temp.url, exists: { _ in true }).first ?? ""
+    }
+
+    /// `relative` below the scan root.
+    func path(_ relative: String) -> String {
+        root + "/" + relative
+    }
+
+    /// A fixture whose runner replays `lines` and exits with `status`. Paths written as `/t/...` are rewritten
+    /// to live under the scan root.
     static func replaying(
         _ lines: [ProcessLine], status: Int32, clock: TestClock = TestClock()
     ) throws -> ScannerFixture {
-        try ScannerFixture(clock: clock, runner: FakeRunner.replaying(lines, status: status))
+        let temp = try TempDirectory()
+        let target = temp.url.appendingPathComponent("target", isDirectory: true)
+        let root = ScanScopes.roots(for: .custom(target), home: temp.url, exists: { _ in true }).first ?? ""
+        let mapped = lines.map { line -> ProcessLine in
+            switch line {
+            case let .stdout(text): .stdout(text.replacingOccurrences(of: "/t/", with: root + "/"))
+            case let .stderr(text): .stderr(text.replacingOccurrences(of: "/t/", with: root + "/"))
+            }
+        }
+        return try ScannerFixture(clock: clock, temp: temp, runner: FakeRunner.replaying(mapped, status: status))
     }
 
     func run(_ scope: ScanScope? = nil) async -> [ScanEvent] {

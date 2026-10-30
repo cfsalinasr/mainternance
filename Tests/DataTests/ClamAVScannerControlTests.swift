@@ -11,13 +11,17 @@ struct ClamAVScannerControlTests {
     /// A runner that hands out the given fake processes in order.
     private func fixture(_ scans: [ControlledScan]) throws -> ScannerFixture {
         let next = Mutex(0)
-        return try ScannerFixture(runner: FakeRunner { _ in
+        let fixture = try ScannerFixture(runner: FakeRunner { _ in
             let index = next.withLock { current -> Int in
                 defer { current += 1 }
                 return current
             }
             return scans[min(index, scans.count - 1)].launch()
         })
+        for scan in scans {
+            scan.mapRoot(fixture.root)
+        }
+        return fixture
     }
 
     private static func drain(_ iterator: inout AsyncStream<ScanEvent>.Iterator) async -> [ScanEvent] {

@@ -9,8 +9,26 @@ struct ScanTally {
     private(set) var permissionDenied = 0
     private(set) var findings = 0
     private(set) var current = ""
+    /// A stderr `ERROR:` line (clamscan's fatal messages, for example a database problem) was seen.
+    private(set) var fatalSeen = false
+    private var unreadablePaths = Set<String>()
     private var reportedScanned = 0
     private var lastProgressAt: Date?
+
+    static let maxTrackedPaths = 10000
+
+    mutating func noteFatal() {
+        fatalSeen = true
+    }
+
+    /// clamscan exited 2: per upstream, exit 2 without findings only comes from counted errors (`info.errors`) or
+    /// a fatal start-up problem, so a scan that exits 2 never reports zero unreadable files. When no line named
+    /// the failing file (for example an allocation failure), one unattributed error is recorded.
+    mutating func noteExitTwo() {
+        if unreadable == 0 {
+            unreadable = 1
+        }
+    }
 
     /// Counts the line and returns the finding, if the line was one. FOUND files count as scanned; unreadable
     /// files are never scanned and never clean.
@@ -24,7 +42,15 @@ struct ScanTally {
             findings += 1
             current = path
             return (path, signature)
-        case let .unreadable(_, isPermission):
+        case let .unreadable(path, isPermission):
+            // One entry per path, whatever number of messages clamscan printed for it. Past the cap the set stops
+            // growing (bounded memory) and every further line is counted.
+            if unreadablePaths.contains(path) {
+                break
+            }
+            if unreadablePaths.count < Self.maxTrackedPaths {
+                unreadablePaths.insert(path)
+            }
             unreadable += 1
             if isPermission {
                 permissionDenied += 1
@@ -63,11 +89,13 @@ struct ScanTally {
 /// One scan runs at a time. Quitting: the app target MUST call `terminateNow()` (and the installer's) from
 /// `applicationWillTerminate`, otherwise a running `clamscan` outlives the app.
 ///
-/// Exit codes: 0 clean and 1 infected files found both end in `.finished`. Exit 2 or higher ends in `.failed`
-/// with the last error line, EXCEPT exit 2 when per-file read errors were counted and files were scanned: clamscan
-/// returns 2 for any unreadable file, and a scan without Full Disk Access must not be reported as a failure. The
-/// Domain has no field for a failure note on a finished scan, so a failure that comes after findings is delivered
-/// as `.failed` AFTER the `.found` events (the findings were already delivered and are never dropped).
+/// Exit codes (upstream `clamscan/manager.c`, end of `scanmanager`: infection first, then errors):
+/// 0 clean, and 1 infected files found, both end in `.finished` (exit 1 keeps the counts even when unreadable files
+/// were also met). Exit 2 means errors and NO infection: with files scanned and no fatal `ERROR:` line it is a
+/// partial scan (typically no Full Disk Access) and ends in `.finished` with the unreadable counts, never zero;
+/// with nothing scanned or a fatal line it ends in `.failed`. Any other code is `.failed`. The Domain has no
+/// failure-note field on a finished scan, so a failure after findings is delivered as `.failed` AFTER the `.found`
+/// events, which stay valid (see `ScanEvent`).
 public final class ClamAVScanner: ScannerEngine {
     static let progressInterval: TimeInterval = 0.1
     static let busyMessage = "A scan is already running"
@@ -233,7 +261,11 @@ public final class ClamAVScanner: ScannerEngine {
             case let .stdout(text): (text, false)
             case let .stderr(text): (text, true)
             }
+            // Both streams are parsed: upstream prints `WARNING: Can't open file` on stderr, verdicts on stdout.
             let parsed = ClamScanOutputParser.parse(text)
+            if isStderr, text.hasPrefix("ERROR:") {
+                tally.noteFatal()
+            }
             if let hit = tally.consume(parsed) {
                 continuation.yield(.found(ScanFinding(
                     id: UUID(), path: hit.path, signature: hit.signature, foundAt: now()
@@ -242,8 +274,10 @@ public final class ClamAVScanner: ScannerEngine {
             if let progress = tally.throttledProgress(now: now(), interval: Self.progressInterval) {
                 continuation.yield(progress)
             }
-            if isStderr || parsed == .ignored {
-                tail.add(text, isStderr: isStderr)
+            // Only stderr feeds the failure message: a stdout line can carry any file name
+            // (`error_log.txt: Empty file`).
+            if isStderr, parsed == .ignored {
+                tail.add(text, isStderr: true)
             }
         }
         if Task.isCancelled {
@@ -252,6 +286,9 @@ public final class ClamAVScanner: ScannerEngine {
             return .failed(message: "The scan was abandoned")
         }
         let status = await process.wait()
+        if status == 2 {
+            tally.noteExitTwo()
+        }
         if let closing = tally.finalProgress(now: now()) {
             continuation.yield(closing)
         }
@@ -272,7 +309,7 @@ public final class ClamAVScanner: ScannerEngine {
         if cancelled || status == 0 || status == 1 {
             return .finished(summary())
         }
-        if status == 2, tally.unreadable > 0, tally.scanned > 0 {
+        if status == 2, tally.scanned > 0, !tally.fatalSeen {
             return .finished(summary())
         }
         var prefix = "The scan failed (exit \(status))"

@@ -77,7 +77,7 @@ struct ClamAVScannerTests {
         #expect(events.first == .started(scope: .custom(fixture.target)))
         let finding = try #require(events.findings.first)
         #expect(events.findings.count == 1)
-        #expect(finding.path == "/t/dir: with colon/eicar.txt")
+        #expect(finding.path == fixture.path("dir: with colon/eicar.txt"))
         #expect(finding.signature == "Win.Test.EICAR_HDB-1")
         let summary = try #require(events.summary)
         #expect(summary.scanned == 3)
@@ -148,7 +148,7 @@ struct ClamAVScannerTests {
     func exitTwoFails() async throws {
         let fixture = try ScannerFixture.replaying([
             .stdout("/t/a: OK"),
-            .stderr("LibClamAV Error: cl_load(): Can't open file\u{1B}[31m daily.cvd")
+            .stderr("ERROR: cl_load(): Can't open file\u{1B}[31m daily.cvd")
         ], status: 2)
         let events = await fixture.run()
         let message = try #require(events.failure)
@@ -164,7 +164,7 @@ struct ClamAVScannerTests {
             .stdout("/t/e: Eicar FOUND"), .stderr("ERROR: Can't allocate memory")
         ], status: 2)
         let events = await fixture.run()
-        #expect(events.findings.map(\.path) == ["/t/e"])
+        #expect(events.findings.map(\.path) == [fixture.path("e")])
         let message = try #require(events.failure)
         #expect(message.contains("1 finding"))
         #expect(message.contains("allocate memory"))
