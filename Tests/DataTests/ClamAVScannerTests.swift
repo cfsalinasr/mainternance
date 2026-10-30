@@ -14,9 +14,13 @@ struct ClamAVScannerTests {
         let call = try #require(fixture.runner.recorded.first)
         let root = URL(fileURLWithPath: fixture.target.path).standardizedFileURL.path
         #expect(call.executable == "/fake/bin/clamscan")
+        let exclusions = ScanExclusions.arguments(for: ScanExclusions.directories(
+            for: .custom(fixture.target), home: fixture.temp.url, paths: fixture.paths
+        ))
+        #expect(exclusions.count == 2)
         #expect(call.arguments == [
-            "--database=\(fixture.paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive", "--", root
-        ])
+            "--database=\(fixture.paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive"
+        ] + exclusions + ["--", root])
         #expect(!call.arguments.contains("--infected"))
         #expect(call.lowPriority)
         #expect(call.environment == nil)

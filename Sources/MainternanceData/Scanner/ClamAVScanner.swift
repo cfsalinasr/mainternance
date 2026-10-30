@@ -2,92 +2,6 @@ import Foundation
 import MainternanceDomain
 import Synchronization
 
-/// Running totals of one scan, fed one parsed line at a time. Pure, so the counting rules are easy to pin.
-struct ScanTally {
-    private(set) var scanned = 0
-    private(set) var unreadable = 0
-    private(set) var permissionDenied = 0
-    private(set) var findings = 0
-    private(set) var current = ""
-    /// Lines dropped because their path was not plausible (forged by a file name, outside the roots). Debug only.
-    private(set) var ignoredSuspicious = 0
-    /// A stderr `ERROR:` line (clamscan's fatal messages, for example a database problem) was seen.
-    private(set) var fatalSeen = false
-    private var unreadablePaths = Set<String>()
-    private var reportedScanned = 0
-    private var lastProgressAt: Date?
-
-    static let maxTrackedPaths = 10000
-
-    mutating func noteSuspicious() {
-        ignoredSuspicious = min(ignoredSuspicious + 1, Int.max / 2)
-    }
-
-    mutating func noteFatal() {
-        fatalSeen = true
-    }
-
-    /// clamscan exited 2: per upstream, exit 2 without findings only comes from counted errors (`info.errors`) or
-    /// a fatal start-up problem, so a scan that exits 2 never reports zero unreadable files. When no line named
-    /// the failing file (for example an allocation failure), one unattributed error is recorded.
-    mutating func noteExitTwo() {
-        if unreadable == 0 {
-            unreadable = 1
-        }
-    }
-
-    /// Counts the line and returns the finding, if the line was one. FOUND files count as scanned; unreadable
-    /// files are never scanned and never clean.
-    mutating func consume(_ line: ClamLine) -> (path: String, signature: String)? {
-        switch line {
-        case let .scanned(path):
-            scanned += 1
-            current = path
-        case let .found(path, signature):
-            scanned += 1
-            findings += 1
-            current = path
-            return (path, signature)
-        case let .unreadable(path, isPermission):
-            // One entry per path, whatever number of messages clamscan printed for it. Past the cap the set stops
-            // growing (bounded memory) and every further line is counted.
-            if unreadablePaths.contains(path) {
-                break
-            }
-            if unreadablePaths.count < Self.maxTrackedPaths {
-                unreadablePaths.insert(path)
-            }
-            unreadable += 1
-            if isPermission {
-                permissionDenied += 1
-            }
-        case .ignored:
-            break
-        }
-        return nil
-    }
-
-    /// A progress event when at least `interval` seconds passed since the last one (the first is immediate).
-    mutating func throttledProgress(now: Date, interval: TimeInterval) -> ScanEvent? {
-        guard scanned > reportedScanned else { return nil }
-        if let last = lastProgressAt, now.timeIntervalSince(last) < interval, now >= last {
-            return nil
-        }
-        return progressNow(now: now)
-    }
-
-    /// The closing progress event, nil when the last one already carried the final count.
-    mutating func finalProgress(now: Date) -> ScanEvent? {
-        scanned > reportedScanned ? progressNow(now: now) : nil
-    }
-
-    private mutating func progressNow(now: Date) -> ScanEvent {
-        reportedScanned = scanned
-        lastProgressAt = now
-        return .progress(scanned: scanned, current: current)
-    }
-}
-
 /// Runs `clamscan` over a scope and turns its output into `ScanEvent`s.
 ///
 /// Only the located `clamscan` is run, with an argument array (no shell, never `sudo`), at low priority, against
@@ -246,9 +160,16 @@ public final class ClamAVScanner: ScannerEngine {
         }
         let startedAt = now()
         continuation.yield(.started(scope: scope))
-        let arguments = ["--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive", "--"]
-            + roots
-        let context = Context(scope: scope, startedAt: startedAt, definitionsDate: definitionsDate, roots: roots)
+        let excluded = ScanExclusions.directories(for: scope, home: home, paths: paths)
+        let arguments = ["--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive"]
+            + ScanExclusions.arguments(for: excluded) + ["--"] + roots
+        let context = Context(
+            scope: scope,
+            startedAt: startedAt,
+            definitionsDate: definitionsDate,
+            roots: roots,
+            excluded: excluded
+        )
         guard let process = launch(clamscan, arguments) else {
             let quitting = state.withLock { $0.quitRequested }
             return quitting
@@ -263,6 +184,7 @@ public final class ClamAVScanner: ScannerEngine {
         let startedAt: Date
         let definitionsDate: Date?
         let roots: [String]
+        let excluded: [String]
     }
 
     /// Starts the child inside the same critical section that checks the quit and cancel flags and records the
@@ -340,6 +262,8 @@ public final class ClamAVScanner: ScannerEngine {
         }
         let plausible = ScanPathRules.isPlainAbsolute(path)
             && context.roots.contains { ScanPathRules.isInside(path, directory: $0) }
+            // Second layer behind `--exclude-dir`: nothing below an excluded directory is a result of this scan.
+            && !context.excluded.contains { ScanPathRules.isInside(path, directory: $0) }
         if case .found = line, plausible, !fileExists(path) {
             tally.noteSuspicious()
             return .ignored
@@ -351,45 +275,11 @@ public final class ClamAVScanner: ScannerEngine {
         return line
     }
 
-    /// Pure exit-code mapping, see the type documentation.
-    static func outcome(
-        status: Int32,
-        cancelled: Bool,
-        tally: ScanTally,
-        tail: StderrTail,
-        summary: () -> ScanSummary
-    ) -> ScanEvent {
-        if cancelled || status == 0 || status == 1 {
-            return .finished(summary())
-        }
-        if status == 2, tally.scanned > 0, !tally.fatalSeen {
-            return .finished(summary())
-        }
-        var prefix = "The scan failed (exit \(status))"
-        if tally.findings > 0 {
-            prefix += " after reporting \(tally.findings) finding\(tally.findings == 1 ? "" : "s")"
-        }
-        return .failed(message: tail.failureMessage(prefix: prefix))
-    }
-
     private func summary(_ tally: ScanTally, _ context: Context, cancelled: Bool) -> ScanSummary {
         ScanSummary(
             scope: context.scope, scanned: tally.scanned, unreadable: tally.unreadable,
             findings: tally.findings, startedAt: context.startedAt, endedAt: now(), cancelled: cancelled,
             definitionsDate: context.definitionsDate, permissionDenied: tally.permissionDenied
         )
-    }
-
-    /// Why a scan cannot start, nil when it can. `updateNeeded(nil)` means there is no definitions database at all.
-    static func refusal(_ status: EngineStatus) -> String? {
-        switch status {
-        case .ready, .updateNeeded(definitionsAge: .some): nil
-        case .updateNeeded(definitionsAge: .none): "there are no virus definitions yet"
-        case .homebrewMissing: "ClamAV is not installed and Homebrew was not found"
-        case .notInstalled: "ClamAV is not installed"
-        case .installing: "ClamAV is still being installed"
-        case .downloadingDefinitions: "virus definitions are still downloading"
-        case let .failed(message): message
-        }
     }
 }
