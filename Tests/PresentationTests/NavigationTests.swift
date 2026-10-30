@@ -44,6 +44,14 @@ struct NavigationTests {
         }
     }
 
+    @Test func constructingWithAHiddenDestinationYieldsAVisibleSelection() {
+        for destination in AppDestination.allCases {
+            let navigation = Navigation(selection: destination)
+            #expect(navigation.selection.isAvailable)
+            #expect(navigation.selection == (destination.isAvailable ? destination : .home))
+        }
+    }
+
     @Test func sidebarListsOnlyAvailableDestinationsInOrder() {
         #expect(SidebarItem.visible.map(\.destination) == [.home, .settings])
         #expect(!SidebarItem.visible.contains { !$0.destination.isAvailable })

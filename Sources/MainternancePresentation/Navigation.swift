@@ -5,9 +5,14 @@ import Observation
 @MainActor
 @Observable
 public final class Navigation {
-    public var selection: AppDestination = .home
+    /// Only `init(selection:)` and `open(_:)` write it, so a hidden screen can never be selected.
+    /// Popover rows and metrics carry no destinations (only Home links do), so they need no such rule.
+    public private(set) var selection: AppDestination = .home
 
-    public init() {}
+    /// A hidden initial destination (for example a restored one) becomes Home.
+    public init(selection: AppDestination = .home) {
+        self.selection = selection.isAvailable ? selection : .home
+    }
 
     /// A destination without a working engine is never selected: opening one routes to Home.
     public func open(_ destination: AppDestination) {
