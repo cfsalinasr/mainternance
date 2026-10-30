@@ -1,0 +1,88 @@
+import Foundation
+
+/// State of the scanning engine (ClamAV) as the UI should describe it.
+public enum EngineStatus: Sendable, Equatable {
+    case homebrewMissing
+    case notInstalled
+    case installing(stage: String)
+    case downloadingDefinitions
+    case ready(definitionsAge: TimeInterval?)
+    case updateNeeded(definitionsAge: TimeInterval?)
+    case failed(message: String)
+
+    /// Definitions older than this many seconds (7 days) need an update.
+    public static let maximumDefinitionsAge: TimeInterval = 7 * 24 * 60 * 60
+
+    /// Pure rule. A definitions date in the future (clock skew) counts as age 0.
+    public static func status(
+        engineInstalled: Bool,
+        homebrewAvailable: Bool,
+        definitionsDate: Date?,
+        now: Date
+    ) -> EngineStatus {
+        guard engineInstalled else { return homebrewAvailable ? .notInstalled : .homebrewMissing }
+        guard let definitionsDate else { return .updateNeeded(definitionsAge: nil) }
+        let age = max(0, now.timeIntervalSince(definitionsDate))
+        return age > maximumDefinitionsAge ? .updateNeeded(definitionsAge: age) : .ready(definitionsAge: age)
+    }
+}
+
+public enum ScanScope: Sendable, Equatable {
+    case quick
+    case full
+    case custom(URL)
+}
+
+public struct ScanFinding: Sendable, Equatable, Identifiable {
+    public let id: UUID
+    public let path: String
+    public let signature: String
+    public let foundAt: Date
+
+    public init(id: UUID, path: String, signature: String, foundAt: Date) {
+        self.id = id
+        self.path = path
+        self.signature = signature
+        self.foundAt = foundAt
+    }
+}
+
+public struct ScanSummary: Sendable, Equatable {
+    public let scope: ScanScope
+    public let scanned: Int
+    public let unreadable: Int
+    public let findings: Int
+    public let startedAt: Date
+    public let endedAt: Date
+    public let cancelled: Bool
+    public let definitionsDate: Date?
+
+    public init(
+        scope: ScanScope, scanned: Int, unreadable: Int, findings: Int,
+        startedAt: Date, endedAt: Date, cancelled: Bool, definitionsDate: Date?
+    ) {
+        self.scope = scope
+        self.scanned = scanned
+        self.unreadable = unreadable
+        self.findings = findings
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.cancelled = cancelled
+        self.definitionsDate = definitionsDate
+    }
+}
+
+public enum ScanEvent: Sendable, Equatable {
+    case started(scope: ScanScope)
+    case progress(scanned: Int, current: String)
+    case found(ScanFinding)
+    case finished(ScanSummary)
+    case failed(message: String)
+}
+
+public enum InstallEvent: Sendable, Equatable {
+    case stage(String)
+    case progress(Double?)
+    case finished
+    case failed(message: String)
+}
