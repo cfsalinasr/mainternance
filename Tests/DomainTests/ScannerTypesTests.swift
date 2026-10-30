@@ -49,6 +49,25 @@ struct ScannerTypesTests {
         )
     }
 
+    @Test func permissionDeniedDefaultsToZeroAndIsBoundedByUnreadable() {
+        func make(unreadable: Int, denied: Int?) -> ScanSummary {
+            if let denied {
+                return ScanSummary(
+                    scope: .quick, scanned: 1, unreadable: unreadable, findings: 0,
+                    startedAt: now, endedAt: now, cancelled: false, definitionsDate: nil, permissionDenied: denied
+                )
+            }
+            return ScanSummary(
+                scope: .quick, scanned: 1, unreadable: unreadable, findings: 0,
+                startedAt: now, endedAt: now, cancelled: false, definitionsDate: nil
+            )
+        }
+        #expect(make(unreadable: 4, denied: nil).permissionDenied == 0)
+        #expect(make(unreadable: 4, denied: 3).permissionDenied == 3)
+        #expect(make(unreadable: 2, denied: 9).permissionDenied == 2)
+        #expect(make(unreadable: 2, denied: -1).permissionDenied == 0)
+    }
+
     @Test func completedScanCountsAsLastScan() {
         #expect(ScanSummaryRules.lastScanDate(summary: summary(cancelled: false, end: now)) == now)
     }

@@ -50,7 +50,10 @@ public struct ScanFinding: Sendable, Equatable, Identifiable {
 public struct ScanSummary: Sendable, Equatable {
     public let scope: ScanScope
     public let scanned: Int
+    /// Files that could not be read (permission errors included). They were NOT scanned and are never "clean".
     public let unreadable: Int
+    /// How many of the `unreadable` files failed on permissions (the usual cause is a missing Full Disk Access).
+    public let permissionDenied: Int
     public let findings: Int
     public let startedAt: Date
     public let endedAt: Date
@@ -59,11 +62,12 @@ public struct ScanSummary: Sendable, Equatable {
 
     public init(
         scope: ScanScope, scanned: Int, unreadable: Int, findings: Int,
-        startedAt: Date, endedAt: Date, cancelled: Bool, definitionsDate: Date?
+        startedAt: Date, endedAt: Date, cancelled: Bool, definitionsDate: Date?, permissionDenied: Int = 0
     ) {
         self.scope = scope
         self.scanned = scanned
         self.unreadable = unreadable
+        self.permissionDenied = min(max(0, permissionDenied), max(0, unreadable))
         self.findings = findings
         self.startedAt = startedAt
         self.endedAt = endedAt
