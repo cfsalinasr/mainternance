@@ -1,6 +1,7 @@
 import Foundation
 import MainternanceDomain
 @testable import MainternancePresentation
+import SwiftUI
 import Testing
 
 struct HomeModelTests {
@@ -10,7 +11,7 @@ struct HomeModelTests {
     private func overview(
         battery: BatterySnapshot? = nil,
         checks: [HealthCheck] = [],
-        scan: ScanStatus = ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0),
+        scan: ScanStatus? = ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0),
         snapshot: SystemSnapshot? = nil
     ) -> Overview {
         Overview(
@@ -109,7 +110,7 @@ struct HomeModelTests {
             now: now, locale: locale
         )
         #expect(model.scan.last == "Last scan 3 days ago, clean")
-        #expect(model.scan.next.hasPrefix("Next: "))
+        #expect(model.scan.next?.hasPrefix("Next: ") == true)
     }
 
     @Test func nextScanTimeFollowsLocaleClock() {
@@ -125,6 +126,15 @@ struct HomeModelTests {
         let model = HomeModel(overview: overview(), now: now, locale: locale)
         #expect(model.scan.last == "Never scanned")
         #expect(model.scan.next == "Next: not scheduled")
+    }
+
+    @Test func missingScannerShowsSingleNotSetUpLine() {
+        let model = HomeModel(overview: overview(scan: nil), now: now, locale: locale)
+        #expect(model.scan.last == "Scanner not set up yet")
+        #expect(model.scan.next == nil)
+        #expect(model.scan.state == .good)
+        #expect(!model.scan.last.contains("Never"))
+        #expect(!model.scan.last.contains("Next"))
     }
 
     @Test func findingsReplaceCleanWord() {
@@ -148,11 +158,14 @@ struct HomeModelTests {
             OverviewSample(cpu: 0.2, gpu: nil, memoryPressure: .critical, at: stamp)
         ]
         let series = HistorySeries(history: samples)
-        expectClose(series.cpu, [1, 0.2])
+        expectClose(series.cpu ?? [], [1, 0.2])
         #expect(series.gpu == nil)
-        #expect(series.memory == [0, 1])
-        let withGpu = HistorySeries(history: [OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp)])
-        expectClose(withGpu.gpu ?? [], [0.5])
+        expectClose(series.memory ?? [], [0, 1])
+        let withGpu = HistorySeries(history: [
+            OverviewSample(cpu: 0, gpu: 0.5, memoryPressure: .warning, at: stamp),
+            OverviewSample(cpu: 0, gpu: 1.5, memoryPressure: .warning, at: stamp)
+        ])
+        expectClose(withGpu.gpu ?? [], [0.5, 1])
     }
 
     private func expectClose(
@@ -177,5 +190,76 @@ struct HomeModelTests {
         #expect(HomeModel.temperatureText(1e300) == "1000 °C")
         #expect(HomeModel.temperatureText(-1e300) == "-1000 °C")
         #expect(HomeModel.temperatureText(-3.6) == "-4 °C")
+    }
+
+    @Test func unknownMemoryOmitsTheMemoryTile() {
+        var shot = makeSnapshot()
+        shot.memoryPressure = nil
+        let checks = [
+            check(.diskSpace, .good, "ok", .cleanup), check(.memoryPressure, .good, "Pressure normal", .home),
+            check(.thermal, .good, "No throttling", .home)
+        ]
+        let model = HomeModel(overview: overview(checks: checks, snapshot: shot))
+        #expect(model.tiles.map(\.title) == ["Disk free", "Thermal"])
+    }
+
+    @Test func unreadableDiskTileShowsUnavailableWithoutCaption() throws {
+        var shot = makeSnapshot()
+        shot.diskTotalBytes = 0
+        shot.diskFreeBytes = 0
+        let model = HomeModel(overview: overview(snapshot: shot))
+        let tile = try #require(model.tiles.first)
+        #expect(tile.title == "Disk free")
+        #expect(tile.value == "Unavailable")
+        #expect(tile.caption == nil)
+    }
+
+    @Test func seriesSkipsNilCpuAndMemorySamples() {
+        let stamp = Date()
+        let samples = [
+            OverviewSample(cpu: nil, gpu: nil, memoryPressure: nil, at: stamp),
+            OverviewSample(cpu: 0.5, gpu: nil, memoryPressure: .warning, at: stamp),
+            OverviewSample(cpu: 0.25, gpu: nil, memoryPressure: nil, at: stamp)
+        ]
+        let series = HistorySeries(history: samples)
+        expectClose(series.cpu ?? [], [0.5, 0.25])
+        #expect(series.memory == nil) // Only one sample knows the pressure: nothing to draw.
+        let none = HistorySeries(history: [OverviewSample(cpu: nil, gpu: nil, memoryPressure: nil, at: stamp)])
+        #expect(none.cpu == nil)
+        #expect(none.memory == nil)
+        #expect(HistorySeries(history: []).cpu == nil)
+    }
+
+    @Test func sparklineWithFewerThanTwoPointsDrawsNothing() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 20)
+        #expect(Sparkline(values: []).path(in: rect).isEmpty)
+        #expect(Sparkline(values: [0.5]).path(in: rect).isEmpty)
+        #expect(!Sparkline(values: [0.5, 0.7]).path(in: rect).isEmpty)
+    }
+
+    @Test func emptySuggestionsHaveAOneLineEmptyState() {
+        #expect(HomeModel(overview: overview()).actions.isEmpty)
+        #expect(HomeModel(overview: overview()).suggestionsEmptyText == "Nothing to suggest yet")
+    }
+}
+
+extension HomeModelTests {
+    @Test func suggestionsEmptyTextAppearsOnlyWithoutActions() {
+        let empty = HomeModel(overview: overview())
+        #expect(empty.suggestionsEmptyText == "Nothing to suggest yet")
+        let action = SuggestedAction(
+            id: "x", title: "Free space", detail: "d", symbol: "sparkles", destination: .cleanup
+        )
+        let full = HomeModel(overview: Overview(
+            snapshot: makeSnapshot(), scan: nil, report: HealthReport(checks: []), actions: [action]
+        ))
+        #expect(full.suggestionsEmptyText == nil)
+    }
+
+    @Test func goodBannerSaysAvailableWhenSomeChecksAreMissing() {
+        let partial = HomeModel(overview: overview(checks: [check(.diskSpace, .good, "ok", .home)]))
+        #expect(partial.banner.goodText == "All available checks passed")
+        let all = CheckID.allCases.map { check($0, .good, "ok", .home) }
+        #expect(HomeModel(overview: overview(checks: all)).banner.goodText == "All checks passed")
     }
 }

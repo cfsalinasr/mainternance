@@ -1,9 +1,10 @@
 import SwiftUI
 
 public struct SettingsView: View {
-    private static let refreshNote = [
+    /// Matches `SamplingPolicy`: 2 s visible, 45 s hidden, doubled in Low Power Mode.
+    static let refreshNote = [
         "Metrics refresh every 2 s while this window or the menu bar popover is open,",
-        "and about every 45 s otherwise."
+        "and about every 45 s otherwise; both intervals double in Low Power Mode."
     ].joined(separator: " ")
 
     private let state: SettingsViewState
@@ -16,6 +17,8 @@ public struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Settings").font(.title2.bold())
+                // At the top so it covers every control below, not only the notification toggles.
+                Text(SampleDataCopy.settingsNote).font(.system(size: 12)).foregroundStyle(.secondary)
                 general
                 schedule
                 notifications

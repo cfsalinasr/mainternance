@@ -4,12 +4,12 @@ import Observation
 
 /// One point of the sparkline history; taken from a refresh that finished while the model was visible.
 public struct OverviewSample: Equatable, Sendable {
-    public var cpu: Double
+    public var cpu: Double?
     public var gpu: Double?
-    public var memoryPressure: MemoryPressure
+    public var memoryPressure: MemoryPressure?
     public var date: Date
 
-    public init(cpu: Double, gpu: Double?, memoryPressure: MemoryPressure, at date: Date) {
+    public init(cpu: Double?, gpu: Double?, memoryPressure: MemoryPressure?, at date: Date) {
         self.cpu = cpu
         self.gpu = gpu
         self.memoryPressure = memoryPressure

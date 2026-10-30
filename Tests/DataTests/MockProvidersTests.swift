@@ -22,7 +22,7 @@ struct MockProvidersTests {
 
     @Test func mockScanStatusDates() async throws {
         let now = fixedNow
-        let scan = await MockScanStatusProvider(now: { now }).currentStatus()
+        let scan = try #require(await MockScanStatusProvider(now: { now }).currentStatus())
         #expect(scan.unresolvedFindings == 0)
         #expect(scan.lastScan == now.addingTimeInterval(-3 * 86400))
         let next = try #require(scan.nextScan)

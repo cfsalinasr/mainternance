@@ -46,4 +46,13 @@ struct MenuBarLabelTests {
         func requireSendable(_: (some Sendable).Type) {}
         requireSendable(MenuBarLabel.self)
     }
+
+    @Test func unreadableDiskGivesEmptyText() {
+        var snapshot = makeSnapshot()
+        snapshot.diskTotalBytes = 0
+        snapshot.diskFreeBytes = 0
+        let label = MenuBarLabel.make(from: makeOverview(state: .needsAttention, snapshot: snapshot))
+        #expect(label.text == "")
+        #expect(label.symbol == "exclamationmark.shield")
+    }
 }

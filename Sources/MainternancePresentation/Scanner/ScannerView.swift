@@ -10,6 +10,7 @@ public struct ScannerView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                SampleDataBadge()
                 if !state.engineConnected {
                     Text(ScannerViewState.sampleNote).font(.system(size: 12)).foregroundStyle(.secondary)
                 }

@@ -35,10 +35,19 @@ public struct HomeModel: Equatable, Sendable {
         public var symbol: String
         public var state: HealthState
         public var last: String
-        public var next: String
+        /// Nil when there is no scanner, so only one line is shown.
+        public var next: String?
     }
 
+    /// Shown in the Suggested card when there is nothing to suggest.
+    public static let noSuggestionsText = "Nothing to suggest yet"
+
     public var banner: Banner
+    /// Non-nil when there is nothing to suggest, so the card is never silently blank.
+    public var suggestionsEmptyText: String? {
+        actions.isEmpty ? Self.noSuggestionsText : nil
+    }
+
     public var tiles: [Tile]
     public var scan: ScanSummary
     public var actions: [SuggestedAction]
@@ -54,7 +63,7 @@ public struct HomeModel: Equatable, Sendable {
             state: state, title: state.title,
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             reasons: report.attentionChecks.map { Reason(id: $0.id, text: $0.reason, destination: $0.destination) },
-            goodText: "All checks passed"
+            goodText: Self.goodText(report: report)
         )
 
         tiles = Self.makeTiles(snapshot: snapshot, report: report)
@@ -62,6 +71,12 @@ public struct HomeModel: Equatable, Sendable {
 
         actions = overview.actions
         temperatureText = Self.temperatureText(snapshot.temperatureCelsius)
+    }
+
+    /// Honest wording: when some checks cannot be made, "all" would overstate what was measured.
+    static func goodText(report: HealthReport) -> String {
+        let measured = Set(report.checks.map(\.id))
+        return measured.count == CheckID.allCases.count ? "All checks passed" : "All available checks passed"
     }
 
     /// Nil for a missing or non-finite reading (a sensor can report NaN or infinity), so the row is omitted.
@@ -79,14 +94,14 @@ public struct HomeModel: Equatable, Sendable {
 
         var tiles = [
             Tile(
-                title: "Disk free", symbol: "internaldrive", value: formatBytes(snapshot.diskFreeBytes),
+                title: "Disk free", symbol: "internaldrive", value: diskFreeText(snapshot),
                 caption: snapshot.diskTotalBytes > 0 ? "of \(formatBytes(snapshot.diskTotalBytes))" : nil,
                 state: check(.diskSpace)?.state ?? .good, destination: check(.diskSpace)?.destination ?? .home
             )
         ]
-        if let memory = check(.memoryPressure) {
+        if let pressure = snapshot.memoryPressure, let memory = check(.memoryPressure) {
             tiles.append(Tile(
-                title: "Memory", symbol: "memorychip", value: PopoverModel.memoryName(snapshot.memoryPressure),
+                title: "Memory", symbol: "memorychip", value: PopoverModel.memoryName(pressure),
                 caption: "pressure", state: memory.state, destination: memory.destination
             ))
         }
@@ -116,8 +131,13 @@ public struct HomeModel: Equatable, Sendable {
             overview.report.checks.first { $0.id == id }
         }
 
+        guard let scan = overview.scan else {
+            return ScanSummary(
+                symbol: "shield", state: .good, last: "Scanner not set up yet", next: nil
+            )
+        }
         let scanState = max(check(.lastScan)?.state ?? .good, check(.scannerFindings)?.state ?? .good)
-        let findings = overview.scan.unresolvedFindings
+        let findings = scan.unresolvedFindings
         let outcome = switch findings {
         case ...0: "clean"
         case 1: "1 finding"
@@ -126,10 +146,10 @@ public struct HomeModel: Equatable, Sendable {
         return ScanSummary(
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,
-            last: overview.scan.lastScan.map {
+            last: scan.lastScan.map {
                 "Last scan \(PopoverModel.relative($0, now: now, locale: locale)), \(outcome)"
             } ?? "Never scanned",
-            next: overview.scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
+            next: scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
         )
     }
 
@@ -142,22 +162,30 @@ public struct HomeModel: Equatable, Sendable {
 
 /// Plain numeric series for the Details sparklines, all in 0...1.
 public struct HistorySeries: Equatable, Sendable {
-    public var cpu: [Double]
-    /// Nil when no sample has a GPU value, so the row is omitted.
+    /// Nil when fewer than two samples have a CPU value, so the row is omitted.
+    public var cpu: [Double]?
+    /// Nil when fewer than two samples have a GPU value, so the row is omitted.
     public var gpu: [Double]?
-    public var memory: [Double]
+    /// Nil when fewer than two samples know the memory pressure, so the row is omitted.
+    public var memory: [Double]?
+
+    /// A line needs two points; a row with nothing drawn must not appear.
+    static let minimumPoints = 2
 
     public init(history: [OverviewSample]) {
-        cpu = history.map { Self.clamp($0.cpu) }
+        let cpuValues = history.compactMap(\.cpu)
+        cpu = cpuValues.count < Self.minimumPoints ? nil : cpuValues.map(Self.clamp)
         let gpuValues = history.compactMap(\.gpu)
-        gpu = gpuValues.isEmpty ? nil : gpuValues.map(Self.clamp)
-        memory = history.map {
+        gpu = gpuValues.count < Self.minimumPoints ? nil : gpuValues.map(Self.clamp)
+        let memoryValues: [Double] = history.compactMap {
             switch $0.memoryPressure {
             case .normal: 0
             case .warning: 0.5
             case .critical: 1
+            case nil: nil
             }
         }
+        memory = memoryValues.count < Self.minimumPoints ? nil : memoryValues
     }
 
     private static func clamp(_ value: Double) -> Double {

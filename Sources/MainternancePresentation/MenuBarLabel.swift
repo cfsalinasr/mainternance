@@ -20,7 +20,7 @@ public struct MenuBarLabel: Equatable, Sendable {
         return MenuBarLabel(
             symbol: state == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: state,
-            text: formatBytes(overview.snapshot.diskFreeBytes)
+            text: diskFreeKnownText(overview.snapshot) ?? ""
         )
     }
 }

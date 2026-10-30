@@ -21,8 +21,14 @@ private struct FakeSnapshots: SystemSnapshotProviding {
 }
 
 private struct FakeScans: ScanStatusProviding {
-    func currentStatus() async -> ScanStatus {
+    func currentStatus() async -> ScanStatus? {
         scan
+    }
+}
+
+private struct NoScanner: ScanStatusProviding {
+    func currentStatus() async -> ScanStatus? {
+        nil
     }
 }
 
@@ -42,5 +48,16 @@ struct LoadOverviewTests {
         #expect(overview.scan == scan)
         #expect(overview.report == HealthEvaluator().evaluate(snapshot: snapshot, scan: scan, now: fixedNow))
         #expect(overview.actions == [action])
+    }
+
+    @Test func missingScannerYieldsNilScanAndOmitsScanChecks() async {
+        let load = LoadOverview(
+            snapshots: FakeSnapshots(), scans: NoScanner(), actions: FakeActions(), now: { fixedNow }
+        )
+        let overview = await load()
+        #expect(overview.scan == nil)
+        #expect(overview.report == HealthEvaluator().evaluate(snapshot: snapshot, scan: nil, now: fixedNow))
+        #expect(!overview.report.checks.contains { $0.id == .lastScan || $0.id == .scannerFindings })
+        #expect(overview.report.checks.contains { $0.id == .startupItems })
     }
 }

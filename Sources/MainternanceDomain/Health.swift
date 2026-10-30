@@ -51,12 +51,27 @@ public struct HealthReport: Sendable, Equatable {
 public struct HealthEvaluator: Sendable {
     public init() {}
 
-    public func evaluate(snapshot: SystemSnapshot, scan: ScanStatus, now: Date) -> HealthReport {
-        var checks = [disk(snapshot), memory(snapshot), thermal(snapshot)]
+    public func evaluate(snapshot: SystemSnapshot, scan: ScanStatus?, now: Date) -> HealthReport {
+        var checks = [disk(snapshot)]
+        if let pressure = snapshot.memoryPressure {
+            checks.append(memory(pressure))
+        }
+        checks.append(thermal(snapshot))
         if let battery = snapshot.battery {
             checks.append(batteryHealth(battery))
         }
-        checks += [startup(snapshot), lastScan(scan, now: now), osUpdate(snapshot), findings(scan)]
+        if let count = snapshot.newStartupItemCount {
+            checks.append(startup(count))
+        }
+        if let scan {
+            checks.append(lastScan(scan, now: now))
+        }
+        if let updateAvailable = snapshot.osUpdateAvailable {
+            checks.append(osUpdate(updateAvailable))
+        }
+        if let scan {
+            checks.append(findings(scan))
+        }
         return HealthReport(checks: checks)
     }
 
@@ -111,8 +126,8 @@ public struct HealthEvaluator: Sendable {
         return formatter.string(fromByteCount: bytes)
     }
 
-    private func memory(_ snapshot: SystemSnapshot) -> HealthCheck {
-        let (state, reason): (HealthState, String) = switch snapshot.memoryPressure {
+    private func memory(_ pressure: MemoryPressure) -> HealthCheck {
+        let (state, reason): (HealthState, String) = switch pressure {
         case .normal: (.good, "Pressure normal")
         case .warning: (.needsAttention, "Memory pressure elevated")
         case .critical: (.problem, "Memory pressure critical")
@@ -139,8 +154,7 @@ public struct HealthEvaluator: Sendable {
         )
     }
 
-    private func startup(_ snapshot: SystemSnapshot) -> HealthCheck {
-        let count = snapshot.newStartupItemCount
+    private func startup(_ count: Int) -> HealthCheck {
         let reason = switch count {
         case ...0: "No new items"
         case 1: "1 new login item"
@@ -175,11 +189,11 @@ public struct HealthEvaluator: Sendable {
         return HealthCheck(id: .lastScan, state: state, title: "Last scan", reason: reason, destination: .scanner)
     }
 
-    private func osUpdate(_ snapshot: SystemSnapshot) -> HealthCheck {
+    private func osUpdate(_ available: Bool) -> HealthCheck {
         HealthCheck(
-            id: .osUpdate, state: snapshot.osUpdateAvailable ? .needsAttention : .good,
+            id: .osUpdate, state: available ? .needsAttention : .good,
             title: "macOS update",
-            reason: snapshot.osUpdateAvailable ? "Update available" : "Up to date",
+            reason: available ? "Update available" : "Up to date",
             destination: .settings
         )
     }

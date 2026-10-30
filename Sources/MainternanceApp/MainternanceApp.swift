@@ -12,6 +12,7 @@ struct MainternanceApp: App {
     private let navigation = Navigation()
     private let states = WindowStates()
     private let visibility: VisibilityCoordinator
+    private let popoverDismisser = WindowDismisser()
 
     init() {
         let model = CompositionRoot.makeOverviewViewModel()
@@ -22,7 +23,7 @@ struct MainternanceApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PopoverHost(viewModel: viewModel, visibility: visibility)
+            PopoverHost(viewModel: viewModel, visibility: visibility, dismisser: popoverDismisser)
         } label: {
             MenuBarLabelView(overview: viewModel.overview)
         }
@@ -44,6 +45,7 @@ struct MainternanceApp: App {
 private struct PopoverHost: View {
     let viewModel: OverviewViewModel
     let visibility: VisibilityCoordinator
+    let dismisser: WindowDismisser
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -53,6 +55,7 @@ private struct PopoverHost: View {
                 openWindow(id: "main")
                 NSApp.activate()
             },
+            dismisser: dismisser,
             onVisibilityChange: { visibility.report(.popover, visible: $0) }
         )
     }

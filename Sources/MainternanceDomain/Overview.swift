@@ -5,7 +5,8 @@ public protocol SystemSnapshotProviding: Sendable {
 }
 
 public protocol ScanStatusProviding: Sendable {
-    func currentStatus() async -> ScanStatus
+    /// Nil when no scanner exists yet.
+    func currentStatus() async -> ScanStatus?
 }
 
 public protocol SuggestedActionsProviding: Sendable {
@@ -30,11 +31,12 @@ public struct SuggestedAction: Sendable, Identifiable, Equatable {
 
 public struct Overview: Sendable, Equatable {
     public var snapshot: SystemSnapshot
-    public var scan: ScanStatus
+    /// Nil when no scanner exists yet.
+    public var scan: ScanStatus?
     public var report: HealthReport
     public var actions: [SuggestedAction]
 
-    public init(snapshot: SystemSnapshot, scan: ScanStatus, report: HealthReport, actions: [SuggestedAction]) {
+    public init(snapshot: SystemSnapshot, scan: ScanStatus?, report: HealthReport, actions: [SuggestedAction]) {
         self.snapshot = snapshot
         self.scan = scan
         self.report = report

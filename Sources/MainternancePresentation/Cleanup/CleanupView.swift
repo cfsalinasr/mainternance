@@ -10,6 +10,7 @@ public struct CleanupView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                SampleDataBadge()
                 Text("Cleanup").font(.title2.bold())
                 if state.categories.isEmpty {
                     ContentUnavailableView("Nothing to clean", systemImage: "sparkles")

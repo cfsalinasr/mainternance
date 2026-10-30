@@ -19,6 +19,8 @@ public struct WindowFacts: Equatable, Sendable {
 public struct WindowVisibilityState: Equatable, Sendable {
     public enum Event: Equatable, Sendable {
         case attached, detached, becameKey, resignedKey, occlusionChanged, willClose
+        /// The owner dismissed the window itself; hidden until it becomes key again or is re-attached.
+        case dismissed
     }
 
     public private(set) var isClosed = false
@@ -30,7 +32,7 @@ public struct WindowVisibilityState: Equatable, Sendable {
         switch event {
         case .attached, .becameKey, .detached:
             isClosed = false
-        case .willClose:
+        case .willClose, .dismissed:
             isClosed = true
         case .resignedKey, .occlusionChanged:
             break
@@ -42,5 +44,22 @@ public struct WindowVisibilityState: Equatable, Sendable {
     /// A closed or ordered-out window is hidden; otherwise visible if on screen or key.
     public static func isVisible(_ window: WindowFacts, isClosed: Bool) -> Bool {
         !isClosed && window.isOrderedIn && (window.occlusionVisible || window.isKey)
+    }
+}
+
+/// What to do once the status item was clicked to dismiss the popover and the click has had time to act.
+public enum PopoverDismissFallback: Equatable, Sendable {
+    /// The popover closed; nothing to do.
+    case none
+    /// The click did not close it: order the popover's own window out so it cannot overlap the main window.
+    case orderOut
+
+    /// One-shot check after the click. `stillOrderedIn` is the popover window's `isVisible` at that moment;
+    /// `isPopoverWindow` is whether the observed window is still the one the click was meant to dismiss;
+    /// `reopened` is whether a `didBecomeKey` arrived since the check was scheduled. A legitimate reopen
+    /// (`MenuBarExtra` reuses the same window) must not be closed again, or `MenuBarExtra`'s own presented
+    /// state would go out of sync. Not verified at runtime: the event order is inferred from AppKit docs.
+    public static func afterClick(stillOrderedIn: Bool, isPopoverWindow: Bool = true, reopened: Bool = false) -> Self {
+        isPopoverWindow && stillOrderedIn && !reopened ? .orderOut : .none
     }
 }

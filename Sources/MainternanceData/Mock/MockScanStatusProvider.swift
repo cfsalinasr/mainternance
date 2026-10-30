@@ -8,7 +8,7 @@ public struct MockScanStatusProvider: ScanStatusProviding {
         self.now = now
     }
 
-    public func currentStatus() async -> ScanStatus {
+    public func currentStatus() async -> ScanStatus? {
         let current = now()
         let next = Calendar.current.nextDate(
             after: current,

@@ -78,3 +78,37 @@ struct WindowVisibilityStateTests {
         #expect(result.reported == [false, true, true, false])
     }
 }
+
+extension WindowVisibilityStateTests {
+    @Test func dismissedPopoverReportsHiddenUntilKeyAgain() {
+        var state = WindowVisibilityState()
+        let shown = WindowFacts(isOrderedIn: true, occlusionVisible: true, isKey: true)
+        let orderedOut = WindowFacts(isOrderedIn: false, occlusionVisible: true, isKey: false)
+        let first = state.handle(.becameKey, window: shown)
+        // The dismiss path: the owner dismisses, while occlusion can still say visible.
+        let afterDismiss = state.handle(.dismissed, window: orderedOut)
+        let lateOcclusion = state.handle(.occlusionChanged, window: shown)
+        let reopened = state.handle(.becameKey, window: shown)
+        #expect(first)
+        #expect(!afterDismiss)
+        #expect(!lateOcclusion)
+        #expect(reopened)
+    }
+
+    @Test func fallbackOrdersOutOnlyWhenTheClickLeftThePopoverOnScreen() {
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true) == .orderOut)
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: false) == PopoverDismissFallback.none)
+    }
+
+    @Test func fallbackIsCancelledByAReopenButStillFiresWithoutOne() {
+        let none = PopoverDismissFallback.none
+        // (a) click, no reopen, still visible -> fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true, reopened: false) == .orderOut)
+        // (b) click, then becameKey before the check -> no fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true, reopened: true) == none)
+        // (c) click worked -> no fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: false, reopened: false) == none)
+        // (d) not the popover's window -> no fallback
+        #expect(PopoverDismissFallback.afterClick(stillOrderedIn: true, isPopoverWindow: false) == none)
+    }
+}

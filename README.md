@@ -14,10 +14,36 @@ and the `MainternanceApp` executable that wires them together.
 - Check layer boundaries: `scripts/check-boundaries.sh`
 - Build and sign the `.app` bundle: `scripts/build-app.sh` (see Install)
 
+## What is live
+
+Only part of the app reads your Mac today. The rest shows sample data and says so.
+
+**Live readings of this Mac** (Overview, popover and menu bar):
+
+- Free disk space, the "important usage" figure that System Settings shows (it counts purgeable space).
+- Memory pressure and thermal state.
+- Battery: percent, charging, health and cycle count. Absent on Macs without a battery.
+- CPU usage. It needs two samples, so it appears a couple of seconds after the first reading; the first
+  value averages the time since the last reading.
+- GPU utilization, when the Mac reports it.
+
+Readings are refreshed about every 2 s while the popover or window is open and about every 45 s
+otherwise; both intervals are doubled in Low Power Mode.
+
+**Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
+silicon), the startup-item count, macOS update status, scanner status and suggestions.
+
+**Sample data**, labelled "Sample data" in the app and not connected to your Mac yet: Files, Scanner,
+Cleanup, Startup and Uninstaller. Settings are not applied yet either.
+
+Later plans replace these one by one: the cleanup, startup and uninstaller backends; the file explorer;
+the ClamAV scanner and quarantine; notifications, launch at login and scheduling.
+
 ## Install
 
-Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar, then
-choose Open Mainternance to show the window.
+Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar to see the
+popover with the live readings, then choose Open Mainternance to show the window. Several window
+sections show sample data (see What is live).
 
 - `scripts/build-app.sh` builds a release binary and assembles and signs
   `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).
@@ -26,8 +52,8 @@ choose Open Mainternance to show the window.
   every rebuild. Run `scripts/make-signing-cert.sh` once to create the stable self-signed identity
   `Mainternance Local Signing` in your login keychain (it asks for your password once; use `--dry-run`
   to preview). Later builds pick it up automatically.
-- To open it at login, add it under System Settings > General > Login Items. A later plan adds a
-  Settings toggle wired to the system.
+- To open it at login, add it under System Settings > General > Login Items. The Settings toggle is sample
+  data for now; a later plan wires it to the system.
 - Full Disk Access is not needed yet; it is granted later, in the scanner plan.
 
 ## Building

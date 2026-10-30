@@ -10,6 +10,7 @@ public struct StartupView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                SampleDataBadge()
                 Text("Startup").font(.title2.bold())
                 if state.items.isEmpty {
                     ContentUnavailableView("No startup items", systemImage: "power")

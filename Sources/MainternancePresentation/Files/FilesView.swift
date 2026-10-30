@@ -12,7 +12,8 @@ public struct FilesView: View {
 
     public var body: some View {
         @Bindable var state = state
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            SampleDataBadge()
             Picker("Section", selection: $state.segment) {
                 ForEach(FilesSegment.allCases) { Text($0.title).tag($0) }
             }
