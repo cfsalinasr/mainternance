@@ -79,8 +79,8 @@ struct LineSplitter {
 /// Signals go through `kill(2)` while the lock is held, so a signal can never be sent after `finish` recorded the
 /// exit (no late SIGKILL at a recycled pid). No Foundation `Process` method is called while holding the lock.
 final class ProcessControl: Sendable {
-    /// Replaces real signalling (fakes): receives the control and the signal that would have been sent.
-    typealias Hook = @Sendable (ProcessControl, Int32) -> Void
+    /// Replaces real signalling (fakes): receives the control, the signal and whether it targets the whole group.
+    typealias Hook = @Sendable (ProcessControl, Int32, Bool) -> Void
 
     private struct State {
         var keepAlive: Process? // only retained, never called
@@ -169,7 +169,7 @@ final class ProcessControl: Sendable {
     private func signalIfRunning(_ signal: Int32, group: Bool) -> Bool {
         if let hook {
             guard isRunning else { return false }
-            hook(self, signal)
+            hook(self, signal, group)
             return true
         }
         return state.withLock { current in
@@ -219,8 +219,16 @@ public final class RunningProcess: Sendable {
         lines: AsyncStream<ProcessLine>,
         onTerminate: @escaping @Sendable () -> Void
     ) -> (process: RunningProcess, finish: @Sendable (Int32) -> Void) {
-        let control = ProcessControl(hook: { control, signal in
-            onTerminate()
+        controllable(lines: lines, onSignal: { _, _ in onTerminate() })
+    }
+
+    /// Like the `onTerminate` variant, but reports the signal and whether the whole process group was targeted.
+    static func controllable(
+        lines: AsyncStream<ProcessLine>,
+        onSignal: @escaping @Sendable (_ signal: Int32, _ group: Bool) -> Void
+    ) -> (process: RunningProcess, finish: @Sendable (Int32) -> Void) {
+        let control = ProcessControl(hook: { control, signal, group in
+            onSignal(signal, group)
             control.finish(status: 128 + signal)
         })
         let process = RunningProcess(lines: lines, processIdentifier: nil, control: control)

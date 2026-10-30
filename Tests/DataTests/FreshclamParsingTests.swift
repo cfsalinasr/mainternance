@@ -78,6 +78,11 @@ struct FreshclamParsingTests {
         #expect(ClamAVInstaller.brewStage(for: "==> Pouring clamav--1.5.4.arm64.bottle.tar.gz") == "Installing ClamAV…")
         #expect(ClamAVInstaller.brewStage(for: "==> Summary") == "Finishing…")
         #expect(ClamAVInstaller.brewStage(for: "==> Caveats") == nil)
+        #expect(ClamAVInstaller.brewStage(for: "==> Fetching downloads for: clamav") == "Downloading ClamAV…")
+        #expect(ClamAVInstaller.brewStage(for: "==> fetching clamav") == "Downloading ClamAV…")
+        #expect(ClamAVInstaller.brewStage(for: "==>Downloading x") == "Downloading ClamAV…")
+        #expect(ClamAVInstaller.brewStage(for: "  ==>   POURING clamav") == "Installing ClamAV…")
+        #expect(ClamAVInstaller.brewStage(for: "✔︎ Bottle clamav (1.5.4)") == nil)
         #expect(ClamAVInstaller.brewStage(for: "Downloading") == nil)
         #expect(ClamAVInstaller.brewStage(for: "") == nil)
     }
@@ -87,6 +92,9 @@ struct FreshclamParsingTests {
         let clean = ClamAVInstaller.sanitized("\u{1B}[31mError:\u{7} boom\t\u{0}here\u{1B}[0m")
         #expect(!clean.unicodeScalars.contains { $0.properties.generalCategory == .control })
         #expect(clean.contains("boom"))
+        #expect(!clean.contains("[31m"))
+        #expect(!clean.contains("[0m"))
+        #expect(ClamAVInstaller.sanitized("\u{1B}[1;31mERROR:\u{1B}[0m \u{1B}[2Kbad") == "ERROR: bad")
         let long = ClamAVInstaller.sanitized(String(repeating: "x", count: 5000))
         #expect(long.count == ClamAVInstaller.maxMessageLength + 1)
     }

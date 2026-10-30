@@ -4,6 +4,18 @@ import MainternanceDomain
 import Synchronization
 import Testing
 
+final class SignalLog: Sendable {
+    private let values = Mutex<[Int32]>([])
+
+    func add(_ value: Int32) {
+        values.withLock { $0.append(value) }
+    }
+
+    var all: [Int32] {
+        values.withLock { $0 }
+    }
+}
+
 @Suite("ClamAV installer")
 struct ClamAVInstallerTests {
     private func installer(
@@ -83,7 +95,8 @@ struct ClamAVInstallerTests {
     func installFailure() async throws {
         let temp = try TempDirectory()
         let runner = FakeRunner.replaying([
-            .stderr("first line"), .stderr("Error: second"), .stderr("\u{1B}[31mError:\u{1B}[0m no space left\u{7}"),
+            .stderr("first line"), .stderr("Error: one"), .stderr("Error: two"),
+            .stdout("Error: stdout reason"), .stderr("\u{1B}[31mError:\u{1B}[0m no space left\u{7}"),
             .stderr(String(repeating: "z", count: 3000))
         ], status: 1)
         let events = await collectEvents(
@@ -95,8 +108,11 @@ struct ClamAVInstallerTests {
         }
         #expect(message.hasPrefix("Homebrew failed (exit 1): "))
         #expect(!message.contains("first line"))
-        #expect(!message.contains("second"))
-        #expect(message.contains("no space left"))
+        #expect(!message.contains("one"))
+        #expect(!message.contains("two"))
+        #expect(message.contains("stdout reason"))
+        #expect(message.contains("Error: no space left"))
+        #expect(!message.contains("[31m"))
         #expect(!message.unicodeScalars.contains { $0.properties.generalCategory == .control })
         #expect(message.count < 500)
     }
@@ -174,15 +190,13 @@ struct ClamAVInstallerTests {
     @Test("cancelling the consumer terminates the brew process group")
     func cancellationTerminates() async throws {
         let temp = try TempDirectory()
-        let terminated = Mutex(0)
-        let started = Mutex(false)
+        let signals = Mutex<[Bool]>([])
         let runner = FakeRunner { _ in
             let (stream, source) = AsyncStream<ProcessLine>.makeStream()
-            let (process, _) = RunningProcess.controllable(lines: stream, onTerminate: {
-                terminated.withLock { $0 += 1 }
+            let (process, _) = RunningProcess.controllable(lines: stream, onSignal: { _, group in
+                signals.withLock { $0.append(group) }
                 source.finish()
             })
-            started.withLock { $0 = true }
             return process
         }
         let sut = installer(tools: FakeTools(["brew"]), runner: runner, support: temp.url)
@@ -192,10 +206,58 @@ struct ClamAVInstallerTests {
         consumer.cancel()
         _ = await consumer.value
         let deadline = Date().addingTimeInterval(10)
-        while terminated.withLock({ $0 }) == 0, Date() < deadline {
+        while signals.withLock({ $0.isEmpty }), Date() < deadline {
             try? await Task.sleep(for: .milliseconds(5))
         }
-        #expect(started.withLock { $0 })
-        #expect(terminated.withLock { $0 } >= 1)
+        let recorded = signals.withLock { $0 }
+        #expect(!recorded.isEmpty)
+        #expect(recorded.filter { $0 == false }.isEmpty, "the whole process group must be targeted")
+    }
+
+    // MARK: quit hook
+
+    private func hangingRunner(signals: SignalLog) -> FakeRunner {
+        FakeRunner { _ in
+            let (stream, source) = AsyncStream<ProcessLine>.makeStream()
+            let (process, _) = RunningProcess.controllable(lines: stream, onSignal: { signal, _ in
+                signals.add(signal)
+                source.finish()
+            })
+            return process
+        }
+    }
+
+    @Test("terminateNow kills a running install, is idempotent, and frees the slot")
+    func quitHook() async throws {
+        let temp = try TempDirectory()
+        let signals = SignalLog()
+        let runner = hangingRunner(signals: signals)
+        let sut = installer(tools: FakeTools(["brew"]), runner: runner, support: temp.url)
+        let first = sut.install()
+        await waitForCalls(runner, 1)
+        sut.terminateNow()
+        sut.terminateNow()
+        let events = await collectEvents(first)
+        #expect(signals.all == [SIGKILL])
+        #expect(!events.contains(.finished))
+        guard case .failed? = events.last else {
+            Issue.record("expected a failure after the kill, got \(events)")
+            return
+        }
+        let second = sut.install()
+        await waitForCalls(runner, 2)
+        #expect(runner.recorded.count == 2)
+        sut.terminateNow()
+        _ = await collectEvents(second)
+    }
+
+    @Test("terminateNow is a no-op when idle")
+    func quitHookIdle() throws {
+        let temp = try TempDirectory()
+        let runner = FakeRunner.replaying([], status: 0)
+        let sut = installer(tools: FakeTools(["brew"]), runner: runner, support: temp.url)
+        sut.terminateNow()
+        sut.terminateNow()
+        #expect(runner.recorded.isEmpty)
     }
 }

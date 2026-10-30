@@ -52,7 +52,12 @@ struct FreshclamUpdateTests {
         let call = try #require(runner.recorded.first)
         #expect(runner.recorded.count == 1)
         #expect(call.executable == "/fake/bin/freshclam")
-        #expect(call.arguments == ["--config-file=\(paths.freshclamConfig.path)", "--stdout", "--no-warnings"])
+        #expect(call.arguments == [
+            "--config-file=\(paths.freshclamConfig.path)",
+            "--stdout",
+            "--no-warnings",
+            "--show-progress"
+        ])
         #expect(call.lowPriority)
         #expect(!call.arguments.joined().contains("/opt/homebrew"))
 
@@ -84,16 +89,27 @@ struct FreshclamUpdateTests {
         #expect(!events.contains(.finished))
     }
 
-    @Test("non-zero exit fails with the stderr tail even when an old database exists")
+    @Test("non-zero exit reports the ERROR line freshclam wrote to stdout, even with an old database")
     func nonZero() async throws {
         let rig = try rig()
         let paths = rig.paths
-        let runner = FakeRunner.replaying([.stderr("ERROR: Can't connect to database.clamav.net")], status: 52,
-                                          sideEffect: { writeDefinitions(paths) })
+        let runner = FakeRunner.replaying([
+            .stdout("ClamAV update process started at Thu Oct 29 10:00:00 2026"),
+            .stdout("daily.cvd database available for update (local version: 1, remote version: 2)"),
+            .stdout("Time: 1.0s, ETA: 1.0s [=>  ] 1.00MiB/2.00MiB"),
+            .stdout("ERROR: Can't connect to database.clamav.net")
+        ], status: 52, sideEffect: { writeDefinitions(paths) })
         let events = await collectEvents(sut(rig, runner).updateDefinitions())
-        #expect(events.last == .failed(
-            message: "Updating definitions failed (exit 52): ERROR: Can't connect to database.clamav.net"
-        ))
+        let message = "Updating definitions failed (exit 52): ERROR: Can't connect to database.clamav.net"
+        #expect(events.last == .failed(message: message))
+    }
+
+    @Test("stderr is still used when stdout has no error line")
+    func nonZeroStderr() async throws {
+        let rig = try rig()
+        let runner = FakeRunner.replaying([.stdout("noise"), .stderr("cannot reach host")], status: 2)
+        let events = await collectEvents(sut(rig, runner).updateDefinitions())
+        #expect(events.last == .failed(message: "Updating definitions failed (exit 2): cannot reach host"))
     }
 
     @Test("a support path with spaces is written unquoted")

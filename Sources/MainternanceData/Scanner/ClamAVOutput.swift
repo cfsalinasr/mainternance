@@ -1,20 +1,34 @@
 import Foundation
 
-/// Keeps the last couple of stderr lines of a child, sanitized, for failure messages.
+/// Keeps the reason lines of a failed child for the failure message, sanitized.
+///
+/// Lines that look like errors or warnings (either stream; `freshclam --stdout` reports errors on stdout) are
+/// preferred; without any, the last stderr lines are used. At most two lines are reported.
 struct StderrTail {
-    private var lines: [String] = []
+    private var flagged: [String] = []
+    private var plain: [String] = []
 
-    mutating func add(_ line: String) {
+    mutating func add(_ line: String, isStderr: Bool) {
         let clean = ClamAVInstaller.sanitized(line)
         guard !clean.isEmpty else { return }
-        lines.append(clean)
-        if lines.count > 2 {
-            lines.removeFirst()
+        let lowered = clean.lowercased()
+        if lowered.contains("error") || lowered.contains("warning") {
+            Self.append(clean, to: &flagged)
+        } else if isStderr {
+            Self.append(clean, to: &plain)
         }
     }
 
     func failureMessage(prefix: String) -> String {
-        lines.isEmpty ? prefix : "\(prefix): \(lines.joined(separator: " "))"
+        let lines = flagged.isEmpty ? plain : flagged
+        return lines.isEmpty ? prefix : "\(prefix): \(lines.joined(separator: " "))"
+    }
+
+    private static func append(_ line: String, to lines: inout [String]) {
+        lines.append(line)
+        if lines.count > 2 {
+            lines.removeFirst()
+        }
     }
 }
 
@@ -23,7 +37,9 @@ extension ClamAVInstaller {
 
     /// Replaces control characters with spaces, trims and bounds the length.
     static func sanitized(_ text: String) -> String {
-        let mapped = String(String.UnicodeScalarView(text.unicodeScalars.map {
+        let range = NSRange(text.startIndex..., in: text)
+        let plain = ansiSequence.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+        let mapped = String(String.UnicodeScalarView(plain.unicodeScalars.map {
             $0.properties.generalCategory == .control || $0.properties.generalCategory == .format ? " " : $0
         }))
         let collapsed = mapped.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
@@ -85,6 +101,8 @@ extension ClamAVInstaller {
         pattern: #"(?<![\d.\-])(\d+(?:\.\d+)?)\s*([KMGT]?i?B)\s*/\s*(\d+(?:\.\d+)?)\s*([KMGT]?i?B)"#,
         options: [.caseInsensitive]
     )
+    // CSI sequences such as ESC[31m or ESC[2K.
+    private static let ansiSequence = try! NSRegularExpression(pattern: #"\u001B\[[0-?]*[ -/]*[@-~]"#)
     private static let percent = try! NSRegularExpression(pattern: #"(?<![\d.\-])(\d+(?:\.\d+)?)\s*%"#)
     // swiftlint:enable force_try
 }

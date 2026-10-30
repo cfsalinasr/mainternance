@@ -82,6 +82,7 @@ public enum ScanEvent: Sendable, Equatable {
 
 public enum InstallEvent: Sendable, Equatable {
     case stage(String)
+    /// nil is indeterminate. For definitions updates the value restarts per database file: 1 is not completion.
     case progress(Double?)
     case finished
     case failed(message: String)

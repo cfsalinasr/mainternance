@@ -16,7 +16,13 @@ public final class ClamAVInstaller: Sendable {
     private let locator: ToolLocator
     private let runner: ProcessRunning
     private let paths: ClamAVPaths
-    private let busy = Mutex(false)
+    private let state = Mutex(State())
+
+    /// `busy` is the single-flight flag; `current` is the running brew or freshclam, kept for `terminateNow()`.
+    private struct State {
+        var busy = false
+        var current: RunningProcess?
+    }
 
     public init(locator: ToolLocator, runner: ProcessRunning, paths: ClamAVPaths) {
         self.locator = locator
@@ -36,9 +42,19 @@ public final class ClamAVInstaller: Sendable {
         stream { [self] continuation in await runInstall(continuation) }
     }
 
-    /// Downloads the virus definitions into the app-owned database with `freshclam`.
+    /// Downloads the virus definitions into the app-owned database with `freshclam`. `.progress` restarts from 0
+    /// for each database file (daily, main, bytecode), so a value of 1 is NOT completion: only `.finished` is.
     public func updateDefinitions() -> AsyncStream<InstallEvent> {
         stream { [self] continuation in await runUpdate(continuation) }
+    }
+
+    /// Synchronous, idempotent SIGKILL of the running install or update (its whole process group); a no-op when
+    /// nothing runs. Safe from any thread. The app target MUST call it on quit (`applicationWillTerminate`),
+    /// otherwise brew or freshclam outlive the app; Tasks 5/7 wire that. A call that lands in the instant between
+    /// claiming the single-flight slot and starting the child does not stop that child.
+    public func terminateNow() {
+        let process = state.withLock { $0.current }
+        process?.terminateNow()
     }
 
     // MARK: - Single-flight stream plumbing
@@ -46,9 +62,9 @@ public final class ClamAVInstaller: Sendable {
     private func stream(
         _ body: @escaping @Sendable (AsyncStream<InstallEvent>.Continuation) async -> Void
     ) -> AsyncStream<InstallEvent> {
-        let claimed = busy.withLock { running -> Bool in
-            guard !running else { return false }
-            running = true
+        let claimed = state.withLock { current -> Bool in
+            guard !current.busy else { return false }
+            current.busy = true
             return true
         }
         return AsyncStream { continuation in
@@ -59,7 +75,10 @@ public final class ClamAVInstaller: Sendable {
             }
             let task = Task { [self] in
                 await body(continuation)
-                busy.withLock { $0 = false }
+                state.withLock {
+                    $0.current = nil
+                    $0.busy = false
+                }
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
@@ -79,17 +98,19 @@ public final class ClamAVInstaller: Sendable {
             environment: Self.brewEnvironment,
             lowPriority: true
         )
+        state.withLock { $0.current = process }
         var tail = StderrTail()
         var lastStage: String?
         for await line in process.lines {
             switch line {
             case let .stdout(text):
+                tail.add(text, isStderr: false)
                 if let stage = Self.brewStage(for: text), stage != lastStage {
                     lastStage = stage
                     continuation.yield(.stage(stage))
                 }
             case let .stderr(text):
-                tail.add(text)
+                tail.add(text, isStderr: true)
                 if let stage = Self.brewStage(for: text), stage != lastStage {
                     lastStage = stage
                     continuation.yield(.stage(stage))
@@ -114,13 +135,16 @@ public final class ClamAVInstaller: Sendable {
 
     /// Maps a recognizable brew output line to a user-facing stage; nil for everything else.
     static func brewStage(for line: String) -> String? {
-        if line.hasPrefix("==> Downloading") {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("==>") else { return nil }
+        let rest = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased()
+        if rest.hasPrefix("downloading") || rest.hasPrefix("fetching") {
             return "Downloading ClamAV…"
         }
-        if line.hasPrefix("==> Pouring") {
+        if rest.hasPrefix("pouring") {
             return "Installing ClamAV…"
         }
-        if line.hasPrefix("==> Summary") {
+        if rest.hasPrefix("summary") {
             return "Finishing…"
         }
         return nil
@@ -142,21 +166,27 @@ public final class ClamAVInstaller: Sendable {
         continuation.yield(.stage("Downloading definitions…"))
         let process = runner.run(
             freshclam,
-            arguments: ["--config-file=\(paths.freshclamConfig.path)", "--stdout", "--no-warnings"],
+            arguments: ["--config-file=\(paths.freshclamConfig.path)", "--stdout", "--no-warnings", "--show-progress"],
             environment: nil,
             lowPriority: true
         )
+        state.withLock { $0.current = process }
         var tail = StderrTail()
         var lastProgress: Double?
         for await line in process.lines {
             switch line {
             case let .stdout(text):
-                if let value = Self.parseFreshclamProgress(text), value != lastProgress {
-                    lastProgress = value
-                    continuation.yield(.progress(value))
+                // `--stdout` sends every freshclam message, errors included, to stdout.
+                if let value = Self.parseFreshclamProgress(text) {
+                    if value != lastProgress {
+                        lastProgress = value
+                        continuation.yield(.progress(value))
+                    }
+                } else {
+                    tail.add(text, isStderr: false)
                 }
             case let .stderr(text):
-                tail.add(text)
+                tail.add(text, isStderr: true)
             }
         }
         if Task.isCancelled {
