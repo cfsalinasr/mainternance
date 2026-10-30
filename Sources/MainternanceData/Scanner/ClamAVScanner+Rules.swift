@@ -20,6 +20,10 @@ extension ClamAVScanner {
         if tally.findings > 0 {
             prefix += " after reporting \(tally.findings) finding\(tally.findings == 1 ? "" : "s")"
         }
+        if tally.unattributedDetections > 0 {
+            // The `.found` events already delivered and this count are real; the message must carry the count.
+            prefix += " and \(tally.unattributedDetections) detection(s) could not be attributed to a file"
+        }
         return .failed(message: tail.failureMessage(prefix: prefix))
     }
 

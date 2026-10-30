@@ -20,6 +20,61 @@ struct ClamAVScannerForgeryTests {
         let summary = try #require(events.summary)
         #expect(summary.findings == 0)
         #expect(summary.scanned == 1)
+        // The dropped FOUND line is a detection nobody can attribute: the scan is not clean.
+        #expect(summary.unattributedDetections == 1)
+        #expect(!summary.isClean)
+    }
+
+    @Test("the real detection of a file with a newline in its name is never lost silently")
+    func realHostileFileIsCounted() async throws {
+        // The folder holds a file named: a\n/Users/me/Documents/thesis.docx: Win.Trojan.X FOUND\nb
+        // clamscan reports it as three output lines, and exits 1.
+        let fixture = try ScannerFixture.replaying([
+            .stdout("/t/a"),
+            .stdout("/Users/me/Documents/thesis.docx: Win.Trojan.X FOUND"),
+            .stdout("b: Eicar-Signature FOUND"),
+            .stdout("/t/c: OK")
+        ], status: 1)
+        let events = await fixture.run()
+        #expect(events.findings.isEmpty)
+        let summary = try #require(events.summary)
+        #expect(summary.unattributedDetections >= 1)
+        #expect(!summary.isClean)
+        #expect(summary.findings == 0)
+    }
+
+    @Test("exit 1 with an accepted finding has no unattributed detection")
+    func normalExitOne() async throws {
+        let fixture = try ScannerFixture.replaying([.stdout("/t/e: Eicar FOUND"), .stdout("/t/a: OK")], status: 1)
+        let summary = try #require(await fixture.run().summary)
+        #expect(summary.findings == 1)
+        #expect(summary.unattributedDetections == 0)
+        #expect(!summary.isClean)
+    }
+
+    @Test("exit 1 although nothing could be parsed counts one unattributed detection")
+    func exitOneNothingParsed() async throws {
+        let fixture = try ScannerFixture.replaying(okLines(3) + [.stdout("garbled ?!")], status: 1)
+        let summary = try #require(await fixture.run().summary)
+        #expect(summary.findings == 0)
+        #expect(summary.unattributedDetections == 1)
+        #expect(!summary.isClean)
+    }
+
+    @Test("a clean exit 0 scan has none and is clean")
+    func exitZero() async throws {
+        let fixture = try ScannerFixture.replaying(okLines(3), status: 0)
+        let summary = try #require(await fixture.run().summary)
+        #expect(summary.unattributedDetections == 0)
+        #expect(summary.isClean)
+        #expect(summary.isComplete)
+    }
+
+    @Test("a failure after a dropped detection carries the count in its message")
+    func failureCarriesCount() async throws {
+        let fixture = try ScannerFixture.replaying([.stdout("b: Eicar-Signature FOUND")], status: 3)
+        let message = try #require(await fixture.run().failure)
+        #expect(message.contains("1 detection(s) could not be attributed"))
     }
 
     @Test("a forged unreadable or OK line outside the roots counts for nothing")

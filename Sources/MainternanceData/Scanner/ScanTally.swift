@@ -18,6 +18,29 @@ struct ScanTally {
 
     static let maxTrackedPaths = 10000
 
+    /// A detection (FOUND) that was dropped because its path is not a plausible result of this scan.
+    private(set) var unattributedDetections = 0
+
+    mutating func noteDroppedDetection() {
+        unattributedDetections = min(unattributedDetections + 1, Int.max / 2)
+    }
+
+    /// clamscan exited 1 (infected files found) but no finding was accepted: a detection exists that could not be
+    /// attributed (for example its line was mangled by a file name), so the scan must not look clean.
+    mutating func noteExitOne() {
+        if findings == 0 {
+            unattributedDetections = max(unattributedDetections, 1)
+        }
+    }
+
+    mutating func noteExit(status: Int32) {
+        switch status {
+        case 1: noteExitOne()
+        case 2: noteExitTwo()
+        default: break
+        }
+    }
+
     mutating func noteSuspicious() {
         ignoredSuspicious = min(ignoredSuspicious + 1, Int.max / 2)
     }

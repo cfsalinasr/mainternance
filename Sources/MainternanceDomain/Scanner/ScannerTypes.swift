@@ -59,10 +59,18 @@ public struct ScanSummary: Sendable, Equatable {
     public let endedAt: Date
     public let cancelled: Bool
     public let definitionsDate: Date?
+    /// Detections the engine reported that could NOT be attributed to a file (for example a file name with a
+    /// newline splits the engine's output line, or the reported path is not below the scanned folders). They are
+    /// real detections, only without a usable path, so a scan with `unattributedDetections > 0` is never clean.
+    /// Task 7 must show "N detection(s) could not be attributed to a file (unusual file names). The scan is not
+    /// clean." and count them as unresolved findings for the health status. The count is also appended to the
+    /// message of a `.failed` that ends a scan after findings.
+    public let unattributedDetections: Int
 
     public init(
         scope: ScanScope, scanned: Int, unreadable: Int, findings: Int,
-        startedAt: Date, endedAt: Date, cancelled: Bool, definitionsDate: Date?, permissionDenied: Int = 0
+        startedAt: Date, endedAt: Date, cancelled: Bool, definitionsDate: Date?, permissionDenied: Int = 0,
+        unattributedDetections: Int = 0
     ) {
         self.scope = scope
         self.scanned = scanned
@@ -73,6 +81,19 @@ public struct ScanSummary: Sendable, Equatable {
         self.endedAt = endedAt
         self.cancelled = cancelled
         self.definitionsDate = definitionsDate
+        self.unattributedDetections = max(0, unattributedDetections)
+    }
+
+    /// True only when the scan ran to the end and found nothing, attributed or not. A clean scan can still be
+    /// PARTIAL: see `isComplete`.
+    public var isClean: Bool {
+        findings == 0 && unattributedDetections == 0 && !cancelled
+    }
+
+    /// True when the scan was not cancelled and every file could be read. `unreadable > 0` makes it a PARTIAL scan
+    /// (those files were not scanned and are never reported as clean).
+    public var isComplete: Bool {
+        unreadable == 0 && !cancelled
     }
 }
 

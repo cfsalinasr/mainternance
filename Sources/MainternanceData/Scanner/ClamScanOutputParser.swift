@@ -21,8 +21,9 @@ public enum ClamLine: Equatable, Sendable {
 /// - stdout `Scanning <path>` (`-v` progress) and informational `<path>: Empty file` / `Excluded` /
 ///   `Symbolic link`: ignored.
 ///
-/// Every per-file form except the WARNING one must start with `/` (roots are absolute), so `Scanning ...` lines can
-/// never be mistaken for verdicts. The verdict is the END of the line and the path is whatever precedes the last
+/// Every per-file form except FOUND and the WARNING one must start with `/` (roots are absolute); `Scanning ...`
+/// lines are always ignored, so they can never be mistaken for verdicts. The verdict is the END of the line and the
+/// path is whatever precedes the last
 /// `": "` before it, so paths containing `: `, `FOUND`, `OK` or `ERROR` still parse. Signature names never contain
 /// `": "`. An `ERROR` message that itself contains `": "` is attributed to a shortened path (still one unreadable
 /// entry for the right file, only the path text is cut); the caller validates every path against the scan roots.
@@ -37,12 +38,18 @@ public enum ClamScanOutputParser {
         if line.hasPrefix(cantOpenFile) {
             return parseCantOpen(String(line.dropFirst(cantOpenFile.count)))
         }
+        // `Scanning <path>` is -v progress, never a verdict, whatever the path ends with.
+        if line.hasPrefix("Scanning ") {
+            return .ignored
+        }
+        // A FOUND line is parsed even when its path is not absolute: the caller must see it to account for a
+        // detection whose line was mangled by a file name (a dropped detection is never silent).
+        if line.hasSuffix(" FOUND") {
+            return split(String(line.dropLast(6))).map { .found(path: $0.path, signature: $0.rest) } ?? .ignored
+        }
         guard line.hasPrefix("/") else { return .ignored }
         if line.hasSuffix(": OK") {
             return .scanned(path: String(line.dropLast(4)))
-        }
-        if line.hasSuffix(" FOUND") {
-            return split(String(line.dropLast(6))).map { .found(path: $0.path, signature: $0.rest) } ?? .ignored
         }
         if line.hasSuffix(" ERROR") {
             guard let parts = split(String(line.dropLast(6))) else { return .ignored }

@@ -68,6 +68,24 @@ struct ScannerTypesTests {
         #expect(make(unreadable: 2, denied: -1).permissionDenied == 0)
     }
 
+    @Test func cleanAndCompleteTruthTable() {
+        func make(
+            findings: Int = 0, unattributed: Int = 0, unreadable: Int = 0, cancelled: Bool = false
+        ) -> ScanSummary {
+            ScanSummary(
+                scope: .quick, scanned: 5, unreadable: unreadable, findings: findings, startedAt: now, endedAt: now,
+                cancelled: cancelled, definitionsDate: nil, unattributedDetections: unattributed
+            )
+        }
+        #expect(make().isClean && make().isComplete)
+        #expect(!make(findings: 1).isClean)
+        #expect(!make(unattributed: 1).isClean)
+        #expect(!make(cancelled: true).isClean && !make(cancelled: true).isComplete)
+        #expect(make(unreadable: 2).isClean && !make(unreadable: 2).isComplete)
+        #expect(make(unattributed: -3).unattributedDetections == 0)
+        #expect(make(unattributed: 2).isComplete)
+    }
+
     @Test func verifyResultsCompareByValue() {
         #expect(VerifyResult.confirmed(signature: "A") == .confirmed(signature: "A"))
         #expect(VerifyResult.confirmed(signature: "A") != .confirmed(signature: "B"))

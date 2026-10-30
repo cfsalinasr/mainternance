@@ -238,9 +238,7 @@ public final class ClamAVScanner: ScannerEngine {
             return .failed(message: "The scan was abandoned")
         }
         let status = await process.wait()
-        if status == 2 {
-            tally.noteExitTwo()
-        }
+        tally.noteExit(status: status)
         if let closing = tally.finalProgress(now: now()) {
             continuation.yield(closing)
         }
@@ -264,12 +262,16 @@ public final class ClamAVScanner: ScannerEngine {
             && context.roots.contains { ScanPathRules.isInside(path, directory: $0) }
             // Second layer behind `--exclude-dir`: nothing below an excluded directory is a result of this scan.
             && !context.excluded.contains { ScanPathRules.isInside(path, directory: $0) }
+        var accepted = plausible
         if case .found = line, plausible, !fileExists(path) {
-            tally.noteSuspicious()
-            return .ignored
+            accepted = false
         }
-        guard plausible else {
+        guard accepted else {
             tally.noteSuspicious()
+            if case .found = line {
+                // A real detection without a usable path must never vanish silently.
+                tally.noteDroppedDetection()
+            }
             return .ignored
         }
         return line
@@ -279,7 +281,8 @@ public final class ClamAVScanner: ScannerEngine {
         ScanSummary(
             scope: context.scope, scanned: tally.scanned, unreadable: tally.unreadable,
             findings: tally.findings, startedAt: context.startedAt, endedAt: now(), cancelled: cancelled,
-            definitionsDate: context.definitionsDate, permissionDenied: tally.permissionDenied
+            definitionsDate: context.definitionsDate, permissionDenied: tally.permissionDenied,
+            unattributedDetections: tally.unattributedDetections
         )
     }
 }

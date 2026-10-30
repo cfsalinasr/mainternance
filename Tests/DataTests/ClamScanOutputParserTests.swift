@@ -55,6 +55,7 @@ struct ClamScanOutputParserTests {
         ("Scanning /p/a: OK", .ignored),
         ("Scanning /p/a: Eicar FOUND", .ignored),
         ("relative/path: OK", .ignored),
+        ("b: Eicar-Signature FOUND", .found(path: "b", signature: "Eicar-Signature")),
         ("ERROR: Can't allocate memory", .ignored),
         ("", .ignored),
         ("   ", .ignored),
