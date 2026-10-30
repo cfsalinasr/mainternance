@@ -4,8 +4,10 @@ import Foundation
 
 /// Runs executables with `Foundation.Process`: `executableURL` plus an argument array, never a shell.
 ///
+/// - `executable` must be an absolute path; anything else takes the launch-failure path (status 127).
 /// - `environment` is merged over the current environment, so additions never wipe `PATH`.
-/// - `lowPriority` sets `qualityOfService = .utility`; no extra niceness is applied.
+/// - `lowPriority` sets `qualityOfService = .utility`. That only hints the scheduler and I/O subsystem to favor
+///   interactive work; it does not guarantee a CPU share or change the nice value.
 /// - stdout and stderr are drained on separate dispatch threads, so output beyond the 64 KB pipe buffer cannot
 ///   deadlock the child. stdin is `/dev/null`.
 /// - The runner is stateless; the returned `RunningProcess` owns the child (see its documentation for what
@@ -19,6 +21,9 @@ public struct SystemProcessRunner: ProcessRunning {
         environment: [String: String]?,
         lowPriority: Bool
     ) -> RunningProcess {
+        guard executable.hasPrefix("/") else {
+            return Self.failed("Could not start \"\(executable)\": the executable path must be absolute.")
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -34,13 +39,9 @@ public struct SystemProcessRunner: ProcessRunning {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        var continuation: AsyncStream<ProcessLine>.Continuation!
-        let stream = AsyncStream<ProcessLine>(bufferingPolicy: .unbounded) { continuation = $0 }
-        let sink = continuation!
-        let control = ProcessControl(process: process, exitStatus: nil)
-
+        let control = ProcessControl()
         let group = DispatchGroup()
-        group.enter() // exit
+        group.enter() // balanced by the termination handler, or below when the launch fails
         process.terminationHandler = { finished in
             let signalled = finished.terminationReason == .uncaughtSignal
             control.finish(status: signalled ? 128 + finished.terminationStatus : finished.terminationStatus)
@@ -50,25 +51,33 @@ public struct SystemProcessRunner: ProcessRunning {
             try process.run()
         } catch {
             process.terminationHandler = nil
-            let handles = [
-                outPipe.fileHandleForReading, outPipe.fileHandleForWriting,
-                errPipe.fileHandleForReading, errPipe.fileHandleForWriting
-            ]
-            for handle in handles {
-                try? handle.close()
+            group.leave()
+            for pipe in [outPipe, errPipe] {
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
             }
-            sink.yield(.stderr("Could not start \(executable): \(error.localizedDescription)"))
-            sink.finish()
-            control.finish(status: 127)
-            return RunningProcess(lines: stream, processIdentifier: nil, control: control)
+            return Self.failed("Could not start \(executable): \(error.localizedDescription)")
         }
+        control.start(pid: process.processIdentifier, process: process)
         // The parent must close its copies of the write ends or the readers never see EOF.
         try? outPipe.fileHandleForWriting.close()
         try? errPipe.fileHandleForWriting.close()
+        var continuation: AsyncStream<ProcessLine>.Continuation!
+        let stream = AsyncStream<ProcessLine>(bufferingPolicy: .unbounded) { continuation = $0 }
+        let sink = continuation!
         Self.drain(outPipe.fileHandleForReading, into: sink, group: group, tag: ProcessLine.stdout)
         Self.drain(errPipe.fileHandleForReading, into: sink, group: group, tag: ProcessLine.stderr)
         group.notify(queue: .global(qos: .utility)) { sink.finish() }
         return RunningProcess(lines: stream, processIdentifier: process.processIdentifier, control: control)
+    }
+
+    /// The launch-failure result: one stderr line, status 127, never running.
+    private static func failed(_ message: String) -> RunningProcess {
+        let stream = AsyncStream<ProcessLine> { continuation in
+            continuation.yield(.stderr(message))
+            continuation.finish()
+        }
+        return RunningProcess(lines: stream, processIdentifier: nil, control: ProcessControl(exitStatus: 127))
     }
 
     private static func drain(
