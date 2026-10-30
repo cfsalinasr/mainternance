@@ -125,7 +125,7 @@ struct ClamAVScannerControlTests {
 
     @Test("the busy flag is released after a refusal")
     func releasedAfterRefusal() async throws {
-        let fixture = try ScannerFixture(tools: ["brew"], runner: FakeRunner.replaying(okLines(1), status: 0))
+        let fixture = try ScannerFixture.replaying(okLines(1), status: 0, tools: ["brew"])
         #expect(await fixture.run().failure != nil)
         fixture.tools.add(["clamscan", "freshclam"])
         #expect(await fixture.run().summary?.scanned == 1)

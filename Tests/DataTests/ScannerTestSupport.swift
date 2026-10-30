@@ -116,6 +116,7 @@ struct ScannerFixture {
         definitionsAge: TimeInterval? = 3600,
         clock: TestClock = TestClock(),
         temp existing: TempDirectory? = nil,
+        fileExists: @escaping @Sendable (String) -> Bool = { _ in true },
         runner: FakeRunner
     ) throws {
         temp = try existing ?? TempDirectory()
@@ -137,8 +138,13 @@ struct ScannerFixture {
         scanner = ClamAVScanner(
             locator: tools.locator, runner: runner, paths: paths,
             definitions: DefinitionsStore(paths: paths), installer: installer,
-            now: clock.reading, home: temp.url
+            now: clock.reading, home: temp.url, fileExists: fileExists
         )
+    }
+
+    /// `/t/x` becomes `<root>/x`; `/tb/x` becomes `<root>b/x` (a sibling that shares the root as a string prefix).
+    static func mapPaths(_ text: String, root: String) -> String {
+        text.replacingOccurrences(of: "/tb/", with: root + "b/").replacingOccurrences(of: "/t/", with: root + "/")
     }
 
     /// The scan root of `target` exactly as the scanner computes it.
@@ -154,18 +160,26 @@ struct ScannerFixture {
     /// A fixture whose runner replays `lines` and exits with `status`. Paths written as `/t/...` are rewritten
     /// to live under the scan root.
     static func replaying(
-        _ lines: [ProcessLine], status: Int32, clock: TestClock = TestClock()
+        _ lines: [ProcessLine], status: Int32, clock: TestClock = TestClock(),
+        tools: Set<String> = ["brew", "clamscan", "freshclam"],
+        fileExists: @escaping @Sendable (String) -> Bool = { _ in true }
     ) throws -> ScannerFixture {
         let temp = try TempDirectory()
         let target = temp.url.appendingPathComponent("target", isDirectory: true)
         let root = ScanScopes.roots(for: .custom(target), home: temp.url, exists: { _ in true }).first ?? ""
         let mapped = lines.map { line -> ProcessLine in
             switch line {
-            case let .stdout(text): .stdout(text.replacingOccurrences(of: "/t/", with: root + "/"))
-            case let .stderr(text): .stderr(text.replacingOccurrences(of: "/t/", with: root + "/"))
+            case let .stdout(text): .stdout(Self.mapPaths(text, root: root))
+            case let .stderr(text): .stderr(Self.mapPaths(text, root: root))
             }
         }
-        return try ScannerFixture(clock: clock, temp: temp, runner: FakeRunner.replaying(mapped, status: status))
+        return try ScannerFixture(
+            tools: tools,
+            clock: clock,
+            temp: temp,
+            fileExists: fileExists,
+            runner: FakeRunner.replaying(mapped, status: status)
+        )
     }
 
     func run(_ scope: ScanScope? = nil) async -> [ScanEvent] {

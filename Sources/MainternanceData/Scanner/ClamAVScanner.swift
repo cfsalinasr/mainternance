@@ -9,6 +9,8 @@ struct ScanTally {
     private(set) var permissionDenied = 0
     private(set) var findings = 0
     private(set) var current = ""
+    /// Lines dropped because their path was not plausible (forged by a file name, outside the roots). Debug only.
+    private(set) var ignoredSuspicious = 0
     /// A stderr `ERROR:` line (clamscan's fatal messages, for example a database problem) was seen.
     private(set) var fatalSeen = false
     private var unreadablePaths = Set<String>()
@@ -16,6 +18,10 @@ struct ScanTally {
     private var lastProgressAt: Date?
 
     static let maxTrackedPaths = 10000
+
+    mutating func noteSuspicious() {
+        ignoredSuspicious = min(ignoredSuspicious + 1, Int.max / 2)
+    }
 
     mutating func noteFatal() {
         fatalSeen = true
@@ -114,6 +120,7 @@ public final class ClamAVScanner: ScannerEngine {
     private let installer: ClamAVInstaller
     private let now: @Sendable () -> Date
     private let home: URL
+    private let fileExists: @Sendable (String) -> Bool
     private let state = Mutex(State())
 
     public init(
@@ -123,7 +130,8 @@ public final class ClamAVScanner: ScannerEngine {
         definitions: DefinitionsStore,
         installer: ClamAVInstaller,
         now: @escaping @Sendable () -> Date = { Date() },
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileExists: @escaping @Sendable (String) -> Bool = ScanPathRules.lstatExists
     ) {
         self.locator = locator
         self.runner = runner
@@ -132,6 +140,7 @@ public final class ClamAVScanner: ScannerEngine {
         self.installer = installer
         self.now = now
         self.home = home
+        self.fileExists = fileExists
     }
 
     public func status() async -> EngineStatus {
@@ -222,7 +231,7 @@ public final class ClamAVScanner: ScannerEngine {
         continuation.yield(.started(scope: scope))
         let arguments = ["--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive", "--"]
             + roots
-        let context = Context(scope: scope, startedAt: startedAt, definitionsDate: definitionsDate)
+        let context = Context(scope: scope, startedAt: startedAt, definitionsDate: definitionsDate, roots: roots)
         guard let process = launch(clamscan, arguments) else {
             let quitting = state.withLock { $0.quitRequested }
             return quitting
@@ -236,6 +245,7 @@ public final class ClamAVScanner: ScannerEngine {
         let scope: ScanScope
         let startedAt: Date
         let definitionsDate: Date?
+        let roots: [String]
     }
 
     /// Starts the child inside the same critical section that checks the quit and cancel flags and records the
@@ -262,7 +272,7 @@ public final class ClamAVScanner: ScannerEngine {
             case let .stderr(text): (text, true)
             }
             // Both streams are parsed: upstream prints `WARNING: Can't open file` on stderr, verdicts on stdout.
-            let parsed = ClamScanOutputParser.parse(text)
+            let parsed = vetted(ClamScanOutputParser.parse(text), context: context, tally: &tally)
             if isStderr, text.hasPrefix("ERROR:") {
                 tally.noteFatal()
             }
@@ -296,6 +306,29 @@ public final class ClamAVScanner: ScannerEngine {
         return Self.outcome(status: status, cancelled: cancelled, tally: tally, tail: tail) {
             summary(tally, context, cancelled: cancelled)
         }
+    }
+
+    /// Drops a verdict whose path cannot be a real result of this scan. A file name may contain newlines and so
+    /// forge lines: every path must be plain absolute and below one of the scan roots, and a FOUND path must exist.
+    /// This cannot stop a forged line that names a real file inside a root; the consumer re-verifies a finding
+    /// (`verifyFinding`) before acting on it.
+    private func vetted(_ line: ClamLine, context: Context, tally: inout ScanTally) -> ClamLine {
+        let path: String
+        switch line {
+        case .ignored: return line
+        case let .scanned(value), let .found(value, _), let .unreadable(value, _): path = value
+        }
+        let plausible = ScanPathRules.isPlainAbsolute(path)
+            && context.roots.contains { ScanPathRules.isInside(path, directory: $0) }
+        if case .found = line, plausible, !fileExists(path) {
+            tally.noteSuspicious()
+            return .ignored
+        }
+        guard plausible else {
+            tally.noteSuspicious()
+            return .ignored
+        }
+        return line
     }
 
     /// Pure exit-code mapping, see the type documentation.
