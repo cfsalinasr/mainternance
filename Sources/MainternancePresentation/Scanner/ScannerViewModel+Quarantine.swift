@@ -79,6 +79,19 @@ public extension ScannerViewModel {
         quarantined = await quarantine.records()
         notMoved = await quarantine.stillInPlace()
         unclaimedCount = await quarantine.unclaimedFiles().count
+        await dropLinksOfRecordsThatAreGone()
+    }
+
+    /// A link whose quarantine record no longer exists can never be restored. Only a non-empty answer proves a
+    /// record is gone (`records()` also answers empty when the manifest cannot be read), so an empty one removes
+    /// nothing. A scan never removes a link: it cannot see a file that is in quarantine.
+    private func dropLinksOfRecordsThatAreGone() async {
+        let known = Set((quarantined + notMoved).map(\.id))
+        guard !known.isEmpty else { return }
+        let kept = resolvedByQuarantine.filter { known.contains($0.key) }
+        guard kept.count != resolvedByQuarantine.count else { return }
+        resolvedByQuarantine = kept
+        await statusStore.remember(memory)
     }
 
     internal static func name(of path: String) -> String {

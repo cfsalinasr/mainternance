@@ -54,28 +54,38 @@ struct ScanCoverageTests {
 
 @Suite("Scan failure note")
 struct ScanFailureNoteTests {
-    @Test("the count written by the clause is the count read back")
-    func roundTrip() {
-        for count in [1, 2, 17] {
-            let message = "The scan failed (exit 3) after reporting 2 findings" + ScanFailureNote
-                .unattributedClause(count)
-                + ": ERROR: disk"
-            #expect(ScanFailureNote.unattributedCount(in: message) == count)
-        }
-    }
-
-    @Test("no clause means 0, and only the first clause counts")
-    func firstOnly() {
-        #expect(ScanFailureNote.unattributedCount(in: "The scan failed (exit 2)") == 0)
-        #expect(ScanFailureNote.unattributedCount(in: "") == 0)
-        let hostile = "The scan failed (exit 2)" + ScanFailureNote.unattributedClause(2) + ": "
-            + ScanFailureNote.unattributedClause(99)
-        #expect(ScanFailureNote.unattributedCount(in: hostile) == 2)
-        #expect(ScanFailureNote.unattributedCount(in: "99 detection(s) could not be attributed") == 0)
-    }
-
     @Test("the clause wording is pinned")
     func wording() {
         #expect(ScanFailureNote.unattributedClause(3) == " and 3 detection(s) could not be attributed to a file")
+    }
+}
+
+@Suite("Scan coverage with symbolic links")
+struct ScanCoverageResolverTests {
+    private func coverage(_ table: [String: String]) -> ScanCoverage {
+        ScanCoverage(roots: ["/real/Downloads"], excluded: ["/real/Downloads/Cloud"], resolve: { table[$0] })
+    }
+
+    @Test("the finding's path is resolved before it is compared")
+    func resolved() {
+        let sut = coverage(["/Users/a/Downloads/x": "/real/Downloads/x", "/Users/a/Other/x": "/elsewhere/x"])
+        #expect(sut.covers("/Users/a/Downloads/x"))
+        #expect(!sut.covers("/Users/a/Other/x"))
+    }
+
+    @Test("a path that cannot be resolved is not covered")
+    func unknown() {
+        #expect(!coverage([:]).covers("/real/Downloads/x"))
+    }
+
+    @Test("exclusions apply to the resolved path")
+    func excludedAfterResolving() {
+        let sut = coverage(["/Users/a/Link/x": "/real/Downloads/Cloud/x"])
+        #expect(!sut.covers("/Users/a/Link/x"))
+    }
+
+    @Test("without a resolver paths are compared as text")
+    func textOnly() {
+        #expect(ScanCoverage(roots: ["/a"], excluded: []).covers("/a/x"))
     }
 }

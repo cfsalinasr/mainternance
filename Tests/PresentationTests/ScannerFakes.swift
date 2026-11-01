@@ -257,46 +257,16 @@ final class FakeQuarantine: QuarantineStoring {
     }
 }
 
-final class FakeStatusStore: ScanStatusRecording {
-    struct State {
-        var recorded: [(summary: ScanSummary, memory: ScanMemory)] = []
-        var remembered: [ScanMemory] = []
-        /// Every memory written by either call, in order.
-        var memories: [ScanMemory] = []
-        var stored: RecordedScanStatus?
+/// Which files "still exist" for the view model: all of them unless a test says one is gone.
+final class FileSystemStub: Sendable {
+    private let missing = Mutex<Set<String>>([])
+
+    func remove(_ path: String) {
+        missing.withLock { _ = $0.insert(path) }
     }
 
-    let state = Mutex(State())
-
-    func recordScan(_ summary: ScanSummary, memory: ScanMemory) async {
-        state.withLock {
-            $0.recorded.append((summary, memory))
-            $0.memories.append(memory)
-        }
-    }
-
-    func remember(_ memory: ScanMemory) async {
-        state.withLock {
-            $0.remembered.append(memory)
-            $0.memories.append(memory)
-        }
-    }
-
-    func load() async -> RecordedScanStatus? {
-        state.withLock { $0.stored }
-    }
-
-    var recorded: [(summary: ScanSummary, memory: ScanMemory)] {
-        state.withLock { $0.recorded }
-    }
-
-    var remembered: [ScanMemory] {
-        state.withLock { $0.remembered }
-    }
-
-    /// The memory most recently written by either call.
-    var lastMemory: ScanMemory? {
-        state.withLock { $0.memories.last }
+    func exists(_ path: String) -> Bool {
+        !missing.withLock { $0.contains(path) }
     }
 }
 
@@ -338,6 +308,7 @@ struct ScannerRig {
     let quarantine: FakeQuarantine
     let store: FakeStatusStore
     let opened: OpenedURLs
+    let files = FileSystemStub()
     let log: CallLog
     let model: ScannerViewModel
 
@@ -352,9 +323,10 @@ struct ScannerRig {
         self.quarantine = quarantine
         self.store = store
         self.opened = opened
+        let files = files
         model = ScannerViewModel(
             engine: engine, quarantine: quarantine, statusStore: store, protectedFolders: protectedFolders,
-            openURL: { opened.add($0) }
+            fileExists: { files.exists($0) }, openURL: { opened.add($0) }
         )
     }
 

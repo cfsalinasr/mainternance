@@ -109,12 +109,13 @@ struct ScannerScanTests {
     @Test func aScanRefusedBeforeItStartedChangesNothing() async {
         let rig = await ScannerRig.ready()
         await rig.scanFinding([makeFinding(1)])
+        let writes = rig.store.memories.count
         rig.engine
             .configure { $0.scanEvents = [.failed(message: "Scanning engine is not ready: ClamAV is not installed")] }
         await rig.model.startScan(.quick)
         #expect(rig.model.findings == [makeFinding(1)])
         #expect(rig.model.errorMessage == "Scanning engine is not ready: ClamAV is not installed")
-        #expect(rig.store.remembered.isEmpty)
+        #expect(rig.store.memories.count == writes)
     }
 
     @Test func aScanThatEndsWithoutAnyResultSaysSo() async {

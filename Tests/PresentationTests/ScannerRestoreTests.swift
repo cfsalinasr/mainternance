@@ -79,14 +79,45 @@ struct ScannerRestoreTests {
         #expect(rig.model.findings == [makeFinding(1)])
     }
 
-    @Test func aCompletedScanThatCoversThePathClearsTheLink() async throws {
+    @Test func aCompletedScanNeverClearsALinkBecauseAScanCannotSeeAFileInQuarantine() async throws {
         let rig = await ScannerRig.ready()
         await rig.scanFinding([makeFinding(1)])
         let stored = try await quarantineOne(rig, makeFinding(1))
         await rig.scanFinding([], scope: .quick) // covers Downloads
-        #expect(rig.store.lastMemory?.resolvedByQuarantine.isEmpty == true)
+        await rig.scanFinding([], scope: .full)
+        #expect(rig.store.lastMemory?.resolvedByQuarantine == [stored.id: makeFinding(1)])
         await rig.model.restore(stored.id)
-        #expect(rig.model.findings.isEmpty)
+        #expect(rig.model.findings == [makeFinding(1)])
+    }
+
+    @Test func aLinkWhoseQuarantineRecordIsGoneIsRemovedWhenTheScreenLoads() async {
+        let rig = ScannerRig()
+        let kept = makeFinding(1)
+        let orphan = makeFinding(2)
+        let held = record(for: kept)
+        let keptID = held.id
+        let orphanID = UUID()
+        rig.quarantine.configure { $0.stored = [held] }
+        rig.store.state.withLock {
+            $0.stored = RecordedScanStatus(
+                summary: nil, findings: [], resolvedByQuarantine: [keptID: kept, orphanID: orphan]
+            )
+        }
+        await rig.model.refreshStatus()
+        #expect(rig.model.resolvedByQuarantine == [keptID: kept])
+        #expect(rig.store.lastMemory?.resolvedByQuarantine == [keptID: kept])
+    }
+
+    @Test func anEmptyQuarantineListNeverWipesTheLinks() async {
+        // records() also answers [] when the manifest cannot be read, so an empty answer proves nothing.
+        let rig = ScannerRig()
+        let finding = makeFinding(1)
+        let id = UUID()
+        rig.store.state.withLock {
+            $0.stored = RecordedScanStatus(summary: nil, findings: [], resolvedByQuarantine: [id: finding])
+        }
+        await rig.model.refreshStatus()
+        #expect(rig.model.resolvedByQuarantine == [id: finding])
     }
 
     @Test func aCompletedScanThatDoesNotCoverThePathKeepsTheLink() async throws {

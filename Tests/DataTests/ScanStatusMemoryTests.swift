@@ -93,15 +93,93 @@ struct ScanStatusMemoryTests {
         #expect(defaults.resolvedByQuarantine.isEmpty)
     }
 
-    @Test("a damaged link entry makes the whole file unreadable, like a damaged finding")
+    @Test("one damaged link entry is skipped; findings, summary and the good links stay")
     func damagedLink() async throws {
         let temp = try TempDirectory()
         let json = """
-        {"version":1,"findings":[],"resolvedByQuarantine":[{"recordID":"nope",
-        "finding":{"id":"00000000-0000-0000-0000-000000000007","path":"/a","signature":"s","foundAt":1}}]}
+        {"version":1,"findings":[{"id":"00000000-0000-0000-0000-000000000001","path":"/Users/x/a.bin",
+        "signature":"Sig","foundAt":1800000020}],
+        "lastScan":{"scope":"quick","scanned":1,"unreadable":0,"permissionDenied":0,"findings":0,
+        "startedAt":1800000000,"endedAt":1800000001,"cancelled":false},
+        "resolvedByQuarantine":[
+        {"recordID":"nope","finding":{"id":"00000000-0000-0000-0000-000000000007","path":"/a",
+        "signature":"s","foundAt":1}},
+        {"recordID":"11111111-1111-1111-1111-111111111111","finding":{"id":"00000000-0000-0000-0000-000000000008",
+        "path":"relative","signature":"s","foundAt":1}},
+        {"recordID":"22222222-2222-2222-2222-222222222222","finding":{"id":"00000000-0000-0000-0000-000000000009",
+        "path":"/Users/x/good.bin","signature":"s","foundAt":1}}]}
         """
         try Data(json.utf8).write(to: file(temp))
-        #expect(await ScanStatusStore(file: file(temp)).load() == nil)
+        let loaded = try #require(await ScanStatusStore(file: file(temp)).load())
+        #expect(loaded.findings.count == 1)
+        #expect(loaded.summary != nil)
+        #expect(loaded.resolvedByQuarantine.count == 1)
+        #expect(loaded.resolvedByQuarantine.values.first?.path == "/Users/x/good.bin")
+    }
+
+    @Test("an unreadable file is moved aside, never overwritten, when the next save happens")
+    func unreadableFileIsKeptAside() async throws {
+        let temp = try TempDirectory()
+        try Data("this is not json".utf8).write(to: file(temp))
+        let sut = ScanStatusStore(file: file(temp))
+        #expect(await sut.load() == nil)
+        await sut.remember(ScanMemory(findings: [finding(1)]))
+        #expect(await sut.load()?.findings == [finding(1)])
+        let aside = temp.names.filter { $0.hasPrefix("scan-status.corrupt-") }
+        #expect(aside.count == 1)
+        let kept = try Data(contentsOf: temp.url.appendingPathComponent(#require(aside.first)))
+        #expect(String(bytes: kept, encoding: .utf8) == "this is not json")
+        await sut.remember(ScanMemory(findings: []))
+        #expect(temp.names.filter { $0.hasPrefix("scan-status.corrupt-") }.count == 1) // a good file is not moved
+    }
+
+    @Test("a missing file is not 'moved aside'")
+    func missingFileNothingToKeep() async throws {
+        let temp = try TempDirectory()
+        await ScanStatusStore(file: file(temp)).remember(ScanMemory(findings: []))
+        #expect(temp.names == ["scan-status.json"])
+    }
+
+    @Test("the scan-did-not-finish flag and the unattributed scope round trip")
+    func flagAndScope() async throws {
+        let temp = try TempDirectory()
+        let custom = ScanScope.custom(URL(fileURLWithPath: "/Users/someone/Docs"))
+        for scope in [ScanScope.quick, .full, custom] {
+            await ScanStatusStore(file: file(temp)).remember(ScanMemory(
+                findings: [], unattributedFromIncompleteScan: 2, unattributedScope: scope, scanDidNotFinish: true
+            ))
+            let loaded = try #require(await ScanStatusStore(file: file(temp)).load())
+            #expect(loaded.scanDidNotFinish)
+            #expect(loaded.unattributedScope == scope)
+        }
+        await ScanStatusStore(file: file(temp)).remember(ScanMemory(findings: []))
+        let cleared = try #require(await ScanStatusStore(file: file(temp)).load())
+        #expect(!cleared.scanDidNotFinish)
+        #expect(cleared.unattributedScope == nil)
+    }
+
+    @Test("Home: a scan that did not finish is amber without findings and red with findings")
+    func didNotFinishOnHome() async throws {
+        let temp = try TempDirectory()
+        let store = ScanStatusStore(file: file(temp))
+        let sut = StoredScanStatusProvider(store: store, isEngineInstalled: { true })
+        await store.recordScan(summary(), memory: ScanMemory(findings: []))
+        await store.remember(ScanMemory(findings: [], scanDidNotFinish: true))
+        var status = try #require(await sut.currentStatus())
+        #expect(status.lastScanDidNotFinish)
+        var report = HealthEvaluator().evaluate(snapshot: .quiet, scan: status, now: now)
+        let check = try #require(report.checks.first { $0.id == .lastScan })
+        #expect(check.state == .needsAttention)
+        #expect(check.reason == "Last scan did not finish")
+        #expect(report.checks.first { $0.id == .scannerFindings }?.state == .good)
+        await store.remember(ScanMemory(findings: [finding(1)], scanDidNotFinish: true))
+        status = try #require(await sut.currentStatus())
+        report = HealthEvaluator().evaluate(snapshot: .quiet, scan: status, now: now)
+        #expect(report.checks.first { $0.id == .scannerFindings }?.state == .problem)
+        #expect(report.checks.first { $0.id == .lastScan }?.reason == "Last scan did not finish")
+        await store.recordScan(summary(), memory: ScanMemory(findings: []))
+        status = try #require(await sut.currentStatus())
+        #expect(!status.lastScanDidNotFinish)
     }
 
     @Test("a damaged last-scan record with valid findings keeps the findings and says the summary is unreadable")

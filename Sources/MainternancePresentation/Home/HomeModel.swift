@@ -157,12 +157,17 @@ public struct HomeModel: Equatable, Sendable {
         case 1: "1 finding"
         default: "\(findings) findings"
         }
+        let last: String = if scan.lastScanDidNotFinish {
+            findings > 0 ? "Last scan did not finish, \(outcome)" : "Last scan did not finish"
+        } else {
+            scan.lastScan.map {
+                "Last scan \(PopoverModel.relative($0, now: now, locale: locale)), \(outcome)"
+            } ?? "Never scanned"
+        }
         return ScanSummary(
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,
-            last: scan.lastScan.map {
-                "Last scan \(PopoverModel.relative($0, now: now, locale: locale)), \(outcome)"
-            } ?? "Never scanned",
+            last: last,
             next: scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
         )
     }

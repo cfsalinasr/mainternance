@@ -30,7 +30,13 @@ struct ClamAVScannerCoverageTests {
 
     @Test("a full scan covers the home folder but not the cloud folders or the app's own folders")
     func full() throws {
-        let fixture = try fixture(folders: ["Documents", "Library/Mobile Documents", "Library/CloudStorage"])
+        let fixture = try fixture(folders: [
+            "Documents", "Downloads", "Library/Mobile Documents/com~apple~CloudDocs", "Library/CloudStorage/Dropbox",
+            "Library/CloudStorageNot"
+        ])
+        for folder in [fixture.paths.quarantineDirectory, fixture.paths.root.appendingPathComponent("database")] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
         let coverage = fixture.scanner.coverage(of: .full)
         #expect(coverage.covers(path(fixture, "Documents/x.pkg")))
         #expect(coverage.covers(path(fixture, "Downloads/x.pkg")))
@@ -57,19 +63,47 @@ struct ClamAVScannerCoverageTests {
         #expect(!coverage.covers(path(fixture, "target2/x.pkg")))
     }
 
-    @Test("coverage equals the roots and exclusions the scan itself would use")
+    @Test("coverage is built from the roots and exclusions the scan itself uses, resolved to real paths")
     func sameRulesAsTheScan() throws {
         let fixture = try fixture(folders: ["Downloads"])
         for scope in [ScanScope.quick, .full, .custom(fixture.target)] {
             let coverage = fixture.scanner.coverage(of: scope)
             let roots = ScanScopes.roots(
-                for: scope,
-                home: fixture.temp.url,
-                exists: { FileManager.default.fileExists(atPath: $0) }
+                for: scope, home: fixture.temp.url, exists: { FileManager.default.fileExists(atPath: $0) }
             )
+            #expect(coverage.roots == roots.compactMap { CoveragePaths.realPath($0) })
             let excluded = ScanExclusions.directories(for: scope, home: fixture.temp.url, paths: fixture.paths)
-            #expect(coverage.roots == roots)
-            #expect(coverage.excluded == excluded)
+            #expect(excluded.allSatisfy { coverage.excluded.contains($0) })
         }
+    }
+
+    @Test("a scan root that is itself a symbolic link is not treated as covered")
+    func symlinkedRoot() throws {
+        let fixture = try fixture(folders: ["elsewhere/Downloads"])
+        try FileManager.default.createSymbolicLink(
+            at: fixture.temp.url.appendingPathComponent("Downloads"),
+            withDestinationURL: fixture.temp.url.appendingPathComponent("elsewhere/Downloads")
+        )
+        let coverage = fixture.scanner.coverage(of: .quick)
+        #expect(!coverage.covers(path(fixture, "Downloads/x.pkg")))
+        #expect(!coverage.covers(path(fixture, "elsewhere/Downloads/x.pkg")))
+    }
+
+    @Test("a path below a symbolic link inside a root is not covered, text match or not")
+    func pathBelowALink() throws {
+        let fixture = try fixture(folders: ["Documents", "outside"])
+        try FileManager.default.createSymbolicLink(
+            at: fixture.temp.url.appendingPathComponent("Documents/Link"),
+            withDestinationURL: fixture.temp.url.appendingPathComponent("outside")
+        )
+        let coverage = fixture.scanner.coverage(of: .custom(fixture.temp.url.appendingPathComponent("Documents")))
+        #expect(coverage.covers(path(fixture, "Documents/x.pkg")))
+        #expect(!coverage.covers(path(fixture, "Documents/Link/x.pkg")))
+    }
+
+    @Test("a path whose folder does not exist cannot be told to be covered")
+    func unknownParent() throws {
+        let fixture = try fixture(folders: ["Downloads"])
+        #expect(!fixture.scanner.coverage(of: .quick).covers(path(fixture, "Downloads/nope/x.pkg")))
     }
 }

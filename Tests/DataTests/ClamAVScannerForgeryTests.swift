@@ -89,6 +89,45 @@ struct ClamAVScannerForgeryTests {
         #expect(message.contains("1 detection(s) could not be attributed"))
     }
 
+    @Test("the dropped-detection count also arrives as a structured event right before the failure")
+    func failureCountIsStructured() async throws {
+        let fixture = try ScannerFixture.replaying([.stdout("b: Eicar-Signature FOUND")], status: 3)
+        let events = await fixture.run()
+        let last = try #require(events.last)
+        guard case .failed = last else {
+            Issue.record("expected a failure, got \(events)")
+            return
+        }
+        #expect(events.dropLast().last == .unattributed(detections: 1))
+        #expect(events.filter {
+            if case .unattributed = $0 {
+                true
+            } else {
+                false
+            }
+        }.count == 1)
+    }
+
+    @Test("no structured count without dropped detections, and none on a scan that finishes")
+    func noStructuredCountOtherwise() async throws {
+        let plain = try ScannerFixture.replaying([.stdout("/t/a: OK")], status: 3)
+        #expect(await !(plain.run()).contains {
+            if case .unattributed = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        let finished = try ScannerFixture.replaying([.stdout("b: Eicar-Signature FOUND")], status: 1)
+        #expect(await !(finished.run()).contains {
+            if case .unattributed = $0 {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
     @Test("a forged unreadable or OK line outside the roots counts for nothing")
     func forgedOtherLines() async throws {
         let fixture = try ScannerFixture.replaying([

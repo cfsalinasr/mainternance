@@ -176,26 +176,42 @@ public struct HealthEvaluator: Sendable {
     }
 
     private func lastScan(_ scan: ScanStatus, now: Date) -> HealthCheck {
+        if scan.lastScanDidNotFinish {
+            // A scan that was started and never ended: what it would have found is unknown, never "good".
+            let aged = scan.lastScan.map { Self.ageState(days: Self.days(since: $0, now: now)) } ?? .needsAttention
+            return HealthCheck(
+                id: .lastScan, state: max(aged, .needsAttention), title: "Last scan",
+                reason: "Last scan did not finish", destination: .scanner
+            )
+        }
         guard let last = scan.lastScan else {
             return HealthCheck(
                 id: .lastScan, state: .needsAttention, title: "Last scan",
                 reason: "Never scanned", destination: .scanner
             )
         }
-        let days = max(0, Int((now.timeIntervalSince(last) / 86400).rounded(.down)))
-        let state: HealthState = if days > 30 {
-            .problem
-        } else if days > 10 {
-            .needsAttention
-        } else {
-            .good
-        }
+        let days = Self.days(since: last, now: now)
+        let state = Self.ageState(days: days)
         let reason = switch days {
         case 0: "Today"
         case 1: "1 day ago"
         default: "\(days) days ago"
         }
         return HealthCheck(id: .lastScan, state: state, title: "Last scan", reason: reason, destination: .scanner)
+    }
+
+    private static func days(since date: Date, now: Date) -> Int {
+        max(0, Int((now.timeIntervalSince(date) / 86400).rounded(.down)))
+    }
+
+    private static func ageState(days: Int) -> HealthState {
+        if days > 30 {
+            .problem
+        } else if days > 10 {
+            .needsAttention
+        } else {
+            .good
+        }
     }
 
     private func osUpdate(_ available: Bool) -> HealthCheck {

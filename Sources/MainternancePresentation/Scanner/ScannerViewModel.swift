@@ -37,6 +37,10 @@ public final class ScannerViewModel {
     /// Detections of a cancelled or failed scan that could not be attributed to a file; counted as unresolved until
     /// a completed scan replaces the number.
     public internal(set) var unattributedFromIncompleteScan = 0
+    /// The scope of the scan that left the count above.
+    public internal(set) var unattributedScope: ScanScope?
+    /// A scan was started and never recorded its end (the app was quit or crashed during it).
+    public internal(set) var scanDidNotFinish = false
     /// True while a quarantined file is being put back.
     public internal(set) var isRestoring = false
     /// True while a finding is being re-checked and moved.
@@ -45,8 +49,9 @@ public final class ScannerViewModel {
     @ObservationIgnored let scanner: any ScannerEngine
     @ObservationIgnored let quarantine: any QuarantineStoring
     @ObservationIgnored let statusStore: any ScanStatusRecording
+    @ObservationIgnored let fileExists: @Sendable (String) -> Bool
     @ObservationIgnored private let openURL: @MainActor (URL) -> Void
-    @ObservationIgnored private let protectedFolders: [URL]
+    @ObservationIgnored let protectedFolders: [URL]
     @ObservationIgnored private var restoredLastScan = false
     /// Findings that were quarantined, by record id (remembered across launches), so a restore can put them back.
     @ObservationIgnored var resolvedByQuarantine: [UUID: ScanFinding] = [:]
@@ -58,12 +63,14 @@ public final class ScannerViewModel {
         quarantine: any QuarantineStoring,
         statusStore: any ScanStatusRecording,
         protectedFolders: [URL] = [],
+        fileExists: @escaping @Sendable (String) -> Bool = pathStillExists,
         openURL: @escaping @MainActor (URL) -> Void
     ) {
         scanner = engine
         self.quarantine = quarantine
         self.statusStore = statusStore
         self.protectedFolders = protectedFolders
+        self.fileExists = fileExists
         self.openURL = openURL
     }
 
@@ -131,14 +138,26 @@ public final class ScannerViewModel {
         await reloadQuarantine()
     }
 
+    /// Loads what was saved the first time the screen opens. The flag is set only after the load came back (an empty
+    /// store is a valid answer), and saved findings are merged in whatever the screen is doing meanwhile, so
+    /// nothing saved is skipped.
     private func restoreLastScanOnce() async {
         guard !restoredLastScan else { return }
+        let recorded = await statusStore.load()
         restoredLastScan = true
-        guard let recorded = await statusStore.load(), run == .idle else { return }
-        findings = recorded.findings
-        unattributedFromIncompleteScan = recorded.unattributedFromIncompleteScan
-        resolvedByQuarantine = recorded.resolvedByQuarantine
-        if let summary = recorded.summary {
+        guard let recorded else { return }
+        for finding in recorded.findings where !findings.contains(where: { Self.key($0) == Self.key(finding) }) {
+            findings.append(finding)
+        }
+        for (id, finding) in recorded.resolvedByQuarantine where resolvedByQuarantine[id] == nil {
+            resolvedByQuarantine[id] = finding
+        }
+        if unattributedFromIncompleteScan == 0 {
+            unattributedFromIncompleteScan = recorded.unattributedFromIncompleteScan
+            unattributedScope = recorded.unattributedScope
+        }
+        scanDidNotFinish = scanDidNotFinish || recorded.scanDidNotFinish
+        if run == .idle, let summary = recorded.summary {
             run = .finished(summary)
         }
     }
@@ -179,112 +198,6 @@ public final class ScannerViewModel {
         case .finished, .failed:
             run = .installing(stage: stage, progress: progress)
         }
-    }
-
-    // MARK: - Scanning
-
-    public func startScan(_ scope: ScanScope) async {
-        guard canStartScan else { return }
-        if case let .custom(url) = scope, isProtected(url) {
-            errorMessage = ScannerText.protectedFolder
-            return
-        }
-        errorMessage = nil
-        notice = nil
-        pendingQuarantine = nil
-        // The old list stays as it is while the scan runs: only a COMPLETED scan may drop a finding.
-        run = .scanning(scanned: 0, current: "")
-        var outcome = ScanOutcome()
-        for await event in scanner.scan(scope) {
-            switch event {
-            case .started:
-                outcome.began = true
-            case let .progress(scanned, current):
-                run = .scanning(scanned: max(0, scanned), current: current)
-            case let .found(finding):
-                merge(finding)
-                outcome.refound.insert(Self.key(finding))
-            case let .finished(result):
-                outcome.summary = result
-            case let .failed(message):
-                outcome.failure = message
-            }
-        }
-        await finish(scope, outcome)
-    }
-
-    /// What one scan reported, collected while its events stream in.
-    private struct ScanOutcome {
-        var summary: ScanSummary?
-        var failure: String?
-        var began = false
-        var refound: Set<String> = []
-    }
-
-    /// A finding the scan reports replaces the older entry for the same file and detection, otherwise it is added.
-    func merge(_ finding: ScanFinding) {
-        if let index = findings.firstIndex(where: { Self.key($0) == Self.key(finding) }) {
-            findings[index] = finding
-        } else {
-            findings.append(finding)
-        }
-    }
-
-    private func finish(_ scope: ScanScope, _ outcome: ScanOutcome) async {
-        if let summary = outcome.summary {
-            if summary.cancelled || outcome.failure != nil {
-                unattributedFromIncompleteScan = max(unattributedFromIncompleteScan, summary.unattributedDetections)
-            } else {
-                dropWhatTheScanCovered(scope, refound: outcome.refound)
-            }
-            run = .finished(summary)
-            errorMessage = outcome.failure
-            await statusStore.recordScan(summary, memory: memory)
-            return
-        }
-        run = .idle
-        errorMessage = outcome.failure ?? ScannerText.scanEndedWithoutResult
-        guard outcome.began else { return }
-        // A failed scan drops nothing and keeps every finding it reported, and the detections it could not attribute.
-        let count = ScanFailureNote.unattributedCount(in: outcome.failure ?? "")
-        unattributedFromIncompleteScan = max(unattributedFromIncompleteScan, count)
-        await statusStore.remember(memory)
-    }
-
-    /// A COMPLETED scan is the only thing that can resolve an older finding, and only one whose path it covered
-    /// (under its roots and outside its exclusions) and did not detect again. Everything else stays unresolved.
-    /// It also forgets quarantine links for covered paths (those files are no longer part of the last scan) and
-    /// replaces the unattributed count of earlier unfinished scans.
-    private func dropWhatTheScanCovered(_ scope: ScanScope, refound: Set<String>) {
-        let coverage = scanner.coverage(of: scope)
-        findings = findings.filter { refound.contains(Self.key($0)) || !coverage.covers($0.path) }
-        resolvedByQuarantine = resolvedByQuarantine.filter { !coverage.covers($0.value.path) }
-        unattributedFromIncompleteScan = 0
-    }
-
-    /// Everything the scanner remembers between launches.
-    var memory: ScanMemory {
-        ScanMemory(
-            findings: findings, unattributedFromIncompleteScan: unattributedFromIncompleteScan,
-            resolvedByQuarantine: resolvedByQuarantine
-        )
-    }
-
-    static func key(_ finding: ScanFinding) -> String {
-        finding.path + "\u{0}" + finding.signature
-    }
-
-    private func isProtected(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        return protectedFolders.contains { folder in
-            let root = folder.standardizedFileURL.path
-            return path == root || path.hasPrefix(root + "/") || root.hasPrefix(path + "/")
-        }
-    }
-
-    public func cancel() async {
-        guard canCancel else { return }
-        await scanner.cancelScan()
     }
 }
 

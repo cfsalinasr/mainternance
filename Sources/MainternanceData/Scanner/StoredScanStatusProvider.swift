@@ -22,11 +22,15 @@ public struct StoredScanStatusProvider: ScanStatusProviding {
         let findings = stored?.findings ?? []
         let status = ScanSummaryRules.scanStatus(
             from: stored?.summary,
-            unresolvedFindings: findings.count + (stored?.unattributedFromIncompleteScan ?? 0)
+            unresolvedFindings: findings.count + (stored?.unattributedFromIncompleteScan ?? 0),
+            lastScanDidNotFinish: stored?.scanDidNotFinish ?? false
         )
         // A damaged last-scan record with listed findings: a scan did run when it reported them, so the latest
         // detection date stands in for the last scan instead of a false "Never scanned". Findings stay red.
         guard stored?.summaryUnreadable == true, let latest = findings.map(\.foundAt).max() else { return status }
-        return ScanStatus(lastScan: latest, nextScan: nil, unresolvedFindings: status.unresolvedFindings)
+        return ScanStatus(
+            lastScan: latest, nextScan: nil, unresolvedFindings: status.unresolvedFindings,
+            lastScanDidNotFinish: status.lastScanDidNotFinish
+        )
     }
 }

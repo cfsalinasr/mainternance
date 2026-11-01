@@ -14,17 +14,26 @@ public struct RecordedScanStatus: Sendable, Equatable {
     /// Detections of a cancelled or failed scan that could not be attributed to a file. They stay counted as
     /// unresolved until the next COMPLETED scan replaces this number.
     public let unattributedFromIncompleteScan: Int
+    /// The scope of the scan that left `unattributedFromIncompleteScan` behind (the broader one when several did).
+    /// Only a completed scan of that scope, or a full scan, with no unattributed detections of its own resets it.
+    public let unattributedScope: ScanScope?
+    /// A scan was started and neither completed, cancelled nor failed on record: the app was quit or crashed
+    /// during it. Home says "Last scan did not finish" until a scan ends and records its own state.
+    public let scanDidNotFinish: Bool
     /// Findings that were quarantined, by quarantine record id, so a restore can put them back in the list.
     public let resolvedByQuarantine: [UUID: ScanFinding]
 
     public init(
         summary: ScanSummary?, summaryUnreadable: Bool = false, findings: [ScanFinding],
-        unattributedFromIncompleteScan: Int = 0, resolvedByQuarantine: [UUID: ScanFinding] = [:]
+        unattributedFromIncompleteScan: Int = 0, unattributedScope: ScanScope? = nil, scanDidNotFinish: Bool = false,
+        resolvedByQuarantine: [UUID: ScanFinding] = [:]
     ) {
         self.summary = summary
         self.summaryUnreadable = summaryUnreadable
         self.findings = findings
         self.unattributedFromIncompleteScan = max(0, unattributedFromIncompleteScan)
+        self.unattributedScope = unattributedScope
+        self.scanDidNotFinish = scanDidNotFinish
         self.resolvedByQuarantine = resolvedByQuarantine
     }
 }
@@ -33,14 +42,18 @@ public struct RecordedScanStatus: Sendable, Equatable {
 public struct ScanMemory: Sendable, Equatable {
     public var findings: [ScanFinding]
     public var unattributedFromIncompleteScan: Int
+    public var unattributedScope: ScanScope?
+    public var scanDidNotFinish: Bool
     public var resolvedByQuarantine: [UUID: ScanFinding]
 
     public init(
-        findings: [ScanFinding], unattributedFromIncompleteScan: Int = 0,
-        resolvedByQuarantine: [UUID: ScanFinding] = [:]
+        findings: [ScanFinding], unattributedFromIncompleteScan: Int = 0, unattributedScope: ScanScope? = nil,
+        scanDidNotFinish: Bool = false, resolvedByQuarantine: [UUID: ScanFinding] = [:]
     ) {
         self.findings = findings
         self.unattributedFromIncompleteScan = unattributedFromIncompleteScan
+        self.unattributedScope = unattributedScope
+        self.scanDidNotFinish = scanDidNotFinish
         self.resolvedByQuarantine = resolvedByQuarantine
     }
 }

@@ -33,7 +33,7 @@ public final class ClamAVScanner: ScannerEngine {
     private let definitions: DefinitionsStore
     private let installer: ClamAVInstaller
     private let now: @Sendable () -> Date
-    private let home: URL
+    let home: URL
     private let fileExists: @Sendable (String) -> Bool
     let state = Mutex(State())
 
@@ -67,14 +67,6 @@ public final class ClamAVScanner: ScannerEngine {
 
     public func updateDefinitions() -> AsyncStream<InstallEvent> {
         installer.updateDefinitions()
-    }
-
-    /// The folders `scan(scope)` walks and skips, from the same functions the scan itself uses.
-    public func coverage(of scope: ScanScope) -> ScanCoverage {
-        ScanCoverage(
-            roots: ScanScopes.roots(for: scope, home: home, exists: { FileManager.default.fileExists(atPath: $0) }),
-            excluded: ScanExclusions.directories(for: scope, home: home, paths: paths)
-        )
     }
 
     func definitionsDateNow() -> Date? {
@@ -255,9 +247,14 @@ public final class ClamAVScanner: ScannerEngine {
             continuation.yield(closing)
         }
         let cancelled = state.withLock { $0.cancelRequested }
-        return Self.outcome(status: status, cancelled: cancelled, tally: tally, tail: tail) {
+        let result = Self.outcome(status: status, cancelled: cancelled, tally: tally, tail: tail) {
             summary(tally, context, cancelled: cancelled)
         }
+        if case .failed = result, tally.unattributedDetections > 0 {
+            // The count is delivered as a value, so no consumer has to read it out of the message text.
+            continuation.yield(.unattributed(detections: tally.unattributedDetections))
+        }
+        return result
     }
 
     /// Drops a verdict whose path cannot be a real result of this scan. A file name may contain newlines and so

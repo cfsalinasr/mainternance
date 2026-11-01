@@ -7,8 +7,9 @@ import Testing
 /// scan replaces them.
 @MainActor
 struct ScannerIncompleteScanTests {
-    private func failure(_ count: Int) -> ScanEvent {
-        .failed(message: "The scan failed (exit 2)" + ScanFailureNote.unattributedClause(count) + ": ERROR: x")
+    /// The engine's events for a scan that fails after `count` detections it could not attribute.
+    private func failure(_ count: Int) -> [ScanEvent] {
+        [.unattributed(detections: count), .failed(message: "The scan failed (exit 2): ERROR: x")]
     }
 
     @Test func aCancelledScansUnattributedDetectionsAreKeptAndPersisted() async {
@@ -24,7 +25,7 @@ struct ScannerIncompleteScanTests {
 
     @Test func aFailedScansUnattributedDetectionsAreKeptAndPersisted() async {
         let rig = await ScannerRig.ready()
-        rig.engine.configure { $0.scanEvents = [.started(scope: .quick), failure(2)] }
+        rig.engine.configure { $0.scanEvents = [.started(scope: .quick)] + failure(2) }
         await rig.model.startScan(.quick)
         #expect(rig.model.unattributedFromIncompleteScan == 2)
         #expect(rig.store.remembered.last?.unattributedFromIncompleteScan == 2)
@@ -32,7 +33,7 @@ struct ScannerIncompleteScanTests {
 
     @Test func aFailureThatNeverStartedChangesNothing() async {
         let rig = await ScannerRig.ready()
-        rig.engine.configure { $0.scanEvents = [failure(5)] }
+        rig.engine.configure { $0.scanEvents = failure(5) }
         await rig.model.startScan(.quick)
         #expect(rig.model.unattributedFromIncompleteScan == 0)
         #expect(rig.store.remembered.isEmpty)
@@ -40,16 +41,16 @@ struct ScannerIncompleteScanTests {
 
     @Test func twoIncompleteScansKeepTheLargerCount() async {
         let rig = await ScannerRig.ready()
-        rig.engine.configure { $0.scanEvents = [.started(scope: .quick), failure(4)] }
+        rig.engine.configure { $0.scanEvents = [.started(scope: .quick)] + failure(4) }
         await rig.model.startScan(.quick)
-        rig.engine.configure { $0.scanEvents = [.started(scope: .quick), failure(1)] }
+        rig.engine.configure { $0.scanEvents = [.started(scope: .quick)] + failure(1) }
         await rig.model.startScan(.quick)
         #expect(rig.model.unattributedFromIncompleteScan == 4)
     }
 
     @Test func aCompletedScanReplacesTheCountWithZero() async {
         let rig = await ScannerRig.ready()
-        rig.engine.configure { $0.scanEvents = [.started(scope: .quick), failure(4)] }
+        rig.engine.configure { $0.scanEvents = [.started(scope: .quick)] + failure(4) }
         await rig.model.startScan(.quick)
         await rig.scanFinding([], scope: .quick)
         #expect(rig.model.unattributedFromIncompleteScan == 0)
@@ -63,6 +64,15 @@ struct ScannerIncompleteScanTests {
         }
         await rig.model.startScan(.quick)
         #expect(rig.model.unattributedFromIncompleteScan == 0)
+    }
+
+    @Test func aCountInsideAFailureMessageIsNeverTrusted() async {
+        let rig = await ScannerRig.ready()
+        let hostile = "The scan failed (exit 2)" + ScanFailureNote.unattributedClause(99) + ": " + "evil\nfile name"
+        rig.engine.configure { $0.scanEvents = [.started(scope: .quick), .failed(message: hostile)] }
+        await rig.model.startScan(.quick)
+        #expect(rig.model.unattributedFromIncompleteScan == 0)
+        #expect(rig.model.errorMessage == hostile) // the message is still shown as it is
     }
 
     @Test func theCountComesBackAfterARestart() async {

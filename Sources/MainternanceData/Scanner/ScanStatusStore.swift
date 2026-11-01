@@ -1,14 +1,22 @@
 import Foundation
 import MainternanceDomain
 
-/// Persists the last completed scan and the unresolved findings as JSON in one file (mode `0o600`), so Home can
-/// show the scanner's state without the Scanner screen being open and the next launch can list the findings again.
+/// Persists what the scanner remembers as JSON in one file (mode `0o600`), so Home can show the scanner's state
+/// without the Scanner screen being open and the next launch can list the findings again.
 ///
-/// Format (version 1): dates are seconds since 1970, `scope` is `quick`, `full` or `custom` (with `customPath`),
-/// `findings` lists the unresolved findings. `lastScan` is absent when no scan ever completed. A missing,
-/// unreadable or unknown file reads as nil; the next write replaces it. A cancelled scan is never stored as the
-/// last scan (the previous one stays), but the findings it reported are kept. The previous scan's
-/// unattributed-detection count stays with the previous scan.
+/// Format (version 1): dates are seconds since 1970; a scope is `quick`, `full` or `custom` (with `customPath`).
+/// - `findings`: the unresolved findings. They are what matters for safety, so one damaged entry makes the whole
+///   file unreadable (nil) rather than half-trusted.
+/// - `lastScan`: the last COMPLETED scan, absent when none ever completed. A cancelled scan never replaces it. A
+///   damaged `lastScan` only loses the summary (`summaryUnreadable`); the findings stay.
+/// - `scanDidNotFinish`: a scan started and has not recorded its end (quit or crash), until one does.
+/// - `unattributedFromIncompleteScan` and `unattributedScope`: detections of a cancelled or failed scan that could
+///   not be attributed to a file, and the scope of that scan.
+/// - `resolvedByQuarantine`: quarantine record id to the finding it resolved, so Restore can put it back. A damaged
+///   entry is skipped, the rest stays.
+///
+/// A file that exists but cannot be read is never overwritten: the next save moves it aside as
+/// `<name>.corrupt-<uuid>.json` first (like the quarantine store does with its manifest).
 public actor ScanStatusStore: ScanStatusRecording {
     private static let currentVersion = 1
 
@@ -36,17 +44,20 @@ public actor ScanStatusStore: ScanStatusRecording {
             findings.append(finding)
         }
         var links: [UUID: ScanFinding] = [:]
-        for entry in stored.resolvedByQuarantine ?? [] {
-            guard let id = UUID(uuidString: entry.recordID), let finding = entry.finding.finding else { return nil }
-            links[id] = finding
+        for entry in (stored.resolvedByQuarantine ?? []).compactMap(\.value) {
+            if let id = UUID(uuidString: entry.recordID), let finding = entry.finding.finding {
+                links[id] = finding
+            }
         }
-        // The findings are what matters for safety, so a damaged last-scan record only loses the summary.
         let summary = stored.lastScan?.summary
         return RecordedScanStatus(
             summary: summary,
             summaryUnreadable: stored.summaryUnreadable == true || (stored.lastScan != nil && summary == nil),
             findings: findings,
-            unattributedFromIncompleteScan: stored.unattributedFromIncompleteScan ?? 0, resolvedByQuarantine: links
+            unattributedFromIncompleteScan: stored.unattributedFromIncompleteScan ?? 0,
+            unattributedScope: stored.unattributedScope?.scope,
+            scanDidNotFinish: stored.scanDidNotFinish == true,
+            resolvedByQuarantine: links
         )
     }
 
@@ -67,10 +78,13 @@ public actor ScanStatusStore: ScanStatusRecording {
             findings: memory.findings.map(StoredFinding.init),
             lastScan: summary.map(StoredSummary.init),
             summaryUnreadable: unreadable && summary == nil ? true : nil,
+            scanDidNotFinish: memory.scanDidNotFinish ? true : nil,
             unattributedFromIncompleteScan: max(0, memory.unattributedFromIncompleteScan),
+            unattributedScope: memory.unattributedFromIncompleteScan > 0
+                ? memory.unattributedScope.map(StoredScope.init) : nil,
             resolvedByQuarantine: memory.resolvedByQuarantine.map {
-                StoredLink(recordID: $0.key.uuidString, finding: StoredFinding($0.value))
-            }.sorted { $0.recordID < $1.recordID }
+                Lenient(StoredLink(recordID: $0.key.uuidString, finding: StoredFinding($0.value)))
+            }.sorted { ($0.value?.recordID ?? "") < ($1.value?.recordID ?? "") }
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
         let manager = FileManager.default
@@ -78,8 +92,18 @@ public actor ScanStatusStore: ScanStatusRecording {
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        keepUnreadableFileAside(manager)
         guard (try? data.write(to: file, options: .atomic)) != nil else { return }
         try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+
+    /// A file that is there but cannot be read as a status is moved next to itself, never overwritten.
+    private func keepUnreadableFileAside(_ manager: FileManager) {
+        guard manager.fileExists(atPath: file.path), load() == nil else { return }
+        let name = file.deletingPathExtension().lastPathComponent
+        let aside = file.deletingLastPathComponent()
+            .appendingPathComponent("\(name).corrupt-\(UUID().uuidString).json")
+        try? manager.moveItem(at: file, to: aside)
     }
 }
 
@@ -89,8 +113,52 @@ private struct Stored: Codable {
     var lastScan: StoredSummary?
     /// Set when the last-scan record was damaged and had to be dropped on a later write.
     var summaryUnreadable: Bool?
+    var scanDidNotFinish: Bool?
     var unattributedFromIncompleteScan: Int?
-    var resolvedByQuarantine: [StoredLink]?
+    var unattributedScope: StoredScope?
+    var resolvedByQuarantine: [Lenient<StoredLink>]?
+}
+
+/// Decodes to nil instead of failing when one element is damaged, so one bad entry cannot take the list with it.
+private struct Lenient<Value: Codable>: Codable {
+    let value: Value?
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        value = try? Value(from: decoder)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try value?.encode(to: encoder)
+    }
+}
+
+private struct StoredScope: Codable {
+    var kind: String
+    var customPath: String?
+
+    init(_ scope: ScanScope) {
+        switch scope {
+        case .quick: kind = "quick"
+        case .full: kind = "full"
+        case let .custom(url):
+            kind = "custom"
+            customPath = url.path
+        }
+    }
+
+    /// Nil for an unknown kind or a custom scope without an absolute path.
+    var scope: ScanScope? {
+        switch kind {
+        case "quick": .quick
+        case "full": .full
+        case "custom": customPath.flatMap { $0.hasPrefix("/") ? .custom(URL(fileURLWithPath: $0)) : nil }
+        default: nil
+        }
+    }
 }
 
 private struct StoredLink: Codable {

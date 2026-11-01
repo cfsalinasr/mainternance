@@ -117,6 +117,9 @@ public enum ScanEvent: Sendable, Equatable {
     case found(ScanFinding)
     case finished(ScanSummary)
     case failed(message: String)
+    /// Detections the engine saw but could not attribute to a file. Delivered right BEFORE a terminal `.failed` so
+    /// the count is a structured value: it is never parsed out of the failure message (which can carry file names).
+    case unattributed(detections: Int)
 }
 
 public enum InstallEvent: Sendable, Equatable {

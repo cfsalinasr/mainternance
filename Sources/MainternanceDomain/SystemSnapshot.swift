@@ -67,10 +67,14 @@ public struct ScanStatus: Sendable, Equatable {
     public var lastScan: Date?
     public var nextScan: Date?
     public var unresolvedFindings: Int
+    /// A scan was started and neither completed, cancelled nor failed on record (the app was quit or crashed
+    /// during it), so what it would have found is unknown.
+    public var lastScanDidNotFinish: Bool
 
-    public init(lastScan: Date?, nextScan: Date?, unresolvedFindings: Int) {
+    public init(lastScan: Date?, nextScan: Date?, unresolvedFindings: Int, lastScanDidNotFinish: Bool = false) {
         self.lastScan = lastScan
         self.nextScan = nextScan
         self.unresolvedFindings = unresolvedFindings
+        self.lastScanDidNotFinish = lastScanDidNotFinish
     }
 }

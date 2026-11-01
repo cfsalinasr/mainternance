@@ -101,6 +101,24 @@ struct HomeModelTests {
         #expect(model.tiles[2].caption == "No throttling")
     }
 
+    @Test func aScanThatDidNotFinishIsNeverDescribedAsAFinishedScan() {
+        let unfinished = HomeModel(
+            overview: overview(scan: ScanStatus(
+                lastScan: now.addingTimeInterval(-86400), nextScan: nil, unresolvedFindings: 0,
+                lastScanDidNotFinish: true
+            )),
+            now: now, locale: locale
+        )
+        #expect(unfinished.scan.last == "Last scan did not finish")
+        let withFindings = HomeModel(
+            overview: overview(scan: ScanStatus(
+                lastScan: nil, nextScan: nil, unresolvedFindings: 2, lastScanDidNotFinish: true
+            )),
+            now: now, locale: locale
+        )
+        #expect(withFindings.scan.last == "Last scan did not finish, 2 findings")
+    }
+
     @Test func scanSummaryWords() {
         let model = HomeModel(
             overview: overview(scan: ScanStatus(

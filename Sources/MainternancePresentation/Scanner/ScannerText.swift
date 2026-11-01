@@ -61,6 +61,10 @@ enum ScannerText {
         "Restore \(name)"
     }
 
+    static let lastScanDidNotFinish = [
+        "The last scan did not finish (the app was closed or stopped during it), so its results are incomplete.",
+        "Run a scan again."
+    ].joined(separator: " ")
     static let scanEndedWithoutResult = "The scan ended without a result. Run it again."
     static let protectedFolder =
         "That folder holds the app's own quarantine or scanner data, so it cannot be scanned."
