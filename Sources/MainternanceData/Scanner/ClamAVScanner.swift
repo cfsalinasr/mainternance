@@ -168,7 +168,8 @@ public final class ClamAVScanner: ScannerEngine {
             startedAt: startedAt,
             definitionsDate: definitionsDate,
             roots: roots,
-            excluded: excluded
+            excluded: excluded,
+            ownDirectories: Set(excluded).subtracting(cloudDirectories())
         )
         guard let process = launch(clamscan, arguments) else {
             let quitting = state.withLock { $0.quitRequested }
@@ -185,6 +186,8 @@ public final class ClamAVScanner: ScannerEngine {
         let definitionsDate: Date?
         let roots: [String]
         let excluded: [String]
+        /// Excluded folders that are the app's own (quarantine, ClamAV), computed once per scan.
+        let ownDirectories: Set<String>
     }
 
     /// Starts the child inside the same critical section that checks the quit and cancel flags and records the
@@ -264,13 +267,14 @@ public final class ClamAVScanner: ScannerEngine {
         } else {
             false
         }
-        let own = Set(context.excluded).subtracting(cloudDirectories())
-        // The app's own folders (quarantine, ClamAV): a detection there is not a result of this scan, and it is
-        // dropped silently (not unattributed). Only a plain absolute path can be placed there.
+        // A FOUND line ending in the app's own folders cannot be a result of this scan, but a file name with a
+        // newline can make a REAL detection print that way: it is dropped and counted, never silent (a forged line
+        // on a clean exit 0 is cleared by `ScanTally.noteExit`).
         let inOwn = ScanPathRules.isPlainAbsolute(path)
-            && own.contains { ScanPathRules.isInside(path, directory: $0) }
+            && context.ownDirectories.contains { ScanPathRules.isInside(path, directory: $0) }
         if isFound, inOwn {
             tally.noteSuspicious()
+            tally.noteDroppedDetection()
             return .ignored
         }
         let inRoot = ScanPathRules.isPlainAbsolute(path)

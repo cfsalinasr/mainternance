@@ -50,8 +50,8 @@ struct ClamAVScannerExclusionTests {
         ], status: 1))
         let events = await fixture.run(.custom(temp.url))
         #expect(events.findings.map(\.signature) == ["Sig.R", "Sig.Y"])
-        // Dropped silently: a detection inside the app's own folders is not an unattributed detection.
-        #expect(events.summary?.unattributedDetections == 0)
+        // Both own-folder FOUND lines are dropped but counted: they could be real detections with a forged tail.
+        #expect(events.summary?.unattributedDetections == 2)
     }
 
     @Test("a FOUND inside an excluded cloud folder is delivered as a normal finding")
@@ -72,16 +72,34 @@ struct ClamAVScannerExclusionTests {
         #expect(summary.scanned == 2)
     }
 
-    @Test("a FOUND inside the quarantine folder is dropped without raising unattributed detections")
-    func quarantineFoundSilent() async throws {
+    @Test(
+        "a FOUND forged into our own folders is counted, so the scan is not clean",
+        arguments: ["Quarantine", "ClamAV"]
+    )
+    func ownFolderFoundCounted(folder: String) async throws {
         let temp = try TempDirectory()
         let base = temp.url.standardizedFileURL.path
         let fixture = try ScannerFixture(temp: temp, runner: FakeRunner.replaying([
-            .stdout("\(base)/support/Quarantine/abc.exe: Sig.Q FOUND"),
+            .stdout("\(base)/support/\(folder)/x: Sig.Q FOUND"),
             .stdout("\(base)/x.exe: Sig.X FOUND")
         ], status: 1))
         let events = await fixture.run(.full)
         #expect(events.findings.map(\.signature) == ["Sig.X"])
-        #expect(events.summary?.unattributedDetections == 0)
+        let summary = try #require(events.summary)
+        #expect(summary.unattributedDetections >= 1)
+        #expect(!summary.isClean)
+    }
+
+    @Test("the same forged line on a clean exit 0 stays clean", arguments: ["Quarantine", "ClamAV"])
+    func ownFolderFoundExitZero(folder: String) async throws {
+        let temp = try TempDirectory()
+        let base = temp.url.standardizedFileURL.path
+        let fixture = try ScannerFixture(temp: temp, runner: FakeRunner.replaying([
+            .stdout("\(base)/support/\(folder)/x: Sig.Q FOUND"),
+            .stdout("\(base)/x.exe: OK")
+        ], status: 0))
+        let summary = try #require(await fixture.run(.full).summary)
+        #expect(summary.unattributedDetections == 0)
+        #expect(summary.isClean)
     }
 }
