@@ -126,7 +126,8 @@ struct ScannerTypesTests {
         let record = QuarantineRecord(
             id: id,
             originalPath: "/Users/x/Downloads/eicar.com", quarantinedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            signature: "Eicar-Test-Signature", sha256: String(repeating: "ab", count: 32), size: 9_000_000_000
+            signature: "Eicar-Test-Signature", sha256: String(repeating: "ab", count: 32), size: 9_000_000_000,
+            originalPermissions: 0o755
         )
         // Fixed strategy: dates as seconds since 1970 (no locale or time zone dependence).
         let encoder = JSONEncoder()
