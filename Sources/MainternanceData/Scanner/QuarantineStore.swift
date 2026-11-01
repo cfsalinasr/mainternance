@@ -1,50 +1,54 @@
-import CryptoKit
+import Darwin
 import Foundation
 import MainternanceDomain
 
 /// Quarantine store: moves suspicious files into one app-owned folder and can put them back.
 ///
-/// Layout: `<directory>/<uuid>` holds each quarantined file (mode `0o600`), `<directory>/index.json` the manifest.
-/// There is deliberately no API that deletes a quarantined file. All operations run one at a time (actor).
+/// Layout: `<directory>/<uuid>` holds each quarantined file (mode `0o600`), `<directory>/<uuid>.json` is its sidecar
+/// (the full record) and `<directory>/index.json` the manifest. There is deliberately no API that deletes a
+/// quarantined file. All operations run one at a time (actor).
 ///
-/// Crash safety (choice: manifest first): `quarantine` writes the entry as `pending` BEFORE touching the file,
-/// then moves it, then marks the entry `stored`. Every later load resolves leftovers, and no step can lose a file:
-/// - pending and the vault file exists: the move finished, the entry becomes `stored`;
-/// - pending and no vault file: the move never happened, the original is untouched, the entry is dropped;
-/// - a cross-volume copy in progress is `<uuid>.partial`; the original is only removed after the verified copy
-///   was renamed into place, so a leftover partial file is only a copy and is swept;
-/// - stored and no vault file: the file was already restored (crash before the manifest update); entry dropped.
-/// A corrupt manifest is moved aside to `index.corrupt-<uuid>.json` (never overwritten, never deleted) and quarantined
-/// files are never touched because of it. Files in the vault with no manifest entry stay where they are.
+/// Crash safety (choice: sidecar and manifest first). `quarantine` writes the sidecar, then the manifest entry as
+/// `pending`, BEFORE touching the file, then moves it, then marks the entry `stored`. Every load resolves leftovers
+/// (see `QuarantineStore+Recovery.swift`) and no step can lose a file. The manifest can be lost or corrupted: it is
+/// then rebuilt from the sidecars and the damaged file is kept aside as `index.corrupt-<uuid>.json`. A manifest that
+/// merely cannot be read (permissions, I/O) is never replaced: operations fail with `.ioFailure` and write nothing.
+///
+/// Race safety: the source is opened once with `O_NOFOLLOW`; type, size and hash come from that descriptor; the
+/// physical parent folder is compared before and after and re-checked against `ProtectedPaths` right before the move;
+/// the move never overwrites (`RENAME_EXCL`); the moved item must be the very same file; permissions are applied with
+/// `fchmod` on a descriptor.
 public actor QuarantineStore: QuarantineStoring {
-    private let directory: URL
-    private let fileManager: FileManager
-    private let now: @Sendable () -> Date
-    private let isSameVolume: @Sendable (URL, URL) -> Bool
-
-    public init(directory: URL, fileManager: FileManager = .default, now: @escaping @Sendable () -> Date) {
-        self.init(directory: directory, fileManager: fileManager, now: now, isSameVolume: Self.sameVolume)
+    /// Test seams. Production code uses the defaults.
+    struct Hooks: Sendable {
+        /// Behave as if the quarantine folder were on another volume (copy, verify, then remove the original).
+        var forceCopy = false
+        /// Runs after the file was hashed and before it moves; tests swap files or folders here.
+        var beforeMove: (@Sendable () -> Void)?
+        /// Makes the permission reset after a restore fail.
+        var failRestorePermissions = false
     }
 
-    /// Tests inject `isSameVolume` to exercise the copy-and-verify path without a second disk.
-    init(
-        directory: URL, fileManager: FileManager = .default, now: @escaping @Sendable () -> Date,
-        isSameVolume: @escaping @Sendable (URL, URL) -> Bool
-    ) {
+    let directory: URL
+    let fileManager: FileManager
+    let now: @Sendable () -> Date
+    let hooks: Hooks
+
+    public init(directory: URL, fileManager: FileManager = .default, now: @escaping @Sendable () -> Date) {
+        self.init(directory: directory, fileManager: fileManager, now: now, hooks: Hooks())
+    }
+
+    init(directory: URL, fileManager: FileManager = .default, now: @escaping @Sendable () -> Date, hooks: Hooks) {
         self.directory = directory
         self.fileManager = fileManager
         self.now = now
-        self.isSameVolume = isSameVolume
-    }
-
-    private var manifestURL: URL {
-        directory.appendingPathComponent("index.json")
+        self.hooks = hooks
     }
 
     // MARK: QuarantineStoring
 
     public func records() -> [QuarantineRecord] {
-        guard let entries = try? loadRecovered().entries else { return [] }
+        guard let entries = try? load() else { return [] }
         return entries.filter { $0.state == .stored }.map(\.record)
     }
 
@@ -52,23 +56,34 @@ public actor QuarantineStore: QuarantineStoring {
         if ProtectedPaths.isProtected(path, including: [directory]) {
             throw QuarantineError.protectedPath
         }
-        let attributes = try regularFileAttributes(atPath: path)
-        let source = URL(fileURLWithPath: path)
+        let name = (path as NSString).lastPathComponent
+        let parent = try QuarantineFiles.realParent(of: path)
+        if ProtectedPaths.isProtected(parent + "/" + name, including: [directory]) {
+            throw QuarantineError.protectedPath
+        }
+        let file = try QuarantineFiles.openRegular(path)
+        defer { file.close() }
         try ensureDirectory()
-        var entries = try loadRecovered().entries
-        let digest = try Self.hash(of: source)
+        var entries = try load()
+        let digest = try QuarantineFiles.hash(of: file)
         let record = QuarantineRecord(
             id: UUID(), originalPath: path, quarantinedAt: Self.wholeSeconds(now()), signature: signature,
-            sha256: digest.hex, size: digest.size, originalPermissions: Self.permissionBits(attributes)
+            sha256: digest.hex, size: digest.size, originalPermissions: Int(file.info.st_mode) & 0o7777
         )
-        let stored = directory.appendingPathComponent(record.id.uuidString)
+        try writeSidecar(record)
         entries.append(.init(state: .pending, record: record))
-        try write(entries)
+        do { try write(entries) } catch {
+            removeSidecar(record.id)
+            throw error
+        }
+        let stored = vaultPath(record.id)
         do {
-            try transfer(from: source, to: stored, partial: partialURL(for: record.id), expectedSHA256: digest.hex)
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stored.path)
+            hooks.beforeMove?()
+            try verifyPlace(of: path, parent: parent)
+            try moveIn(path: path, file: file, stored: stored, expected: digest)
+            try QuarantineFiles.setPermissions(0o600, atPath: stored, expecting: QuarantineFiles.linkInfo(stored))
         } catch {
-            try? rollbackQuarantine(record, stored: stored)
+            rollbackQuarantine(record, stored: stored)
             throw Self.wrap(error)
         }
         entries[entries.count - 1].state = .stored
@@ -77,79 +92,163 @@ public actor QuarantineStore: QuarantineStoring {
         return record
     }
 
+    /// Restores the file and returns the path it really went to (`a (restored).txt` when something is in the way).
+    /// A failed permission reset after the move does not fail the restore: the file is back, and keeps the
+    /// quarantine's `0o600` until the permissions are fixed by hand. Special bits (setuid, sticky) are never restored.
     public func restore(_ id: UUID) throws -> String {
-        var entries = try loadRecovered().entries
+        var entries = try load()
         guard let index = entries.firstIndex(where: { $0.state == .stored && $0.record.id == id }) else {
             throw QuarantineError.missing
         }
         let record = entries[index].record
-        let stored = directory.appendingPathComponent(id.uuidString)
-        guard fileManager.fileExists(atPath: stored.path) else { throw QuarantineError.missing }
         let original = URL(fileURLWithPath: record.originalPath)
+        let blocked = ProtectedPaths.isProtected(record.originalPath, including: [directory])
+        guard !blocked else { throw QuarantineError.protectedPath }
         var isFolder: ObjCBool = false
         guard fileManager.fileExists(atPath: original.deletingLastPathComponent().path, isDirectory: &isFolder),
               isFolder.boolValue else { throw QuarantineError.restoreTargetMissing }
-        let target = freeTarget(for: original)
-        let partial = target.deletingLastPathComponent().appendingPathComponent(".\(id.uuidString).partial")
-        do {
-            try transfer(from: stored, to: target, partial: partial, expectedSHA256: nil)
-            entries.remove(at: index)
-            try? write(entries)
-            try fileManager.setAttributes([.posixPermissions: record.originalPermissions], ofItemAtPath: target.path)
-        } catch {
-            throw Self.wrap(error)
+        let target = try moveOut(id: id, to: original)
+        entries.remove(at: index)
+        try? write(entries)
+        removeSidecar(id)
+        if hooks.failRestorePermissions {
+            return target
         }
-        return target.path
+        try? QuarantineFiles.setPermissions(record.originalPermissions, atPath: target)
+        return target
+    }
+
+    /// Items in the quarantine folder that no record describes (no sidecar and no manifest entry). They are never
+    /// touched or deleted; this only reports them so the app can say so.
+    public func unclaimedFiles() -> [String] {
+        guard let entries = try? load() else { return [] }
+        let known = Set(entries.map(\.record.id))
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.filter { UUID(uuidString: $0).map { !known.contains($0) } ?? false }.sorted()
+    }
+
+    /// Records whose copy is in quarantine but whose original also still sits at its path with the same content
+    /// (a copy across volumes was interrupted before the original was removed). They are NOT listed in `records()`
+    /// as contained; nothing is deleted, and the original stays where it is.
+    public func stillInPlace() -> [QuarantineRecord] {
+        guard let entries = try? load() else { return [] }
+        return entries.filter { $0.state == .pending }.map(\.record)
     }
 
     // MARK: Moving files
 
-    /// Moves `source` to `destination` without ever overwriting. Same volume: one atomic rename. Otherwise: copy to
-    /// `partial`,
-    /// verify the content hash, rename into place, and only then remove the source.
-    private func transfer(
-        from source: URL, to destination: URL, partial: URL, expectedSHA256: String?
-    ) throws {
-        if isSameVolume(source, destination.deletingLastPathComponent()) {
-            try fileManager.moveItem(at: source, to: destination)
-            return
+    private func verifyPlace(of path: String, parent: String) throws {
+        guard let again = try? QuarantineFiles.realParent(of: path), again == parent else {
+            throw QuarantineError.changedSinceScan
         }
-        let expected = try expectedSHA256 ?? Self.hash(of: source).hex
-        try? fileManager.removeItem(at: partial)
-        do {
-            try fileManager.copyItem(at: source, to: partial)
-            guard try Self.hash(of: partial).hex == expected else {
-                throw QuarantineError.ioFailure("The copy did not match the original, so nothing was moved.")
-            }
-            try fileManager.moveItem(at: partial, to: destination)
-        } catch {
-            try? fileManager.removeItem(at: partial)
-            throw error
-        }
-        do {
-            try fileManager.removeItem(at: source)
-        } catch {
-            try? fileManager.removeItem(at: destination)
-            throw error
+        if ProtectedPaths.isProtected(again + "/" + (path as NSString).lastPathComponent, including: [directory]) {
+            throw QuarantineError.protectedPath
         }
     }
 
-    /// Puts the file back after a failed quarantine and drops the pending entry.
-    private func rollbackQuarantine(_ record: QuarantineRecord, stored: URL) throws {
-        let original = URL(fileURLWithPath: record.originalPath)
-        if fileManager.fileExists(atPath: stored.path), !exists(original) {
-            try fileManager.moveItem(at: stored, to: original)
-            try fileManager.setAttributes([.posixPermissions: record.originalPermissions], ofItemAtPath: original.path)
+    /// Same volume: one atomic no-overwrite rename, then the moved item must be the file that was opened (a symlink
+    /// swapped in meanwhile fails this check and is moved back by the rollback). Across volumes: copy the open
+    /// descriptor, verify, rename into place, and remove the original only if the path still is that file.
+    private func moveIn(
+        path: String,
+        file: QuarantineFiles.OpenFile,
+        stored: String,
+        expected: (hex: String, size: Int64)
+    ) throws {
+        if !hooks.forceCopy {
+            do {
+                try QuarantineFiles.renameNoOverwrite(path, to: stored)
+                guard let moved = QuarantineFiles.linkInfo(stored), QuarantineFiles.sameFile(moved, file.info) else {
+                    throw QuarantineError.changedSinceScan
+                }
+                return
+            } catch QuarantineFiles.MoveFailure.crossDevice {
+                // fall through to the copy path
+            }
         }
-        guard !fileManager.fileExists(atPath: stored.path) else { return } // keep the pending entry: file is safe
-        var entries = try loadRecovered().entries
-        entries.removeAll { $0.record.id == record.id }
-        try write(entries)
+        let partial = stored + ".partial"
+        try? fileManager.removeItem(atPath: partial)
+        do {
+            let copied = try QuarantineFiles.copy(file, toNewFile: partial)
+            guard copied == expected else { throw QuarantineError.changedSinceScan }
+            try QuarantineFiles.renameNoOverwrite(partial, to: stored)
+        } catch {
+            try? fileManager.removeItem(atPath: partial)
+            throw Self.wrap(error)
+        }
+        guard let current = QuarantineFiles.linkInfo(path), QuarantineFiles.sameFile(current, file.info) else {
+            try? fileManager.removeItem(atPath: stored)
+            throw QuarantineError.changedSinceScan
+        }
+        guard unlink(path) == 0 else {
+            let message = QuarantineFiles.message(errno)
+            try? fileManager.removeItem(atPath: stored)
+            throw QuarantineError.ioFailure(message)
+        }
+    }
+
+    /// Puts the file back after a failed quarantine and drops its sidecar and entry. If the file cannot be put
+    /// back, everything stays in place: the next load resolves it, and the file is never lost.
+    private func rollbackQuarantine(_ record: QuarantineRecord, stored: String) {
+        let original = record.originalPath
+        if QuarantineFiles.linkInfo(stored) != nil {
+            guard QuarantineFiles.linkInfo(original) == nil,
+                  (try? QuarantineFiles.renameNoOverwrite(stored, to: original)) != nil else { return }
+            try? QuarantineFiles.setPermissions(record.originalPermissions, atPath: original)
+        }
+        removeSidecar(record.id)
+        if var entries = try? load() {
+            entries.removeAll { $0.record.id == record.id }
+            try? write(entries)
+        }
+    }
+
+    /// Moves the quarantined item back next to `original`, never overwriting; returns the final path.
+    private func moveOut(id: UUID, to original: URL) throws -> String {
+        let stored = vaultPath(id)
+        let source: QuarantineFiles.OpenFile
+        do { source = try QuarantineFiles.openRegular(stored) } catch QuarantineError.notRegularFile {
+            throw QuarantineError.ioFailure("The quarantined item is not a regular file, so nothing was restored.")
+        }
+        defer { source.close() }
+        for _ in 0 ..< 8 {
+            let target = freeTarget(for: original)
+            if ProtectedPaths.isProtected(target.path, including: [directory]) {
+                throw QuarantineError.protectedPath
+            }
+            let partial = target.deletingLastPathComponent().appendingPathComponent(".\(id.uuidString).partial").path
+            do {
+                try moveOutOnce(stored: stored, source: source, target: target.path, partial: partial)
+                return target.path
+            } catch QuarantineFiles.MoveFailure.destinationExists {
+                continue // something appeared at this name meanwhile: pick the next free one
+            } catch {
+                try? fileManager.removeItem(atPath: partial)
+                throw Self.wrap(error)
+            }
+        }
+        throw QuarantineError.ioFailure("No free name was found to restore the file.")
+    }
+
+    private func moveOutOnce(stored: String, source: QuarantineFiles.OpenFile, target: String, partial: String) throws {
+        if !hooks.forceCopy {
+            do {
+                try QuarantineFiles.renameNoOverwrite(stored, to: target)
+                return
+            } catch QuarantineFiles.MoveFailure.crossDevice {
+                // fall through to the copy path
+            }
+        }
+        let copied = try QuarantineFiles.copy(source, toNewFile: partial)
+        guard copied.size == source.info.st_size else { throw QuarantineError.changedSinceScan }
+        try QuarantineFiles.renameNoOverwrite(partial, to: target)
+        // The restored copy is in place and verified; failing to remove our own quarantined copy loses nothing.
+        _ = unlink(stored)
     }
 
     /// `a.txt` -> `a (restored).txt`, then `a (restored 2).txt`, ...: the first name nothing occupies.
     private func freeTarget(for original: URL) -> URL {
-        if !exists(original) {
+        if QuarantineFiles.linkInfo(original.path) == nil {
             return original
         }
         let folder = original.deletingLastPathComponent()
@@ -160,68 +259,24 @@ public actor QuarantineStore: QuarantineStoring {
         while true {
             let marker = attempt == 1 ? " (restored)" : " (restored \(attempt))"
             let candidate = folder.appendingPathComponent(stem + marker + (ext.isEmpty ? "" : "." + ext))
-            if !exists(candidate) {
+            if QuarantineFiles.linkInfo(candidate.path) == nil {
                 return candidate
             }
             attempt += 1
         }
     }
 
-    // MARK: Manifest
-
-    /// Loads the manifest and resolves what a crash may have left behind (see the type comment). Persists the
-    /// cleanup when anything changed. A corrupt manifest reads as empty; it is kept aside on the next write.
-    private func loadRecovered() throws -> (entries: [QuarantineManifest.Entry], corrupt: Bool) {
-        guard let data = try? Data(contentsOf: manifestURL) else {
-            sweepPartials()
-            return ([], false)
-        }
-        guard let loaded = try? QuarantineManifest.decode(data) else { return ([], true) }
-        var changed = sweepPartials()
-        var entries: [QuarantineManifest.Entry] = []
-        for var entry in loaded {
-            let present = fileManager
-                .fileExists(atPath: directory.appendingPathComponent(entry.record.id.uuidString).path)
-            if !present {
-                changed = true
-                continue
-            }
-            if entry.state == .pending {
-                entry.state = .stored
-                changed = true
-            }
-            entries.append(entry)
-        }
-        if changed {
-            try? write(entries)
-        }
-        return (entries, false)
-    }
-
-    @discardableResult
-    private func sweepPartials() -> Bool {
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
-        var removed = false
-        for name in names where name.hasSuffix(".partial") {
-            try? fileManager.removeItem(at: directory.appendingPathComponent(name))
-            removed = true
-        }
-        return removed
-    }
-
-    /// Atomic write. An unreadable existing manifest is first renamed to `index.corrupt-<uuid>.json`.
-    private func write(_ entries: [QuarantineManifest.Entry]) throws {
-        try ensureDirectory()
-        if let data = try? Data(contentsOf: manifestURL), (try? QuarantineManifest.decode(data)) == nil {
-            let aside = directory.appendingPathComponent("index.corrupt-\(UUID().uuidString).json")
-            try fileManager.moveItem(at: manifestURL, to: aside)
-        }
-        try QuarantineManifest.encode(entries).write(to: manifestURL, options: .atomic)
-    }
-
     // MARK: Helpers
 
-    private func ensureDirectory() throws {
+    func vaultPath(_ id: UUID) -> String {
+        directory.appendingPathComponent(id.uuidString).path
+    }
+
+    func sidecarURL(_ id: UUID) -> URL {
+        directory.appendingPathComponent("\(id.uuidString).json")
+    }
+
+    func ensureDirectory() throws {
         do {
             try fileManager.createDirectory(
                 at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
@@ -231,63 +286,13 @@ public actor QuarantineStore: QuarantineStoring {
         }
     }
 
-    private func partialURL(for id: UUID) -> URL {
-        directory.appendingPathComponent("\(id.uuidString).partial")
-    }
-
-    /// `lstat`-based: a dangling symlink still counts as occupied.
-    private func exists(_ url: URL) -> Bool {
-        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
-    }
-
-    private func regularFileAttributes(atPath path: String) throws -> [FileAttributeKey: Any] {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: path) else { throw QuarantineError.missing }
-        guard (attributes[.type] as? FileAttributeType) == .typeRegular else { throw QuarantineError.notRegularFile }
-        return attributes
-    }
-
-    private static func permissionBits(_ attributes: [FileAttributeKey: Any]) -> Int {
-        ((attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0o600) & 0o7777
-    }
-
     /// The manifest stores seconds as JSON numbers; whole seconds round-trip exactly, so the record handed back
     /// equals the one read from disk later.
     private static func wholeSeconds(_ date: Date) -> Date {
         Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
     }
 
-    private static func wrap(_ error: Error) -> QuarantineError {
+    static func wrap(_ error: Error) -> QuarantineError {
         (error as? QuarantineError) ?? .ioFailure(error.localizedDescription)
-    }
-
-    private static let sameVolume: @Sendable (URL, URL) -> Bool = { first, second in
-        let keys: Set<URLResourceKey> = [.volumeIdentifierKey]
-        guard let one = try? first.resourceValues(forKeys: keys).volumeIdentifier as? NSObject,
-              let two = try? second.resourceValues(forKeys: keys).volumeIdentifier as? NSObject else { return false }
-        return one.isEqual(two)
-    }
-
-    /// SHA-256 and size, streamed in 1 MiB chunks so large files never sit in memory.
-    static func hash(of url: URL) throws -> (hex: String, size: Int64) {
-        let handle: FileHandle
-        do { handle = try FileHandle(forReadingFrom: url) } catch { throw wrap(error) }
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        var size: Int64 = 0
-        do {
-            while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
-                hasher.update(data: chunk)
-                size += Int64(chunk.count)
-            }
-        } catch { throw wrap(error) }
-        return (hex(hasher.finalize()), size)
-    }
-
-    static func sha256Hex(of data: Data) -> String {
-        hex(SHA256.hash(data: data))
-    }
-
-    private static func hex(_ digest: SHA256.Digest) -> String {
-        digest.map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -37,6 +37,11 @@ struct ProtectedPathsTests {
     @Test("ordinary locations are not protected")
     func ordinary() {
         #expect(!ProtectedPaths.isProtected("/Applications/Foo.app/Contents/x"))
+        #expect(!ProtectedPaths.isProtected("/usr/local/bin/tool"))
+        #expect(!ProtectedPaths.isProtected("/usr/local/../local/x"))
+        #expect(ProtectedPaths.isProtected("/usr/local/../bin/ls"))
+        #expect(ProtectedPaths.isProtected("/usr/libexec/x"))
+        #expect(ProtectedPaths.isProtected("/usr/localx/x"))
         #expect(!ProtectedPaths.isProtected("/private/var/folders/ab/x/T/a.txt"))
         #expect(!ProtectedPaths.isProtected("/Library/Caches/x"))
         #expect(!ProtectedPaths.isProtected("/Users/someone/Downloads/a.txt"))

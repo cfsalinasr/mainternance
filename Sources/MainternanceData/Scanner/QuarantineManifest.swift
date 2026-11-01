@@ -32,3 +32,21 @@ enum QuarantineManifest {
         return try decoder.decode([Entry].self, from: data)
     }
 }
+
+extension QuarantineManifest {
+    /// The per-file sidecar `<uuid>.json` holds one bare `QuarantineRecord` (same keys and date strategy as the
+    /// manifest entries' `record`). It is written before the file moves, so a lost or corrupt `index.json`
+    /// can be rebuilt from the sidecars.
+    static func encodeRecord(_ record: QuarantineRecord) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(record)
+    }
+
+    static func decodeRecord(_ data: Data) throws -> QuarantineRecord {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        return try decoder.decode(QuarantineRecord.self, from: data)
+    }
+}

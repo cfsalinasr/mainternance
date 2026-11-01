@@ -11,26 +11,34 @@ public enum ProtectedPaths {
         "/System", "/usr", "/bin", "/sbin", "/Library/Apple", "/private/var/db", "/private/etc"
     ]
 
+    /// Exempt from the `/usr` protection: macOS itself leaves `/usr/local` to the user and malware hides there.
+    private static let exemptTree = "/usr/local"
+
     /// True when `path` is protected: a system tree, the root, the home folder itself, or the running app bundle.
     public static func isProtected(_ path: String) -> Bool {
         isProtected(path, including: [])
     }
 
     /// Like `isProtected(_:)`, with extra folders (for example the quarantine folder) protected together with
-    /// everything below them.
+    /// everything below them. Extra folders are never exempt.
     public static func isProtected(_ path: String, including extraTrees: [URL]) -> Bool {
         guard let candidate = normalize(path) else { return true }
         if candidate == "/" {
             return true
         }
-        let trees = protectedTrees.compactMap(normalize)
-            + [Bundle.main.bundlePath].compactMap(normalize)
-            + extraTrees.compactMap { normalize($0.path) }
-        if trees.contains(where: { contains(tree: $0, candidate) }) {
+        let extras = extraTrees.compactMap { normalize($0.path) }
+        if extras.contains(where: { contains(tree: $0, candidate) }) {
             return true
         }
-        let home = normalize(FileManager.default.homeDirectoryForCurrentUser.path)
-        return candidate == home
+        let exempt = normalize(exemptTree).map { contains(tree: $0, candidate) } ?? false
+        let system = protectedTrees.compactMap(normalize) + [Bundle.main.bundlePath].compactMap(normalize)
+        if !exempt, system.contains(where: { contains(tree: $0, candidate) }) {
+            return true
+        }
+        if let bundle = normalize(Bundle.main.bundlePath), contains(tree: bundle, candidate) {
+            return true
+        }
+        return candidate == normalize(FileManager.default.homeDirectoryForCurrentUser.path)
     }
 
     private static func contains(tree: String, _ candidate: String) -> Bool {

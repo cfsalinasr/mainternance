@@ -39,8 +39,6 @@ public enum QuarantineError: Error, Sendable, Equatable {
     case changedSinceScan
     /// The folder the file came from no longer exists, so nothing was restored.
     case restoreTargetMissing
-    /// The file is already in quarantine.
-    case alreadyQuarantined
     /// A file system operation failed; the message is the system's description. The original file is left in place.
     case ioFailure(String)
 }

@@ -10,12 +10,15 @@ struct QuarantineFixture {
     let vault: URL
     let store: QuarantineStore
 
-    init(now: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_700_000_000) }) throws {
+    init(
+        now: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_700_000_000) },
+        hooks: QuarantineStore.Hooks = .init()
+    ) throws {
         temp = try TempDirectory()
         area = temp.url.appendingPathComponent("files", isDirectory: true)
         vault = temp.url.appendingPathComponent("Quarantine", isDirectory: true)
         try FileManager.default.createDirectory(at: area, withIntermediateDirectories: true)
-        store = QuarantineStore(directory: vault, now: now)
+        store = QuarantineStore(directory: vault, now: now, hooks: hooks)
     }
 
     @discardableResult
@@ -73,19 +76,25 @@ struct QuarantineStoreTests {
         let file = try fix.makeFile("big.bin", String(repeating: "0123456789", count: 300_000))
         let record = try await fix.store.quarantine(path: file.path, signature: "S")
         #expect(record.size == 3_000_000)
-        #expect(record.sha256 == QuarantineStore
+        #expect(record.sha256 == QuarantineFiles
             .sha256Hex(of: Data(String(repeating: "0123456789", count: 300_000).utf8)))
     }
 
-    @Test("protected paths are refused and left alone")
+    @Test("the quarantine folder and a path reached through a symlinked parent into it are refused")
     func protectedRefused() async throws {
         let fix = try QuarantineFixture()
-        for path in ["/usr/bin/true", "/etc/hosts", "/", fix.vault.path] {
+        let file = try fix.makeFile("a.txt")
+        let record = try await fix.store.quarantine(path: file.path, signature: "S")
+        let item = fix.vault.appendingPathComponent(record.id.uuidString)
+        let link = fix.area.appendingPathComponent("vault-link")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: fix.vault.path)
+        for path in [fix.vault.path, item.path, link.path + "/" + record.id.uuidString] {
             await #expect(throws: QuarantineError.protectedPath) {
                 try await fix.store.quarantine(path: path, signature: "S")
             }
         }
-        #expect(FileManager.default.fileExists(atPath: "/usr/bin/true"))
+        #expect(fix.exists(item))
+        #expect(await fix.store.records() == [record])
     }
 
     @Test("a file already inside the quarantine folder is refused")
@@ -194,23 +203,6 @@ struct QuarantineStoreTests {
         _ = try await again.restore(record.id)
     }
 
-    @Test("a corrupt manifest is survived: empty list, files kept, later quarantines keep the old manifest aside")
-    func corruptManifest() async throws {
-        let fix = try QuarantineFixture()
-        let first = try await fix.store.quarantine(path: fix.makeFile("a.txt").path, signature: "S")
-        try Data("{ not json".utf8).write(to: fix.manifestURL)
-        let store = QuarantineStore(directory: fix.vault, now: { Date() })
-        #expect(await store.records().isEmpty)
-        #expect(fix.exists(fix.vault.appendingPathComponent(first.id.uuidString)))
-        let second = try await store.quarantine(path: fix.makeFile("b.txt").path, signature: "S")
-        #expect(await store.records() == [second])
-        let kept = try FileManager.default.contentsOfDirectory(atPath: fix.vault.path)
-            .filter { $0.hasPrefix("index.corrupt") }
-        #expect(kept.count == 1)
-        #expect(try String(contentsOf: fix.vault.appendingPathComponent(kept[0]), encoding: .utf8) == "{ not json")
-        #expect(fix.exists(fix.vault.appendingPathComponent(first.id.uuidString)))
-    }
-
     @Test("a missing manifest yields an empty list and creates nothing")
     func missingManifest() async throws {
         let fix = try QuarantineFixture()
@@ -244,7 +236,7 @@ struct QuarantineStoreTests {
 @Suite("Quarantine store, cross-volume copy path")
 struct QuarantineCrossVolumeTests {
     private func forcedCopyStore(_ fix: QuarantineFixture) -> QuarantineStore {
-        QuarantineStore(directory: fix.vault, now: { Date() }, isSameVolume: { _, _ in false })
+        QuarantineStore(directory: fix.vault, now: { Date() }, hooks: .init(forceCopy: true))
     }
 
     @Test("copy, verify, then remove the original; restore goes back the same way; no partial files remain")
