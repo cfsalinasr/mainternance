@@ -59,6 +59,7 @@ private struct PopoverHost: View {
                 NSApp.activate()
             },
             dismisser: dismisser,
+            quit: { NSApplication.shared.terminate(nil) },
             onVisibilityChange: { visibility.report(.popover, visible: $0) }
         )
     }
