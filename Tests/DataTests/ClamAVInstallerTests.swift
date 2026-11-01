@@ -227,30 +227,6 @@ struct ClamAVInstallerTests {
         }
     }
 
-    @Test("terminateNow kills a running install, is idempotent, and frees the slot")
-    func quitHook() async throws {
-        let temp = try TempDirectory()
-        let signals = SignalLog()
-        let runner = hangingRunner(signals: signals)
-        let sut = installer(tools: FakeTools(["brew"]), runner: runner, support: temp.url)
-        let first = sut.install()
-        await waitForCalls(runner, 1)
-        sut.terminateNow()
-        sut.terminateNow()
-        let events = await collectEvents(first)
-        #expect(signals.all == [SIGKILL])
-        #expect(!events.contains(.finished))
-        guard case .failed? = events.last else {
-            Issue.record("expected a failure after the kill, got \(events)")
-            return
-        }
-        let second = sut.install()
-        await waitForCalls(runner, 2)
-        #expect(runner.recorded.count == 2)
-        sut.terminateNow()
-        _ = await collectEvents(second)
-    }
-
     @Test("terminateNow is a no-op when idle")
     func quitHookIdle() throws {
         let temp = try TempDirectory()

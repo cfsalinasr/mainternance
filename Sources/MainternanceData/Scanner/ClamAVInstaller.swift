@@ -11,6 +11,7 @@ public final class ClamAVInstaller: Sendable {
     static let homebrewMissingMessage = "Homebrew was not found. Install it from https://brew.sh and try again."
     static let busyMessage = "Another install or update is already running"
     static let notInstalledMessage = "ClamAV is not installed"
+    static let quittingMessage = "Stopped because the app is quitting"
     static let brewEnvironment = ["HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ENV_HINTS": "1"]
 
     private let locator: ToolLocator
@@ -18,10 +19,12 @@ public final class ClamAVInstaller: Sendable {
     private let paths: ClamAVPaths
     private let state = Mutex(State())
 
-    /// `busy` is the single-flight flag; `current` is the running brew or freshclam, kept for `terminateNow()`.
+    /// `busy` is the single-flight flag; `current` is the running brew or freshclam, kept for `terminateNow()`;
+    /// `quitRequested` forbids any later start once the app is quitting.
     private struct State {
         var busy = false
         var current: RunningProcess?
+        var quitRequested = false
     }
 
     public init(locator: ToolLocator, runner: ProcessRunning, paths: ClamAVPaths) {
@@ -48,13 +51,33 @@ public final class ClamAVInstaller: Sendable {
         stream { [self] continuation in await runUpdate(continuation) }
     }
 
-    /// Synchronous, idempotent SIGKILL of the running install or update (its whole process group); a no-op when
-    /// nothing runs. Safe from any thread. The app target MUST call it on quit (`applicationWillTerminate`),
-    /// otherwise brew or freshclam outlive the app; Tasks 5/7 wire that. A call that lands in the instant between
-    /// claiming the single-flight slot and starting the child does not stop that child.
+    /// Synchronous, idempotent SIGKILL of the running install or update (its whole process group), and it forbids
+    /// any later start: after this call `install()` and `updateDefinitions()` fail with a quitting message. Safe
+    /// from any thread. The app target MUST call it on quit (`ScannerServices.terminateNow()` does, from the app's
+    /// will-terminate notification), otherwise brew or freshclam outlive the app. A quit that lands after the
+    /// single-flight slot was claimed but before the child started stops that child from starting: the flag is
+    /// checked in the same critical section that starts the child and stores its handle (see `launch`).
     public func terminateNow() {
-        let process = state.withLock { $0.current }
+        let process = state.withLock { current -> RunningProcess? in
+            current.quitRequested = true
+            return current.current
+        }
         process?.terminateNow()
+    }
+
+    /// Starts the child inside the critical section that checks `quitRequested` and records the process, so
+    /// `terminateNow()` can neither slip between the check and the start nor miss a child that just started.
+    /// `runner.run` therefore executes WITH the lock held (a spawn takes milliseconds); a runner must never call
+    /// back into the installer.
+    private func launch(
+        _ executable: String, arguments: [String], environment: [String: String]?
+    ) -> RunningProcess? {
+        state.withLock { current -> RunningProcess? in
+            guard !current.quitRequested else { return nil }
+            let process = runner.run(executable, arguments: arguments, environment: environment, lowPriority: true)
+            current.current = process
+            return process
+        }
     }
 
     // MARK: - Single-flight stream plumbing
@@ -92,13 +115,10 @@ public final class ClamAVInstaller: Sendable {
             continuation.yield(.failed(message: Self.homebrewMissingMessage))
             return
         }
-        let process = runner.run(
-            brew,
-            arguments: ["install", "clamav"],
-            environment: Self.brewEnvironment,
-            lowPriority: true
-        )
-        state.withLock { $0.current = process }
+        guard let process = launch(brew, arguments: ["install", "clamav"], environment: Self.brewEnvironment) else {
+            continuation.yield(.failed(message: Self.quittingMessage))
+            return
+        }
         var tail = StderrTail()
         var lastStage: String?
         for await line in process.lines {
@@ -163,14 +183,12 @@ public final class ClamAVInstaller: Sendable {
             continuation.yield(.failed(message: "Could not prepare the ClamAV folder: \(Self.sanitized("\(error)"))"))
             return
         }
+        let arguments = ["--config-file=\(paths.freshclamConfig.path)", "--stdout", "--no-warnings", "--show-progress"]
+        guard let process = launch(freshclam, arguments: arguments, environment: nil) else {
+            continuation.yield(.failed(message: Self.quittingMessage))
+            return
+        }
         continuation.yield(.stage("Downloading definitions…"))
-        let process = runner.run(
-            freshclam,
-            arguments: ["--config-file=\(paths.freshclamConfig.path)", "--stdout", "--no-warnings", "--show-progress"],
-            environment: nil,
-            lowPriority: true
-        )
-        state.withLock { $0.current = process }
         var tail = StderrTail()
         var lastProgress: Double?
         for await line in process.lines {
@@ -178,10 +196,7 @@ public final class ClamAVInstaller: Sendable {
             case let .stdout(text):
                 // `--stdout` sends every freshclam message, errors included, to stdout.
                 if let value = Self.parseFreshclamProgress(text) {
-                    if value != lastProgress {
-                        lastProgress = value
-                        continuation.yield(.progress(value))
-                    }
+                    emitProgress(value, last: &lastProgress, continuation)
                 } else {
                     tail.add(text, isStderr: false)
                 }
@@ -202,6 +217,14 @@ public final class ClamAVInstaller: Sendable {
             let prefix = "Updating definitions failed (exit \(status))"
             continuation.yield(.failed(message: tail.failureMessage(prefix: prefix)))
         }
+    }
+
+    private func emitProgress(
+        _ value: Double, last: inout Double?, _ continuation: AsyncStream<InstallEvent>.Continuation
+    ) {
+        guard value != last else { return }
+        last = value
+        continuation.yield(.progress(value))
     }
 
     private func prepareDirectoriesAndConfig() throws {

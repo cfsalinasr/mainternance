@@ -2,9 +2,11 @@ import Foundation
 
 /// Keeps the reason lines of a failed child for the failure message, sanitized.
 ///
-/// Lines that look like errors or warnings (either stream; `freshclam --stdout` reports errors on stdout) are
-/// preferred; without any, the last stderr lines are used. At most two lines are reported.
+/// Preference order: lines that start with `Error` (either stream; `freshclam --stdout` reports errors on stdout),
+/// then lines that merely mention an error or a warning, then the last plain stderr lines. A trailing pair of
+/// `Warning:` lines therefore never pushes the `Error:` line out. At most two lines are reported.
 struct StderrTail {
+    private var errors: [String] = []
     private var flagged: [String] = []
     private var plain: [String] = []
 
@@ -12,7 +14,9 @@ struct StderrTail {
         let clean = ClamAVInstaller.sanitized(line)
         guard !clean.isEmpty else { return }
         let lowered = clean.lowercased()
-        if lowered.contains("error") || lowered.contains("warning") {
+        if lowered.hasPrefix("error") {
+            Self.append(clean, to: &errors)
+        } else if lowered.contains("error") || lowered.contains("warning") {
             Self.append(clean, to: &flagged)
         } else if isStderr {
             Self.append(clean, to: &plain)
@@ -20,7 +24,7 @@ struct StderrTail {
     }
 
     func failureMessage(prefix: String) -> String {
-        let lines = flagged.isEmpty ? plain : flagged
+        let lines = errors.isEmpty ? (flagged.isEmpty ? plain : flagged) : errors
         return lines.isEmpty ? prefix : "\(prefix): \(lines.joined(separator: " "))"
     }
 

@@ -53,9 +53,16 @@ final class FakeRunner: ProcessRunning {
 /// A locator over a mutable set of "installed" tool names, so a test can flip them on mid-run.
 final class FakeTools: Sendable {
     private let present: Mutex<Set<String>>
+    private let hook = Mutex<(@Sendable (String) -> Void)?>(nil)
 
     init(_ names: Set<String>) {
         present = Mutex(names)
+    }
+
+    /// Runs on every lookup of a tool name (after the locator is asked), so a test can inject an event at an exact
+    /// point of the code under test, for example a quit between claiming the single-flight slot and starting.
+    func onLookup(_ body: @escaping @Sendable (String) -> Void) {
+        hook.withLock { $0 = body }
     }
 
     func add(_ names: Set<String>) {
@@ -64,7 +71,11 @@ final class FakeTools: Sendable {
 
     var locator: ToolLocator {
         ToolLocator(candidates: ["/fake/bin"], isExecutable: { [self] path in
-            present.withLock { $0.contains(String(path.dropFirst("/fake/bin/".count))) }
+            let name = String(path.dropFirst("/fake/bin/".count))
+            let found = present.withLock { $0.contains(name) }
+            let callback = hook.withLock { $0 }
+            callback?(name)
+            return found
         })
     }
 }
