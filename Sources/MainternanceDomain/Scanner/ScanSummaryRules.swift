@@ -7,9 +7,11 @@ public enum ScanSummaryRules {
         summary.cancelled ? nil : summary.endedAt
     }
 
-    /// Never scanned (nil summary) gives `lastScan` nil. The caller decides whether a scanner exists at all:
-    /// with no scanner installed it passes no `ScanStatus` to health (unknown stays nil). Detections that could not
-    /// be attributed to a file still count as unresolved: they are real until proven otherwise.
+    /// A nil `summary` means "the scanner is present but has never completed a scan": `lastScan` is nil, which health
+    /// reports as amber "Never scanned". It does NOT mean "no scanner": with no scanner installed the caller passes no
+    /// `ScanStatus` at all to health (`ScanStatusProviding` returns nil, so no last-scan check exists and unknown stays
+    /// nil). Detections that could not be attributed to a file still count as unresolved: they are real until proven
+    /// otherwise.
     public static func scanStatus(from summary: ScanSummary?, unresolvedFindings: Int) -> ScanStatus {
         ScanStatus(
             lastScan: summary.flatMap { lastScanDate(summary: $0) },
