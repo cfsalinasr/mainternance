@@ -61,6 +61,7 @@ enum ScannerText {
         "Restore \(name)"
     }
 
+    static let savedResultsUnreadable = "The scanner's saved results could not be read."
     static let lastScanDidNotFinish = [
         "The last scan did not finish (the app was closed or stopped during it), so its results are incomplete.",
         "Run a scan again."

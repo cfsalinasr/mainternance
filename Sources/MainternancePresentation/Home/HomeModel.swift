@@ -157,7 +157,9 @@ public struct HomeModel: Equatable, Sendable {
         case 1: "1 finding"
         default: "\(findings) findings"
         }
-        let last: String = if scan.lastScanDidNotFinish {
+        let last: String = if scan.savedResultsUnreadable {
+            "The scanner's saved results could not be read."
+        } else if scan.lastScanDidNotFinish {
             findings > 0 ? "Last scan did not finish, \(outcome)" : "Last scan did not finish"
         } else {
             scan.lastScan.map {

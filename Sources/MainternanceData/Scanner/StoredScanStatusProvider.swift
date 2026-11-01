@@ -18,19 +18,29 @@ public struct StoredScanStatusProvider: ScanStatusProviding {
 
     public func currentStatus() async -> ScanStatus? {
         guard isEngineInstalled() else { return nil }
-        let stored = await store.load()
-        let findings = stored?.findings ?? []
+        let recorded: RecordedScanStatus?
+        switch await store.loadState() {
+        case .nothingSaved:
+            recorded = nil
+        case let .saved(status):
+            recorded = status
+        case .unreadable:
+            // The file is there and cannot be read: not "never scanned", not "no findings".
+            return ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0, savedResultsUnreadable: true)
+        }
+        let findings = recorded?.findings ?? []
         let status = ScanSummaryRules.scanStatus(
-            from: stored?.summary,
-            unresolvedFindings: findings.count + (stored?.unattributedFromIncompleteScan ?? 0),
-            lastScanDidNotFinish: stored?.scanDidNotFinish ?? false
+            from: recorded?.summary,
+            unresolvedFindings: findings.count + (recorded?.unattributedFromIncompleteScan ?? 0),
+            lastScanDidNotFinish: recorded?.scanDidNotFinish ?? false
         )
         // A damaged last-scan record with listed findings: a scan did run when it reported them, so the latest
         // detection date stands in for the last scan instead of a false "Never scanned". Findings stay red.
-        guard stored?.summaryUnreadable == true, let latest = findings.map(\.foundAt).max() else { return status }
+        let latest = recorded?.summaryUnreadable == true ? findings.map(\.foundAt).max() : nil
         return ScanStatus(
-            lastScan: latest, nextScan: nil, unresolvedFindings: status.unresolvedFindings,
-            lastScanDidNotFinish: status.lastScanDidNotFinish
+            lastScan: latest ?? status.lastScan, nextScan: nil, unresolvedFindings: status.unresolvedFindings,
+            lastScanDidNotFinish: status.lastScanDidNotFinish,
+            savedResultsUnreadable: recorded.map { $0.earlierResultsUnreadable || $0.summaryUnreadable } ?? false
         )
     }
 }

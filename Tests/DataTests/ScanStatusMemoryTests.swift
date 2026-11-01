@@ -217,13 +217,29 @@ struct ScanStatusMemoryTests {
         #expect(report.checks.first { $0.id == .lastScan }?.reason != "Never scanned")
     }
 
-    @Test("without findings an unreadable last scan is an honest Never scanned")
+    @Test("without findings an unreadable last scan says the saved results could not be read")
     func damagedSummaryWithoutFindings() async throws {
         let temp = try TempDirectory()
         let json = #"{"version":1,"findings":[],"lastScan":{"scope":"mystery"}}"#
         try Data(json.utf8).write(to: file(temp))
         let sut = StoredScanStatusProvider(store: ScanStatusStore(file: file(temp)), isEngineInstalled: { true })
-        #expect(await sut.currentStatus() == ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0))
+        #expect(await sut.currentStatus() == ScanStatus(
+            lastScan: nil, nextScan: nil, unresolvedFindings: 0, savedResultsUnreadable: true
+        ))
+    }
+
+    @Test("a last-scan record that is not even the right shape only loses the summary")
+    func structurallyDamagedSummary() async throws {
+        let temp = try TempDirectory()
+        let json = """
+        {"version":1,"findings":[{"id":"00000000-0000-0000-0000-000000000001","path":"/Users/x/a.bin",
+        "signature":"Sig","foundAt":1800000020}],"lastScan":"garbage"}
+        """
+        try Data(json.utf8).write(to: file(temp))
+        let loaded = try #require(await ScanStatusStore(file: file(temp)).load())
+        #expect(loaded.findings.count == 1)
+        #expect(loaded.summary == nil)
+        #expect(loaded.summaryUnreadable)
     }
 
     @Test("Home counts the incomplete scan's unattributed detections as findings, and a completed scan clears them")
@@ -259,4 +275,101 @@ private extension SystemSnapshot {
         thermal: .nominal, cpuUsage: nil, gpuUsage: nil, temperatureCelsius: nil, battery: nil,
         newStartupItemCount: nil, osUpdateAvailable: nil
     )
+}
+
+/// A saved file that cannot be read is never reported as "never scanned" or "no findings".
+@Suite("Scan status unreadable file")
+struct ScanStatusUnreadableTests {
+    private let now = Date(timeIntervalSince1970: 1_800_100_000)
+
+    private func file(_ temp: TempDirectory) -> URL {
+        temp.url.appendingPathComponent("scan-status.json")
+    }
+
+    private func finding(_ index: Int) -> ScanFinding {
+        ScanFinding(
+            id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index)) ?? UUID(),
+            path: "/Users/someone/Downloads/file \(index).bin", signature: "Sig", foundAt: now
+        )
+    }
+
+    private func completed() -> ScanSummary {
+        ScanSummary(
+            scope: .quick, scanned: 1, unreadable: 0, findings: 0, startedAt: now, endedAt: now, cancelled: false,
+            definitionsDate: nil
+        )
+    }
+
+    @Test("loadState tells a missing file, a good one and an unreadable one apart")
+    func threeStates() async throws {
+        let temp = try TempDirectory()
+        #expect(await ScanStatusStore(file: file(temp)).loadState() == .nothingSaved)
+        try Data("garbage".utf8).write(to: file(temp))
+        #expect(await ScanStatusStore(file: file(temp)).loadState() == .unreadable)
+        let sut = ScanStatusStore(file: file(temp))
+        await sut.remember(ScanMemory(findings: []))
+        guard case .saved = await ScanStatusStore(file: file(temp)).loadState() else {
+            Issue.record("expected a saved status after a fresh save")
+            return
+        }
+    }
+
+    @Test("after the damaged copy was moved aside the new file still says earlier results were unreadable")
+    func rememberedAfterMoveAside() async throws {
+        let temp = try TempDirectory()
+        try Data("garbage".utf8).write(to: file(temp))
+        let sut = ScanStatusStore(file: file(temp))
+        await sut.remember(ScanMemory(findings: []))
+        let loaded = try #require(await ScanStatusStore(file: file(temp)).load())
+        #expect(loaded.earlierResultsUnreadable)
+        // A cancelled scan changes nothing about that; a completed one clears it.
+        await sut.recordScan(
+            ScanSummary(
+                scope: .quick, scanned: 1, unreadable: 0, findings: 0, startedAt: now, endedAt: now, cancelled: true,
+                definitionsDate: nil
+            ),
+            memory: ScanMemory(findings: [])
+        )
+        #expect(await ScanStatusStore(file: file(temp)).load()?.earlierResultsUnreadable == true)
+        await sut.recordScan(completed(), memory: ScanMemory(findings: []))
+        #expect(await ScanStatusStore(file: file(temp)).load()?.earlierResultsUnreadable == false)
+    }
+
+    @Test("Home: an unreadable file is amber with plain words, no never-scanned and no no-findings")
+    func homeSaysSo() async throws {
+        let temp = try TempDirectory()
+        try Data("garbage".utf8).write(to: file(temp))
+        let sut = StoredScanStatusProvider(store: ScanStatusStore(file: file(temp)), isEngineInstalled: { true })
+        let status = try #require(await sut.currentStatus())
+        #expect(status.savedResultsUnreadable)
+        let report = HealthEvaluator().evaluate(snapshot: .quiet, scan: status, now: now)
+        let check = try #require(report.checks.first { $0.id == .lastScan })
+        #expect(check.state == .needsAttention)
+        #expect(check.reason == "The scanner's saved results could not be read.")
+        #expect(!report.checks.contains { $0.id == .scannerFindings }) // "No findings" would be a claim
+    }
+
+    @Test("Home keeps saying so after the damaged copy was moved aside, and still shows listed findings red")
+    func homeAfterMoveAside() async throws {
+        let temp = try TempDirectory()
+        try Data("garbage".utf8).write(to: file(temp))
+        let store = ScanStatusStore(file: file(temp))
+        await store.remember(ScanMemory(findings: [finding(1)]))
+        let sut = StoredScanStatusProvider(store: store, isEngineInstalled: { true })
+        let status = try #require(await sut.currentStatus())
+        #expect(status.savedResultsUnreadable)
+        let report = HealthEvaluator().evaluate(snapshot: .quiet, scan: status, now: now)
+        #expect(report.checks.first { $0.id == .lastScan }?.reason == "The scanner's saved results could not be read.")
+        #expect(report.checks.first { $0.id == .scannerFindings }?.state == .problem)
+        await store.recordScan(completed(), memory: ScanMemory(findings: []))
+        let after = try #require(await sut.currentStatus())
+        #expect(!after.savedResultsUnreadable)
+    }
+
+    @Test("a missing file is plain never-scanned, not unreadable")
+    func missingIsNotUnreadable() async throws {
+        let temp = try TempDirectory()
+        let sut = StoredScanStatusProvider(store: ScanStatusStore(file: file(temp)), isEngineInstalled: { true })
+        #expect(await sut.currentStatus() == ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0))
+    }
 }

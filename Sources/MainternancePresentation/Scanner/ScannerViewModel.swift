@@ -41,6 +41,9 @@ public final class ScannerViewModel {
     public internal(set) var unattributedScope: ScanScope?
     /// A scan was started and never recorded its end (the app was quit or crashed during it).
     public internal(set) var scanDidNotFinish = false
+    /// A saved status file exists but could not be read (or was moved aside for that reason): nothing may be claimed
+    /// about what it held until a scan completes.
+    public internal(set) var savedResultsUnreadable = false
     /// True while a quarantined file is being put back.
     public internal(set) var isRestoring = false
     /// True while a finding is being re-checked and moved.
@@ -121,6 +124,11 @@ public final class ScannerViewModel {
         permissionDeniedCount > 0
     }
 
+    /// The quit hook's counterpart in the screen: writes any save that is still waiting.
+    public func flushPendingSaves() async {
+        await statusStore.flush()
+    }
+
     public func openFullDiskAccessSettings() {
         if let url = URL(string: ScannerText.fullDiskAccessURL) {
             openURL(url)
@@ -143,9 +151,19 @@ public final class ScannerViewModel {
     /// nothing saved is skipped.
     private func restoreLastScanOnce() async {
         guard !restoredLastScan else { return }
-        let recorded = await statusStore.load()
+        let loaded = await statusStore.loadState()
         restoredLastScan = true
-        guard let recorded else { return }
+        let recorded: RecordedScanStatus
+        switch loaded {
+        case .nothingSaved:
+            return
+        case .unreadable:
+            savedResultsUnreadable = true
+            return
+        case let .saved(status):
+            recorded = status
+        }
+        savedResultsUnreadable = savedResultsUnreadable || recorded.earlierResultsUnreadable
         for finding in recorded.findings where !findings.contains(where: { Self.key($0) == Self.key(finding) }) {
             findings.append(finding)
         }

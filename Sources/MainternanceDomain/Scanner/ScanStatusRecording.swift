@@ -20,14 +20,18 @@ public struct RecordedScanStatus: Sendable, Equatable {
     /// A scan was started and neither completed, cancelled nor failed on record: the app was quit or crashed
     /// during it. Home says "Last scan did not finish" until a scan ends and records its own state.
     public let scanDidNotFinish: Bool
+    /// An earlier status file could not be read and was moved aside; until a scan completes, nothing may be claimed
+    /// about what that file held.
+    public let earlierResultsUnreadable: Bool
     /// Findings that were quarantined, by quarantine record id, so a restore can put them back in the list.
     public let resolvedByQuarantine: [UUID: ScanFinding]
 
     public init(
         summary: ScanSummary?, summaryUnreadable: Bool = false, findings: [ScanFinding],
         unattributedFromIncompleteScan: Int = 0, unattributedScope: ScanScope? = nil, scanDidNotFinish: Bool = false,
-        resolvedByQuarantine: [UUID: ScanFinding] = [:]
+        earlierResultsUnreadable: Bool = false, resolvedByQuarantine: [UUID: ScanFinding] = [:]
     ) {
+        self.earlierResultsUnreadable = earlierResultsUnreadable
         self.summary = summary
         self.summaryUnreadable = summaryUnreadable
         self.findings = findings
@@ -66,6 +70,22 @@ public protocol ScanStatusRecording: Sendable {
     func recordScan(_ summary: ScanSummary, memory: ScanMemory) async
     /// Stores new memory and leaves the last scan untouched (a scan failed, or a file was quarantined or restored).
     func remember(_ memory: ScanMemory) async
+    /// Like `recordScan`/`remember`, for the many small updates during a scan (one per detection): the first one is
+    /// written at once, later ones are coalesced (at most one write per second) and always written by the next
+    /// `recordScan`/`remember`, by `flush()` and by the quit hook, so no detection is lost.
+    func rememberProgress(_ memory: ScanMemory) async
+    /// Writes anything still pending.
+    func flush() async
     /// Nil when nothing was recorded yet or the record is unreadable.
     func load() async -> RecordedScanStatus?
+    /// Tells "nothing saved" from "saved but unreadable".
+    func loadState() async -> ScanStatusLoad
+}
+
+/// What loading the saved status found.
+public enum ScanStatusLoad: Sendable, Equatable {
+    case nothingSaved
+    case saved(RecordedScanStatus)
+    /// A file is there but cannot be read: nothing may be claimed (not "never scanned", not "no findings").
+    case unreadable
 }

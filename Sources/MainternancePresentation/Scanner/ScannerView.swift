@@ -61,6 +61,11 @@ public struct ScannerView: View {
             Label(ScannerText.checkingFile, systemImage: "hourglass")
                 .font(.system(size: 13))
         }
+        if model.savedResultsUnreadable {
+            Label(ScannerText.savedResultsUnreadable, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(.orange)
+        }
         if model.scanDidNotFinish, !model.run.isWorking {
             Label(ScannerText.lastScanDidNotFinish, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 13))

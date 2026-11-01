@@ -32,6 +32,10 @@ public struct ScanCoverage: Sendable {
         return !excluded.contains { Self.contains(tree: $0, candidate) }
     }
 
+    /// Note: `..` is collapsed on the text, but after a symbolic link it would lead somewhere else on disk. Scan
+    /// paths never contain `..`, so a path like that can only come from a hand-edited status file; the real-path
+    /// check that follows then either cannot resolve it or does not match, which means "not covered".
+    ///
     /// Absolute path without `.`, `..` and empty components, worked out on the text alone. (Foundation's
     /// `standardizedFileURL` also rewrites `/private/var` to `/var`, which would break the comparison of real paths.)
     private static func standardized(_ path: String) -> String? {

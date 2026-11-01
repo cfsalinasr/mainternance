@@ -21,7 +21,8 @@ enum CoveragePaths {
     /// gone can still be placed. Nil when the parent does not exist or the path has no usable shape.
     @Sendable
     static func resolve(_ path: String) -> String? {
-        guard path.hasPrefix("/") else { return nil }
+        // A finding whose own name is a link is not what a scan walks into: not covered.
+        guard path.hasPrefix("/"), !isSymbolicLink(path) else { return nil }
         let url = URL(fileURLWithPath: path)
         let name = url.lastPathComponent
         guard !name.isEmpty, name != "/", let parent = realPath(url.deletingLastPathComponent().path) else {

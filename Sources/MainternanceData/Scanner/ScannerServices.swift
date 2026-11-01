@@ -17,7 +17,8 @@ public final class ScannerServices: Sendable {
         paths: ClamAVPaths = ClamAVPaths(),
         locator: ToolLocator = ToolLocator(),
         runner: ProcessRunning = SystemProcessRunner(),
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        statusNow: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.paths = paths
         let installer = ClamAVInstaller(locator: locator, runner: runner, paths: paths)
@@ -27,7 +28,7 @@ public final class ScannerServices: Sendable {
             installer: installer, home: home
         )
         quarantine = QuarantineStore(directory: paths.quarantineDirectory, now: { Date() })
-        let store = ScanStatusStore(file: ScanStatusStore.defaultFile(paths: paths))
+        let store = ScanStatusStore(file: ScanStatusStore.defaultFile(paths: paths), now: statusNow)
         statusStore = store
         statusProvider = StoredScanStatusProvider(store: store, isEngineInstalled: { installer.isInstalled() })
     }
@@ -42,5 +43,7 @@ public final class ScannerServices: Sendable {
     public func terminateNow() {
         scanner.terminateNow()
         installer.terminateNow()
+        // Detections reported a moment ago may still be waiting for their coalesced write.
+        statusStore.flushNow()
     }
 }

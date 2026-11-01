@@ -23,6 +23,10 @@ final class TestClock: Sendable {
     var reading: @Sendable () -> Date {
         { [self] in now() }
     }
+
+    func advance(_ seconds: TimeInterval) {
+        value.withLock { $0 = $0.addingTimeInterval(seconds) }
+    }
 }
 
 /// A fake `clamscan` that stays running until the test finishes it or the scanner signals it.

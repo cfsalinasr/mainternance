@@ -78,7 +78,8 @@ public struct HealthEvaluator: Sendable {
         if let updateAvailable = snapshot.osUpdateAvailable {
             checks.append(osUpdate(updateAvailable))
         }
-        if let scan {
+        // Unreadable saved results with no findings listed: "no findings" would be a claim nobody can back.
+        if let scan, !(scan.savedResultsUnreadable && scan.unresolvedFindings == 0) {
             checks.append(findings(scan))
         }
         return HealthReport(checks: checks)
@@ -176,6 +177,12 @@ public struct HealthEvaluator: Sendable {
     }
 
     private func lastScan(_ scan: ScanStatus, now: Date) -> HealthCheck {
+        if scan.savedResultsUnreadable {
+            return HealthCheck(
+                id: .lastScan, state: .needsAttention, title: "Last scan",
+                reason: "The scanner's saved results could not be read.", destination: .scanner
+            )
+        }
         if scan.lastScanDidNotFinish {
             // A scan that was started and never ended: what it would have found is unknown, never "good".
             let aged = scan.lastScan.map { Self.ageState(days: Self.days(since: $0, now: now)) } ?? .needsAttention

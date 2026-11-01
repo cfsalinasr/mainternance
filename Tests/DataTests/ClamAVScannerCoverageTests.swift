@@ -106,4 +106,17 @@ struct ClamAVScannerCoverageTests {
         let fixture = try fixture(folders: ["Downloads"])
         #expect(!fixture.scanner.coverage(of: .quick).covers(path(fixture, "Downloads/nope/x.pkg")))
     }
+
+    @Test("a finding whose own file name is a symbolic link is not covered")
+    func findingThatIsALink() throws {
+        let fixture = try fixture(folders: ["Downloads", "outside"])
+        try Data("x".utf8).write(to: fixture.temp.url.appendingPathComponent("Downloads/real.pkg"))
+        try FileManager.default.createSymbolicLink(
+            at: fixture.temp.url.appendingPathComponent("Downloads/link.pkg"),
+            withDestinationURL: fixture.temp.url.appendingPathComponent("outside/target.pkg")
+        )
+        let coverage = fixture.scanner.coverage(of: .quick)
+        #expect(coverage.covers(path(fixture, "Downloads/real.pkg")))
+        #expect(!coverage.covers(path(fixture, "Downloads/link.pkg")))
+    }
 }

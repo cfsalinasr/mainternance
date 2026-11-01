@@ -119,6 +119,16 @@ struct HomeModelTests {
         #expect(withFindings.scan.last == "Last scan did not finish, 2 findings")
     }
 
+    @Test func unreadableSavedResultsAreNeitherNeverScannedNorClean() {
+        let model = HomeModel(
+            overview: overview(scan: ScanStatus(
+                lastScan: nil, nextScan: nil, unresolvedFindings: 0, savedResultsUnreadable: true
+            )),
+            now: now, locale: locale
+        )
+        #expect(model.scan.last == "The scanner's saved results could not be read.")
+    }
+
     @Test func scanSummaryWords() {
         let model = HomeModel(
             overview: overview(scan: ScanStatus(

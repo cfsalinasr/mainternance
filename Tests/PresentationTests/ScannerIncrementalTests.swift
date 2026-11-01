@@ -121,3 +121,74 @@ extension ScannerRig {
         return result
     }
 }
+
+@MainActor
+struct ScannerManyDetectionsTests {
+    @Test func thousandsOfDetectionsUseTheCoalescedSaveAndEndWithOneCompleteWrite() async {
+        let rig = await ScannerRig.ready()
+        let many = (1 ... 5000).map { makeFinding($0, path: "/Users/someone/Downloads/many/file\($0).bin") }
+        rig.engine.configure {
+            $0.scanEvents = [.started(scope: .quick)] + many.map { .found($0) }
+                + [.finished(makeSummary(findings: many.count))]
+        }
+        await rig.model.startScan(.quick)
+        #expect(rig.model.findings.count == 5000)
+        let progress = rig.store.state.withLock { $0.progress }
+        #expect(progress.count == 5000) // every detection is handed over at once, the store coalesces the writes
+        #expect(progress.last?.findings.count == 5000)
+        // Only the start, and the end of the scan, are immediate writes.
+        #expect(rig.store.remembered.count == 1)
+        #expect(rig.store.recorded.count == 1)
+        #expect(rig.store.lastMemory?.findings.count == 5000)
+    }
+
+    @Test func theQuitHookPathFlushesThroughThePort() async {
+        let rig = await ScannerRig.ready()
+        await rig.model.flushPendingSaves()
+        #expect(rig.store.state.withLock { $0.flushCount } == 1)
+    }
+}
+
+@MainActor
+struct ScannerUnreadableResultsTests {
+    @Test func anUnreadableSavedFileIsSaidOutLoudAndNeverTurnsIntoNothingToReport() async {
+        let rig = ScannerRig()
+        rig.store.state.withLock { $0.unreadable = true }
+        await rig.model.refreshStatus()
+        #expect(rig.model.savedResultsUnreadable)
+        #expect(rig.model.findings.isEmpty)
+        #expect(ScannerText.savedResultsUnreadable == "The scanner's saved results could not be read.")
+    }
+
+    @Test func aFileThatWasMovedAsideEarlierIsRememberedAsUnreadableToo() async {
+        let rig = ScannerRig()
+        rig.store.state.withLock {
+            $0.stored = RecordedScanStatus(summary: nil, findings: [], earlierResultsUnreadable: true)
+        }
+        await rig.model.refreshStatus()
+        #expect(rig.model.savedResultsUnreadable)
+    }
+
+    @Test func aCompletedScanClearsTheNotice() async {
+        let rig = ScannerRig()
+        rig.store.state.withLock { $0.unreadable = true }
+        await rig.model.refreshStatus()
+        await rig.scanFinding([], scope: .quick)
+        #expect(!rig.model.savedResultsUnreadable)
+    }
+
+    @Test func aCancelledScanDoesNotClearIt() async {
+        let rig = ScannerRig()
+        rig.store.state.withLock { $0.unreadable = true }
+        await rig.model.refreshStatus()
+        rig.engine.configure { $0.scanEvents = [.started(scope: .quick), .finished(makeSummary(cancelled: true))] }
+        await rig.model.startScan(.quick)
+        #expect(rig.model.savedResultsUnreadable)
+    }
+
+    @Test func aFileThatIsMissingIsNotUnreadable() async {
+        let rig = ScannerRig()
+        await rig.model.refreshStatus()
+        #expect(!rig.model.savedResultsUnreadable)
+    }
+}

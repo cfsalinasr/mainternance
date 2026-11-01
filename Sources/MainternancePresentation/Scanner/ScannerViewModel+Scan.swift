@@ -29,7 +29,9 @@ extension ScannerViewModel {
             case let .found(finding):
                 merge(finding)
                 outcome.refound.insert(Self.key(finding))
-                await statusStore.remember(memory) // Saved at once: a quit kills the scan and nothing after is run.
+                // Handed over at once (a quit kills the scan); the store coalesces the actual writes and flushes on
+                // quit.
+                await statusStore.rememberProgress(memory)
             case let .finished(result):
                 outcome.summary = result
             case let .failed(message):
@@ -52,7 +54,7 @@ extension ScannerViewModel {
 
     /// A finding the scan reports replaces the older entry for the same file and detection, otherwise it is added.
     func merge(_ finding: ScanFinding) {
-        if let index = findings.firstIndex(where: { Self.key($0) == Self.key(finding) }) {
+        if let index = findings.firstIndex(where: { $0.path == finding.path && $0.signature == finding.signature }) {
             findings[index] = finding
         } else {
             findings.append(finding)
@@ -67,6 +69,9 @@ extension ScannerViewModel {
                 resolve(summary, coverage, refound: outcome.refound)
             }
             scanDidNotFinish = false
+            if !summary.cancelled, outcome.failure == nil {
+                savedResultsUnreadable = false // a completed scan wrote a fresh, readable status
+            }
             run = .finished(summary)
             errorMessage = outcome.failure
             await statusStore.recordScan(summary, memory: memory)
@@ -94,8 +99,9 @@ extension ScannerViewModel {
         if unattributedScope == scope {
             unattributedFromIncompleteScan = max(unattributedFromIncompleteScan, detections)
         } else {
+            // Different scopes: no single narrower scope can vouch for the sum, so only a full scan resets it.
             unattributedFromIncompleteScan = min(unattributedFromIncompleteScan + detections, Int.max / 2)
-            unattributedScope = (unattributedScope == .full || scope == .full) ? .full : scope
+            unattributedScope = .full
         }
     }
 
@@ -112,7 +118,7 @@ extension ScannerViewModel {
             return !readEverything && fileExists(finding.path)
         }
         let coversTheCount = summary.scope == .full || summary.scope == unattributedScope
-        if summary.unattributedDetections == 0, unattributedFromIncompleteScan > 0, coversTheCount {
+        if readEverything, unattributedFromIncompleteScan > 0, coversTheCount {
             unattributedFromIncompleteScan = 0
             unattributedScope = nil
         }

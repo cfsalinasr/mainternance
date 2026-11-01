@@ -10,6 +10,11 @@ final class FakeStatusStore: ScanStatusRecording {
         /// Every memory written by either call, in order.
         var memories: [ScanMemory] = []
         var stored: RecordedScanStatus?
+        /// Answer `loadState` with "a file is there but unreadable".
+        var unreadable = false
+        /// Memories written through `rememberProgress` (the coalesced kind).
+        var progress: [ScanMemory] = []
+        var flushCount = 0
     }
 
     let state = Mutex(State())
@@ -35,6 +40,27 @@ final class FakeStatusStore: ScanStatusRecording {
             $0.memories.append(memory)
         }
         writeSource.yield()
+    }
+
+    func rememberProgress(_ memory: ScanMemory) async {
+        state.withLock {
+            $0.progress.append(memory)
+            $0.memories.append(memory)
+        }
+        writeSource.yield()
+    }
+
+    func flush() async {
+        state.withLock { $0.flushCount += 1 }
+    }
+
+    func loadState() async -> ScanStatusLoad {
+        state.withLock { current in
+            if current.unreadable {
+                return .unreadable
+            }
+            return current.stored.map { .saved($0) } ?? .nothingSaved
+        }
     }
 
     func load() async -> RecordedScanStatus? {
