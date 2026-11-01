@@ -90,7 +90,8 @@ public struct ScanSummary: Sendable, Equatable {
         findings == 0 && unattributedDetections == 0 && !cancelled
     }
 
-    /// True when the scan was not cancelled and every file could be read. `unreadable > 0` makes it a PARTIAL scan
+    /// True when the scan was not cancelled and everything was readable. Unaffected by unattributed detections
+    /// (use `isClean` for "clean"). `unreadable > 0` makes it a PARTIAL scan
     /// (those files were not scanned and are never reported as clean).
     public var isComplete: Bool {
         unreadable == 0 && !cancelled

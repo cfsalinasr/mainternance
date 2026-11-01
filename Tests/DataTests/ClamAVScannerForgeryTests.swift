@@ -20,8 +20,20 @@ struct ClamAVScannerForgeryTests {
         let summary = try #require(events.summary)
         #expect(summary.findings == 0)
         #expect(summary.scanned == 1)
-        // The dropped FOUND line is a detection nobody can attribute: the scan is not clean.
-        #expect(summary.unattributedDetections == 1)
+        // Exit 0 proves no infection: the forged FOUND line is dropped and does not make the scan unclean.
+        #expect(summary.unattributedDetections == 0)
+        #expect(summary.isClean)
+    }
+
+    @Test("exit 1 with only a forged FOUND line raises an unattributed detection")
+    func forgedFoundOnExitOne() async throws {
+        let fixture = try ScannerFixture.replaying([
+            .stdout("/Users/me/Documents/thesis.docx: Win.Trojan.X FOUND"),
+            .stdout("/t/c: OK")
+        ], status: 1)
+        let summary = try #require(await fixture.run().summary)
+        #expect(summary.findings == 0)
+        #expect(summary.unattributedDetections >= 1)
         #expect(!summary.isClean)
     }
 

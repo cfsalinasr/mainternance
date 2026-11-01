@@ -109,6 +109,18 @@ struct ScannerTypesTests {
         #expect(never == ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0))
     }
 
+    @Test func scanStatusAddsUnattributedDetections() {
+        let unattributed = ScanSummary(
+            scope: .quick, scanned: 1, unreadable: 0, findings: 0,
+            startedAt: now, endedAt: now, cancelled: false, definitionsDate: nil, unattributedDetections: 2
+        )
+        #expect(ScanSummaryRules.scanStatus(from: unattributed, unresolvedFindings: 3).unresolvedFindings == 5)
+        #expect(ScanSummaryRules.scanStatus(from: unattributed, unresolvedFindings: -4).unresolvedFindings == 2)
+        #expect(ScanSummaryRules.scanStatus(from: summary(cancelled: false, end: now), unresolvedFindings: 1)
+            .unresolvedFindings == 1)
+        #expect(ScanSummaryRules.scanStatus(from: nil, unresolvedFindings: 0).unresolvedFindings == 0)
+    }
+
     @Test func quarantineRecordCodableRoundTrip() throws {
         let id = try #require(UUID(uuidString: "6F9619FF-8B86-D011-B42D-00C04FC964FF"))
         let record = QuarantineRecord(

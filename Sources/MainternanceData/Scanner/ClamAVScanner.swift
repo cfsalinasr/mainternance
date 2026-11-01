@@ -215,6 +215,7 @@ public final class ClamAVScanner: ScannerEngine {
             }
             // Both streams are parsed: upstream prints `WARNING: Can't open file` on stderr, verdicts on stdout.
             let parsed = vetted(ClamScanOutputParser.parse(text), context: context, tally: &tally)
+            // Only a stderr `ERROR:` line is fatal; a `WARNING:` or any stdout line never is.
             if isStderr, text.hasPrefix("ERROR:") {
                 tally.noteFatal()
             }
@@ -258,23 +259,46 @@ public final class ClamAVScanner: ScannerEngine {
         case .ignored: return line
         case let .scanned(value), let .found(value, _), let .unreadable(value, _): path = value
         }
-        let plausible = ScanPathRules.isPlainAbsolute(path)
+        let isFound = if case .found = line {
+            true
+        } else {
+            false
+        }
+        let own = Set(context.excluded).subtracting(cloudDirectories())
+        // The app's own folders (quarantine, ClamAV): a detection there is not a result of this scan, and it is
+        // dropped silently (not unattributed). Only a plain absolute path can be placed there.
+        let inOwn = ScanPathRules.isPlainAbsolute(path)
+            && own.contains { ScanPathRules.isInside(path, directory: $0) }
+        if isFound, inOwn {
+            tally.noteSuspicious()
+            return .ignored
+        }
+        let inRoot = ScanPathRules.isPlainAbsolute(path)
             && context.roots.contains { ScanPathRules.isInside(path, directory: $0) }
-            // Second layer behind `--exclude-dir`: nothing below an excluded directory is a result of this scan.
-            && !context.excluded.contains { ScanPathRules.isInside(path, directory: $0) }
+        // A FOUND inside an excluded CLOUD folder is a real, valid detection (the folder was not scanned, so only an
+        // output line can name it): delivered. Other verdicts below any excluded directory are post-filtered.
+        let plausible = inRoot
+            && (isFound || !context.excluded.contains { ScanPathRules.isInside(path, directory: $0) })
         var accepted = plausible
-        if case .found = line, plausible, !fileExists(path) {
+        if isFound, plausible, !fileExists(path) {
             accepted = false
         }
         guard accepted else {
             tally.noteSuspicious()
-            if case .found = line {
-                // A real detection without a usable path must never vanish silently.
+            if isFound {
+                // A real detection without a usable path must never vanish silently (exit 0 resets this: see
+                // `ScanTally.noteExit`).
                 tally.noteDroppedDetection()
             }
             return .ignored
         }
         return line
+    }
+
+    private func cloudDirectories() -> Set<String> {
+        Set(["Library/Mobile Documents", "Library/CloudStorage"].map {
+            home.appendingPathComponent($0).standardizedFileURL.path
+        })
     }
 
     private func summary(_ tally: ScanTally, _ context: Context, cancelled: Bool) -> ScanSummary {

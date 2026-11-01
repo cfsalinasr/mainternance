@@ -50,5 +50,38 @@ struct ClamAVScannerExclusionTests {
         ], status: 1))
         let events = await fixture.run(.custom(temp.url))
         #expect(events.findings.map(\.signature) == ["Sig.R", "Sig.Y"])
+        // Dropped silently: a detection inside the app's own folders is not an unattributed detection.
+        #expect(events.summary?.unattributedDetections == 0)
+    }
+
+    @Test("a FOUND inside an excluded cloud folder is delivered as a normal finding")
+    func cloudFoundDelivered() async throws {
+        let temp = try TempDirectory()
+        let base = temp.url.standardizedFileURL.path
+        let fixture = try ScannerFixture(temp: temp, runner: FakeRunner.replaying([
+            .stdout("\(base)/Library/Mobile Documents/com~apple~CloudDocs/a.exe: Sig.I FOUND"),
+            .stdout("\(base)/Library/CloudStorage/Dropbox/b.exe: Sig.D FOUND"),
+            .stdout("\(base)/Library/CloudStorage/Dropbox/ok.txt: OK")
+        ], status: 1))
+        let events = await fixture.run(.full)
+        #expect(events.findings.map(\.signature) == ["Sig.I", "Sig.D"])
+        let summary = try #require(events.summary)
+        #expect(summary.findings == 2)
+        #expect(summary.unattributedDetections == 0)
+        // An OK line below an excluded folder is still post-filtered.
+        #expect(summary.scanned == 2)
+    }
+
+    @Test("a FOUND inside the quarantine folder is dropped without raising unattributed detections")
+    func quarantineFoundSilent() async throws {
+        let temp = try TempDirectory()
+        let base = temp.url.standardizedFileURL.path
+        let fixture = try ScannerFixture(temp: temp, runner: FakeRunner.replaying([
+            .stdout("\(base)/support/Quarantine/abc.exe: Sig.Q FOUND"),
+            .stdout("\(base)/x.exe: Sig.X FOUND")
+        ], status: 1))
+        let events = await fixture.run(.full)
+        #expect(events.findings.map(\.signature) == ["Sig.X"])
+        #expect(events.summary?.unattributedDetections == 0)
     }
 }

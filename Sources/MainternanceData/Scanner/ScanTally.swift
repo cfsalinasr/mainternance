@@ -35,6 +35,7 @@ struct ScanTally {
 
     mutating func noteExit(status: Int32) {
         switch status {
+        case 0: unattributedDetections = 0 // exit 0 means no infection: a FOUND line seen was forged, not a detection
         case 1: noteExitOne()
         case 2: noteExitTwo()
         default: break
