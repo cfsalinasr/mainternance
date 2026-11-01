@@ -51,7 +51,7 @@ public struct PopoverView: View {
             }
         }
         Divider()
-        actionButton("Scan now", symbol: "arrow.clockwise", disabledHint: ScannerHelp.engineNotConnected)
+        actionButton("Scan now", symbol: "arrow.clockwise", disabledHint: ScannerHelp.scanFromScanner)
         actionButton("Open Mainternance", symbol: "chevron.right") {
             openWindow()
             dismisser.dismiss()

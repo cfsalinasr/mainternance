@@ -12,8 +12,8 @@ enum SampleDataCopy {
     /// Screens whose engines do not exist yet.
     static func isSample(_ destination: AppDestination) -> Bool {
         switch destination {
-        case .files, .scanner, .cleanup, .startup, .uninstaller: true
-        case .home, .settings: false
+        case .files, .cleanup, .startup, .uninstaller: true
+        case .home, .settings, .scanner: false
         }
     }
 

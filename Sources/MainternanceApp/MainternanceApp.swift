@@ -10,14 +10,17 @@ struct MainternanceApp: App {
     // body (or any struct SwiftUI recreates): each re-evaluation would build fresh models and lose state.
     private let viewModel: OverviewViewModel
     private let navigation = Navigation()
-    private let states = WindowStates()
+    private let states: WindowStates
     private let visibility: VisibilityCoordinator
     private let popoverDismisser = WindowDismisser()
 
     init() {
-        let model = CompositionRoot.makeOverviewViewModel()
+        let composition = CompositionRoot.make()
+        CompositionRoot.stopScannerOnQuit(composition.scannerServices)
+        let model = composition.overview
         model.start()
         viewModel = model
+        states = WindowStates(scanner: composition.scannerModel)
         visibility = VisibilityCoordinator(viewModel: model)
     }
 

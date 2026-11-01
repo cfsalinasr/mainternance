@@ -19,8 +19,8 @@ public enum AppDestination: String, Sendable, CaseIterable {
     /// hidden from the sidebar and unreachable by links; their code stays in the repo and comes back one by one.
     public var isAvailable: Bool {
         switch self {
-        case .home, .settings: true
-        case .files, .cleanup, .startup, .uninstaller, .scanner: false
+        case .home, .settings, .scanner: true
+        case .files, .cleanup, .startup, .uninstaller: false
         }
     }
 }

@@ -109,7 +109,7 @@ struct HomeModelTests {
             )),
             now: now, locale: locale
         )
-        #expect(model.scan.last == "Last scan 3 days ago, clean")
+        #expect(model.scan.last == "Last scan 3 days ago, no unresolved findings")
         #expect(model.scan.next?.hasPrefix("Next: ") == true)
     }
 
@@ -258,7 +258,7 @@ extension HomeModelTests {
 
     @Test func comingNextLineIsPinned() {
         #expect(HomeModel.comingNextText
-            == "Coming next: malware scanner, file explorer, cleanup, startup items, uninstaller.")
+            == "Coming next: file explorer, cleanup, startup items, uninstaller.")
     }
 
     @Test func linksToUnavailableDestinationsAreNotInteractive() {

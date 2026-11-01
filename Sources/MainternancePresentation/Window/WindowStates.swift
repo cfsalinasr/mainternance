@@ -2,19 +2,18 @@
 @MainActor
 public final class WindowStates {
     let files: FilesViewState
-    let scanner: ScannerViewState
+    let scanner: ScannerViewModel
     let cleanup: CleanupViewState
     let startup: StartupViewState
     let uninstaller: UninstallerViewState
     let settings: SettingsViewState
 
-    public init() {
-        let schedule = ScanScheduleStore() // One schedule, shared by Settings (edits) and the Scanner (reads).
+    public init(scanner: ScannerViewModel) {
         files = FilesViewState()
-        scanner = ScannerViewState(schedule: schedule)
+        self.scanner = scanner
         cleanup = CleanupViewState()
         startup = StartupViewState()
         uninstaller = UninstallerViewState()
-        settings = SettingsViewState(schedule: schedule)
+        settings = SettingsViewState()
     }
 }

@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 
-/// The one source of truth for the weekly scan schedule. `SettingsViewState` edits it and
-/// `ScannerViewState` reads it, so both screens always show the same schedule.
+/// The source of truth for the weekly scan schedule that `SettingsViewState` edits. It is a preview: nothing runs
+/// on it yet, and the Scanner screen does not show it.
 @MainActor
 @Observable
 public final class ScanScheduleStore {

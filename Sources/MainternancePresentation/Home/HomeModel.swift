@@ -51,7 +51,7 @@ public struct HomeModel: Equatable, Sendable {
 
     /// Honest roadmap line on Home; the screens listed here are hidden until their engines work.
     public static let comingNextText =
-        "Coming next: malware scanner, file explorer, cleanup, startup items, uninstaller."
+        "Coming next: file explorer, cleanup, startup items, uninstaller."
 
     /// Shown in the Suggested card when there is nothing to suggest.
     public static let noSuggestionsText = "Nothing to suggest yet"
@@ -153,7 +153,7 @@ public struct HomeModel: Equatable, Sendable {
         let scanState = max(check(.lastScan)?.state ?? .good, check(.scannerFindings)?.state ?? .good)
         let findings = scan.unresolvedFindings
         let outcome = switch findings {
-        case ...0: "clean"
+        case ...0: "no unresolved findings"
         case 1: "1 finding"
         default: "\(findings) findings"
         }

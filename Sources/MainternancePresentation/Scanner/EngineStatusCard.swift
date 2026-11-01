@@ -1,47 +1,74 @@
+import MainternanceDomain
 import SwiftUI
 
-enum ScannerHelp {
-    static let engineNotConnected = "Available when the scanner engine is connected"
-}
-
 struct EngineStatusCard: View {
-    let engine: ScannerEngineState
+    let model: ScannerViewModel
+
+    private var card: ScannerText.EngineCard {
+        ScannerText.engineCard(model.engine, run: model.run)
+    }
 
     private var tint: Color {
-        switch engine {
+        switch model.engine {
         case .ready: .green
-        case .updateNeeded: .orange
+        case .updateNeeded, .failed, .homebrewMissing: .orange
         default: .secondary
         }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: engine.symbol)
+            Image(systemName: card.symbol)
                 .font(.system(size: 22))
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
-                Text(engine.title).font(.headline)
-                Text(engine.detail).font(.system(size: 13)).foregroundStyle(.secondary)
-                if let progress = engine.progress {
-                    ProgressView(value: progress)
-                        .accessibilityLabel(engine.title)
-                        .accessibilityValue("\(Int((progress * 100).rounded())) percent")
+                Text(card.title).font(.headline)
+                Text(card.detail).font(.system(size: 13)).foregroundStyle(.secondary)
+                if case let .installing(_, progress) = model.run {
+                    progressBar(progress)
                 }
             }
             Spacer()
-            if case .notInstalled = engine {
-                Button("Install") {
-                    // Inert: the scanner engine arrives in a later plan. The button is disabled.
-                }
-                .disabled(true)
-                .help(ScannerHelp.engineNotConnected)
-                .accessibilityHint(ScannerHelp.engineNotConnected)
-            }
+            buttons
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func progressBar(_ progress: Double?) -> some View {
+        if let progress {
+            ProgressView(value: progress)
+                .accessibilityLabel(card.title)
+                .accessibilityValue("\(Int((progress * 100).rounded())) percent")
+        } else {
+            ProgressView().controlSize(.small).accessibilityLabel(card.title)
+        }
+    }
+
+    private var buttons: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            if model.canInstall {
+                Button("Install") { Task { await model.install() } }
+                    .accessibilityHint("Installs the ClamAV scanning engine with Homebrew")
+            }
+            if model.canUpdateDefinitions {
+                Button("Update definitions") { Task { await model.updateDefinitions() } }
+                    .accessibilityHint("Downloads the latest virus definitions")
+            }
+            if showsCheckAgain {
+                Button("Check again") { Task { await model.refreshStatus() } }
+            }
+        }
+    }
+
+    private var showsCheckAgain: Bool {
+        guard !model.isBusy else { return false }
+        switch model.engine {
+        case .homebrewMissing, .failed: return true
+        default: return false
+        }
     }
 }

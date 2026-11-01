@@ -24,10 +24,17 @@ struct NavigationTests {
     @Test func availabilityRule() {
         #expect(AppDestination.home.isAvailable)
         #expect(AppDestination.settings.isAvailable)
-        for hidden: AppDestination in [.files, .cleanup, .startup, .uninstaller, .scanner] {
+        #expect(AppDestination.scanner.isAvailable)
+        for hidden: AppDestination in [.files, .cleanup, .startup, .uninstaller] {
             #expect(!hidden.isAvailable)
         }
         #expect(AppDestination.allCases.count == 7)
+    }
+
+    @Test func theScannerCanBeOpened() {
+        let navigation = Navigation()
+        navigation.open(.scanner)
+        #expect(navigation.selection == .scanner)
     }
 
     @Test func openingAHiddenDestinationRoutesToHome() {
@@ -53,9 +60,9 @@ struct NavigationTests {
     }
 
     @Test func sidebarListsOnlyAvailableDestinationsInOrder() {
-        #expect(SidebarItem.visible.map(\.destination) == [.home, .settings])
+        #expect(SidebarItem.visible.map(\.destination) == [.home, .scanner, .settings])
         #expect(!SidebarItem.visible.contains { !$0.destination.isAvailable })
-        #expect(SidebarItem.visible.map(\.title) == ["Home", "Settings"])
+        #expect(SidebarItem.visible.map(\.title) == ["Home", "Scanner", "Settings"])
     }
 
     @Test func sidebarOrderAndSymbols() {
