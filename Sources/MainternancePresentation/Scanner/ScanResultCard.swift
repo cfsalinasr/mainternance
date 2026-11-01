@@ -39,7 +39,7 @@ struct ScanResultCard: View {
             Text(ScannerText.permissionExplanation(model.permissionDeniedCount))
                 .font(.system(size: 13))
             Button(ScannerText.fullDiskAccessButton) { model.openFullDiskAccessSettings() }
-                .accessibilityHint("Opens System Settings, where you can allow Mainternance to read all files")
+                .accessibilityHint(ScannerText.fullDiskAccessHint)
         }
     }
 }

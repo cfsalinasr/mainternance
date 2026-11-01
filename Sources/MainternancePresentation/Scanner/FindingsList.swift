@@ -7,7 +7,7 @@ struct FindingsList: View {
     var body: some View {
         if !model.findings.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Findings (\(model.findings.count))").font(.headline)
+                Text(ScannerText.findingsHeading(model.findings.count)).font(.headline)
                 ForEach(model.findings) { finding in
                     row(finding)
                 }
@@ -18,7 +18,7 @@ struct FindingsList: View {
     private func row(_ finding: ScanFinding) -> some View {
         HStack(alignment: .top, spacing: 12) {
             // Shown by icon and text, never color alone.
-            Label("Detected", systemImage: "exclamationmark.triangle.fill")
+            Label(ScannerText.detectedBadge, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.orange)
                 .frame(width: 90, alignment: .leading)
@@ -32,10 +32,10 @@ struct FindingsList: View {
                     .help(finding.path)
             }
             Spacer()
-            Button("Quarantine…") { model.requestQuarantine(finding.id) }
+            Button(ScannerText.quarantineButton) { model.requestQuarantine(finding.id) }
                 .disabled(model.isBusy)
-                .accessibilityLabel("Quarantine \((finding.path as NSString).lastPathComponent)")
-                .accessibilityHint("Asks for confirmation first")
+                .accessibilityLabel(ScannerText.quarantineLabel((finding.path as NSString).lastPathComponent))
+                .accessibilityHint(ScannerText.quarantineHint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
@@ -50,10 +50,10 @@ struct QuarantineConfirmation: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Quarantine this file?").font(.title3.bold())
+            Text(ScannerText.quarantineTitle).font(.title3.bold())
             VStack(alignment: .leading, spacing: 2) {
                 Text((finding.path as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
-                Text("Detection: \(finding.signature)").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(ScannerText.detectionLine(finding.signature)).font(.system(size: 12)).foregroundStyle(.secondary)
                 Text(finding.path).font(.system(size: 12)).foregroundStyle(.secondary)
                     .lineLimit(2).truncationMode(.middle)
             }
@@ -62,8 +62,8 @@ struct QuarantineConfirmation: View {
                 .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
-                Button("Quarantine", action: confirm).keyboardShortcut(.defaultAction)
+                Button(ScannerText.cancelButton, action: cancel).keyboardShortcut(.cancelAction)
+                Button(ScannerText.confirmButton, action: confirm).keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
@@ -77,7 +77,7 @@ struct QuarantineSection: View {
     var body: some View {
         if !model.quarantined.isEmpty || !model.notMoved.isEmpty || model.unclaimedCount > 0 {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Quarantine").font(.headline)
+                Text(ScannerText.quarantineHeading).font(.headline)
                 ForEach(model.quarantined) { record in
                     contained(record)
                 }
@@ -95,7 +95,7 @@ struct QuarantineSection: View {
 
     private func contained(_ record: QuarantineRecord) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Label("Quarantined", systemImage: "lock.fill")
+            Label(ScannerText.quarantinedBadge, systemImage: "lock.fill")
                 .font(.system(size: 12, weight: .medium))
                 .frame(width: 110, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
@@ -109,10 +109,10 @@ struct QuarantineSection: View {
                     .help(record.originalPath)
             }
             Spacer()
-            Button("Restore") { Task { await model.restore(record.id) } }
+            Button(ScannerText.restoreButton) { Task { await model.restore(record.id) } }
                 .disabled(model.isBusy)
-                .accessibilityLabel("Restore \((record.originalPath as NSString).lastPathComponent)")
-                .accessibilityHint("Puts the file back where it came from")
+                .accessibilityLabel(ScannerText.restoreLabel((record.originalPath as NSString).lastPathComponent))
+                .accessibilityHint(ScannerText.restoreHint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
@@ -121,7 +121,7 @@ struct QuarantineSection: View {
 
     private func stuck(_ record: QuarantineRecord) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Label("Not moved", systemImage: "exclamationmark.triangle.fill")
+            Label(ScannerText.notMovedBadge, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.orange)
                 .frame(width: 110, alignment: .leading)

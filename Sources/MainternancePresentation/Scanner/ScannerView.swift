@@ -42,9 +42,9 @@ public struct ScannerView: View {
     private var scanButtons: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Button("Quick scan") { Task { await model.startScan(.quick) } }
+                Button(ScannerText.quickButton) { Task { await model.startScan(.quick) } }
                     .accessibilityHint(ScannerText.quickScope)
-                Button("Full scan") { Task { await model.startScan(.full) } }
+                Button(ScannerText.fullButton) { Task { await model.startScan(.full) } }
                     .accessibilityHint(ScannerText.fullScope)
                 Spacer()
             }
@@ -58,8 +58,16 @@ public struct ScannerView: View {
     @ViewBuilder
     private var messages: some View {
         if model.isQuarantining {
-            Label("Checking the file again before moving it…", systemImage: "hourglass")
+            Label(ScannerText.checkingFile, systemImage: "hourglass")
                 .font(.system(size: 13))
+        }
+        if model.unattributedFromIncompleteScan > 0 {
+            Label(
+                ScannerText.unattributedIncomplete(model.unattributedFromIncompleteScan),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.system(size: 13))
+            .foregroundStyle(.orange)
         }
         if let error = model.errorMessage {
             Label(error, systemImage: "exclamationmark.octagon.fill")

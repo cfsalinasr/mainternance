@@ -22,7 +22,7 @@ extension ClamAVScanner {
         }
         if tally.unattributedDetections > 0 {
             // The `.found` events already delivered and this count are real; the message must carry the count.
-            prefix += " and \(tally.unattributedDetections) detection(s) could not be attributed to a file"
+            prefix += ScanFailureNote.unattributedClause(tally.unattributedDetections)
         }
         return .failed(message: tail.failureMessage(prefix: prefix))
     }

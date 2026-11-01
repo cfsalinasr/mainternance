@@ -130,3 +130,53 @@ struct ScannerTextTests {
         #expect(ScannerText.files(12345, locale: british) == "12,345 files")
     }
 }
+
+@MainActor
+struct ScannerScreenStringsTests {
+    @Test func visibleStringsArePinned() {
+        #expect(ScannerText.installStarting == "Starting the install…")
+        #expect(ScannerText.updateStarting == "Downloading definitions…")
+        #expect(ScannerText.checkingFile == "Checking the file again before moving it…")
+        #expect(ScannerText.quarantineTitle == "Quarantine this file?")
+        #expect(ScannerText.quarantineHeading == "Quarantine")
+        #expect(ScannerText.findingsHeading(3) == "Findings (3)")
+        #expect(ScannerText.scanning == "Scanning…")
+        #expect(ScannerText.detectedBadge == "Detected")
+        #expect(ScannerText.notMovedBadge == "Not moved")
+        #expect(ScannerText.quarantinedBadge == "Quarantined")
+        #expect(ScannerText.detectionLine("Win.Test.EICAR_HDB-1") == "Detection: Win.Test.EICAR_HDB-1")
+    }
+
+    @Test func buttonsAndAccessibilityTextArePinned() {
+        let buttons = [
+            ScannerText.quickButton, ScannerText.fullButton, ScannerText.cancelButton, ScannerText.installButton,
+            ScannerText.updateButton, ScannerText.checkAgainButton, ScannerText.quarantineButton,
+            ScannerText.confirmButton, ScannerText.restoreButton
+        ]
+        #expect(buttons == [
+            "Quick scan", "Full scan", "Cancel", "Install", "Update definitions", "Check again", "Quarantine…",
+            "Quarantine", "Restore"
+        ])
+        #expect(ScannerText.cancelScanLabel == "Cancel scan")
+        #expect(ScannerText.installHint == "Installs the ClamAV scanning engine with Homebrew")
+        #expect(ScannerText.updateHint == "Downloads the latest virus definitions")
+        #expect(ScannerText.quarantineHint == "Asks for confirmation first")
+        #expect(ScannerText.restoreHint == "Puts the file back where it came from")
+        #expect(ScannerText
+            .fullDiskAccessHint == "Opens System Settings, where you can allow Mainternance to read all files")
+        #expect(ScannerText.quarantineLabel("a.bin") == "Quarantine a.bin")
+        #expect(ScannerText.restoreLabel("a.bin") == "Restore a.bin")
+    }
+
+    @Test func theInstallAndUpdateStagesAreWhatTheModelShows() async {
+        let rig = ScannerRig()
+        rig.engine.configure { $0.status = .notInstalled; $0.holdInstall = true }
+        await rig.model.refreshStatus()
+        let install = Task { await rig.model.install() }
+        var calls = rig.engine.installCalls.makeAsyncIterator()
+        _ = await calls.next()
+        #expect(rig.model.run == .installing(stage: ScannerText.installStarting, progress: nil))
+        rig.engine.finishInstall()
+        await install.value
+    }
+}

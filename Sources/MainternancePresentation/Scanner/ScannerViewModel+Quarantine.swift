@@ -29,9 +29,9 @@ public extension ScannerViewModel {
         do {
             let record = try await quarantine.quarantine(path: finding.path, signature: finding.signature)
             findings.removeAll { $0.id == id }
-            quarantinedFindings[record.id] = finding
+            resolvedByQuarantine[record.id] = finding
             notice = ScannerText.moved(Self.name(of: finding.path))
-            await statusStore.updateFindings(findings)
+            await statusStore.remember(memory)
         } catch {
             errorMessage = ScannerText.message(for: error, action: .quarantine)
         }
@@ -52,18 +52,22 @@ public extension ScannerViewModel {
         return false
     }
 
-    /// Puts a quarantined file back. It returns to the findings only when it came from the current scan's list.
+    /// Puts a quarantined file back. It returns to the findings when it is linked to a finding (the link is
+    /// remembered across launches and survives cancelled and failed scans; a completed scan that covers the file's
+    /// path forgets it). Everything else is disabled while it runs, so a double click does nothing.
     func restore(_ id: UUID) async {
         guard !isBusy else { return }
+        isRestoring = true
+        defer { isRestoring = false }
         errorMessage = nil
         notice = nil
         let signature = quarantined.first { $0.id == id }?.signature
         do {
             let path = try await quarantine.restore(id)
             notice = ScannerText.restored(path, signature: signature)
-            if let finding = quarantinedFindings.removeValue(forKey: id) {
-                findings.append(finding)
-                await statusStore.updateFindings(findings)
+            if let finding = resolvedByQuarantine.removeValue(forKey: id) {
+                merge(finding)
+                await statusStore.remember(memory)
             }
         } catch {
             errorMessage = ScannerText.message(for: error, action: .restore)

@@ -33,6 +33,14 @@ final class FakeEngine: ScannerEngine {
         var cancelCalls = 0
         var cancelSummary: ScanSummary?
         var heldContinuation: AsyncStream<ScanEvent>.Continuation?
+        /// Folders each scope walks; paths under `excluded` are skipped. Unknown scopes cover nothing.
+        var roots: [ScanScope: [String]] = [
+            .quick: ["/Users/someone/Downloads", "/Users/someone/Desktop", "/Applications"],
+            .full: ["/Users/someone", "/Applications"]
+        ]
+        var excluded: [ScanScope: [String]] = [
+            .full: ["/Users/someone/Library/Mobile Documents", "/Users/someone/Library/CloudStorage"]
+        ]
         /// When true the install stream stays open until `emitInstall`/`finishInstall`.
         var holdInstall = false
         var heldInstall: AsyncStream<InstallEvent>.Continuation?
@@ -136,6 +144,10 @@ final class FakeEngine: ScannerEngine {
         }
     }
 
+    func coverage(of scope: ScanScope) -> ScanCoverage {
+        state.withLock { ScanCoverage(roots: $0.roots[scope] ?? [], excluded: $0.excluded[scope] ?? []) }
+    }
+
     func cancelScan() async {
         let (continuation, summary) = state.withLock { current -> (
             AsyncStream<ScanEvent>.Continuation?,
@@ -168,13 +180,25 @@ final class FakeQuarantine: QuarantineStoring {
         var restoreError: QuarantineError?
         var calls: [(path: String, signature: String)] = []
         var restoredIDs: [UUID] = []
+        /// When true `restore` waits until `releaseRestore()`.
+        var holdRestore = false
     }
 
     let state = Mutex(State())
     let log: CallLog
+    let restoreCalls: AsyncStream<Void>
+    private let restoreCallSource: AsyncStream<Void>.Continuation
+    private let restoreGate: AsyncStream<Void>
+    private let restoreGateSource: AsyncStream<Void>.Continuation
 
     init(log: CallLog = CallLog()) {
         self.log = log
+        (restoreCalls, restoreCallSource) = AsyncStream.makeStream(of: Void.self)
+        (restoreGate, restoreGateSource) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func releaseRestore() {
+        restoreGateSource.yield()
     }
 
     func configure(_ body: (inout State) -> Void) {
@@ -199,6 +223,12 @@ final class FakeQuarantine: QuarantineStoring {
 
     func restore(_ id: UUID) async throws -> String {
         log.add("restore")
+        if state.withLock({ $0.holdRestore }) {
+            restoreCallSource.yield()
+            for await _ in restoreGate {
+                break
+            }
+        }
         return try state.withLock { current in
             current.restoredIDs.append(id)
             if let error = current.restoreError {
@@ -229,31 +259,44 @@ final class FakeQuarantine: QuarantineStoring {
 
 final class FakeStatusStore: ScanStatusRecording {
     struct State {
-        var recorded: [(summary: ScanSummary, findings: [ScanFinding])] = []
-        var updates: [[ScanFinding]] = []
+        var recorded: [(summary: ScanSummary, memory: ScanMemory)] = []
+        var remembered: [ScanMemory] = []
+        /// Every memory written by either call, in order.
+        var memories: [ScanMemory] = []
         var stored: RecordedScanStatus?
     }
 
     let state = Mutex(State())
 
-    func recordScan(_ summary: ScanSummary, findings: [ScanFinding]) async {
-        state.withLock { $0.recorded.append((summary, findings)) }
+    func recordScan(_ summary: ScanSummary, memory: ScanMemory) async {
+        state.withLock {
+            $0.recorded.append((summary, memory))
+            $0.memories.append(memory)
+        }
     }
 
-    func updateFindings(_ findings: [ScanFinding]) async {
-        state.withLock { $0.updates.append(findings) }
+    func remember(_ memory: ScanMemory) async {
+        state.withLock {
+            $0.remembered.append(memory)
+            $0.memories.append(memory)
+        }
     }
 
     func load() async -> RecordedScanStatus? {
         state.withLock { $0.stored }
     }
 
-    var recorded: [(summary: ScanSummary, findings: [ScanFinding])] {
+    var recorded: [(summary: ScanSummary, memory: ScanMemory)] {
         state.withLock { $0.recorded }
     }
 
-    var updates: [[ScanFinding]] {
-        state.withLock { $0.updates }
+    var remembered: [ScanMemory] {
+        state.withLock { $0.remembered }
+    }
+
+    /// The memory most recently written by either call.
+    var lastMemory: ScanMemory? {
+        state.withLock { $0.memories.last }
     }
 }
 
@@ -271,10 +314,10 @@ final class OpenedURLs: Sendable {
 
 let testNow = Date(timeIntervalSince1970: 1_800_000_000)
 
-func makeFinding(_ index: Int, signature: String = "Win.Test.EICAR_HDB-1") -> ScanFinding {
+func makeFinding(_ index: Int, signature: String = "Win.Test.EICAR_HDB-1", path: String? = nil) -> ScanFinding {
     ScanFinding(
         id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index)) ?? UUID(),
-        path: "/Users/someone/Downloads/file\(index).bin", signature: signature, foundAt: testNow
+        path: path ?? "/Users/someone/Downloads/file\(index).bin", signature: signature, foundAt: testNow
     )
 }
 
@@ -322,13 +365,13 @@ struct ScannerRig {
         return rig
     }
 
-    /// Runs a scan that reports `findings` and then finishes, so `model.findings` holds them.
-    func scanFinding(_ findings: [ScanFinding]) async {
+    /// Runs a scan of `scope` that reports `findings` and then finishes.
+    func scanFinding(_ findings: [ScanFinding], scope: ScanScope = .quick) async {
         engine.configure {
-            $0.scanEvents = [.started(scope: .quick)] + findings.map { .found($0) }
-                + [.finished(makeSummary(findings: findings.count))]
+            $0.scanEvents = [.started(scope: scope)] + findings.map { .found($0) }
+                + [.finished(makeSummary(scope: scope, findings: findings.count))]
         }
-        await model.startScan(.quick)
+        await model.startScan(scope)
     }
 }
 

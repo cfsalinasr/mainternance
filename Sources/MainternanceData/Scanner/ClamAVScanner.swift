@@ -69,6 +69,14 @@ public final class ClamAVScanner: ScannerEngine {
         installer.updateDefinitions()
     }
 
+    /// The folders `scan(scope)` walks and skips, from the same functions the scan itself uses.
+    public func coverage(of scope: ScanScope) -> ScanCoverage {
+        ScanCoverage(
+            roots: ScanScopes.roots(for: scope, home: home, exists: { FileManager.default.fileExists(atPath: $0) }),
+            excluded: ScanExclusions.directories(for: scope, home: home, paths: paths)
+        )
+    }
+
     func definitionsDateNow() -> Date? {
         definitions.definitionsDate()
     }

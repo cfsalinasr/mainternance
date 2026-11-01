@@ -43,7 +43,7 @@ struct ScanStatusStoreTests {
             scope: .full, scanned: 5000, unreadable: 7, denied: 4, findings: 2, unattributed: 3
         )
         let found = [finding(1), finding(2)]
-        await store(temp).recordScan(written, findings: found)
+        await store(temp).recordScan(written, memory: ScanMemory(findings: found))
         let loaded = try #require(await store(temp).load())
         #expect(loaded.summary == written)
         #expect(loaded.findings == found)
@@ -56,7 +56,7 @@ struct ScanStatusStoreTests {
         for scope in [ScanScope.quick, .full, custom] {
             let sut = store(temp)
             let written = summary(scope: scope, definitions: nil)
-            await sut.recordScan(written, findings: [])
+            await sut.recordScan(written, memory: ScanMemory(findings: []))
             #expect(await sut.load()?.summary == written)
         }
     }
@@ -66,8 +66,11 @@ struct ScanStatusStoreTests {
         let temp = try TempDirectory()
         let sut = store(temp)
         let completed = summary(ended: 1_800_000_500)
-        await sut.recordScan(completed, findings: [])
-        await sut.recordScan(summary(cancelled: true, ended: 1_800_009_999), findings: [finding(1), finding(2)])
+        await sut.recordScan(completed, memory: ScanMemory(findings: []))
+        await sut.recordScan(
+            summary(cancelled: true, ended: 1_800_009_999),
+            memory: ScanMemory(findings: [finding(1), finding(2)])
+        )
         let loaded = try #require(await sut.load())
         #expect(loaded.summary == completed)
         #expect(loaded.findings == [finding(1), finding(2)])
@@ -77,7 +80,7 @@ struct ScanStatusStoreTests {
     func cancelledFirstScan() async throws {
         let temp = try TempDirectory()
         let sut = store(temp)
-        await sut.recordScan(summary(cancelled: true), findings: [finding(1)])
+        await sut.recordScan(summary(cancelled: true), memory: ScanMemory(findings: [finding(1)]))
         let loaded = try #require(await sut.load())
         #expect(loaded.summary == nil)
         #expect(loaded.findings == [finding(1)])
@@ -88,11 +91,11 @@ struct ScanStatusStoreTests {
         let temp = try TempDirectory()
         let sut = store(temp)
         let completed = summary(findings: 3)
-        await sut.recordScan(completed, findings: [finding(1), finding(2), finding(3)])
-        await sut.updateFindings([finding(1), finding(3)])
+        await sut.recordScan(completed, memory: ScanMemory(findings: [finding(1), finding(2), finding(3)]))
+        await sut.remember(ScanMemory(findings: [finding(1), finding(3)]))
         #expect(await sut.load()?.findings == [finding(1), finding(3)])
         #expect(await sut.load()?.summary == completed)
-        await sut.updateFindings([])
+        await sut.remember(ScanMemory(findings: []))
         #expect(await sut.load()?.findings == [])
         #expect(await sut.load()?.summary == completed)
     }
@@ -101,7 +104,7 @@ struct ScanStatusStoreTests {
     func updateWithoutScan() async throws {
         let temp = try TempDirectory()
         let sut = store(temp)
-        await sut.updateFindings([finding(4)])
+        await sut.remember(ScanMemory(findings: [finding(4)]))
         let loaded = try #require(await sut.load())
         #expect(loaded.summary == nil)
         #expect(loaded.findings == [finding(4)])
@@ -124,7 +127,7 @@ struct ScanStatusStoreTests {
             #expect(await sut.load() == nil, "\(text)")
         }
         let sut = ScanStatusStore(file: file)
-        await sut.updateFindings([finding(1)])
+        await sut.remember(ScanMemory(findings: [finding(1)]))
         #expect(await sut.load()?.findings == [finding(1)])
     }
 
@@ -171,7 +174,7 @@ struct ScanStatusStoreTests {
     @Test("the file is private to the user and written below a folder that is created on demand")
     func filePermissions() async throws {
         let temp = try TempDirectory()
-        await store(temp).updateFindings([finding(1)])
+        await store(temp).remember(ScanMemory(findings: [finding(1)]))
         let file = temp.url.appendingPathComponent("support/scan-status.json")
         #expect(permissions(file) == 0o600)
         #expect(permissions(file.deletingLastPathComponent()) == 0o700)
@@ -232,7 +235,7 @@ struct StoredScanStatusProviderTests {
         let temp = try TempDirectory()
         let (sut, store) = provider(installed: false, temp)
         // Even leftovers from an earlier install must not turn into a status while there is no engine.
-        await store.recordScan(completed(findings: 2), findings: [finding(1), finding(2)])
+        await store.recordScan(completed(findings: 2), memory: ScanMemory(findings: [finding(1), finding(2)]))
         let status = await sut.currentStatus()
         #expect(status == nil)
         let ids = report(for: status).checks.map(\.id)
@@ -260,7 +263,7 @@ struct StoredScanStatusProviderTests {
         let temp = try TempDirectory()
         let (sut, store) = provider(installed: true, temp)
         let summary = completed()
-        await store.recordScan(summary, findings: [])
+        await store.recordScan(summary, memory: ScanMemory(findings: []))
         let status = try #require(await sut.currentStatus())
         #expect(status.lastScan == summary.endedAt)
         #expect(status.nextScan == nil)
@@ -272,7 +275,7 @@ struct StoredScanStatusProviderTests {
     func cancelled() async throws {
         let temp = try TempDirectory()
         let (sut, store) = provider(installed: true, temp)
-        await store.recordScan(completed(cancelled: true), findings: [])
+        await store.recordScan(completed(cancelled: true), memory: ScanMemory(findings: []))
         #expect(await sut.currentStatus()?.lastScan == nil)
     }
 
@@ -280,14 +283,17 @@ struct StoredScanStatusProviderTests {
     func findings() async throws {
         let temp = try TempDirectory()
         let (sut, store) = provider(installed: true, temp)
-        await store.recordScan(completed(findings: 2, unattributed: 1), findings: [finding(1), finding(2)])
+        await store.recordScan(
+            completed(findings: 2, unattributed: 1),
+            memory: ScanMemory(findings: [finding(1), finding(2)])
+        )
         var status = try #require(await sut.currentStatus())
         #expect(status.unresolvedFindings == 3)
         #expect(report(for: status).checks.first { $0.id == .scannerFindings }?.state == .problem)
-        await store.updateFindings([finding(1)])
+        await store.remember(ScanMemory(findings: [finding(1)]))
         status = try #require(await sut.currentStatus())
         #expect(status.unresolvedFindings == 2)
-        await store.updateFindings([])
+        await store.remember(ScanMemory(findings: []))
         status = try #require(await sut.currentStatus())
         #expect(status.unresolvedFindings == 1) // The unattributed detection is still unresolved.
     }
@@ -296,7 +302,7 @@ struct StoredScanStatusProviderTests {
     func onlyUnattributed() async throws {
         let temp = try TempDirectory()
         let (sut, store) = provider(installed: true, temp)
-        await store.recordScan(completed(findings: 0, unattributed: 2), findings: [])
+        await store.recordScan(completed(findings: 0, unattributed: 2), memory: ScanMemory(findings: []))
         let status = await sut.currentStatus()
         #expect(report(for: status).checks.first { $0.id == .scannerFindings }?.state == .problem)
     }

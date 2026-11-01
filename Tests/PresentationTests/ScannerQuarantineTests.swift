@@ -54,7 +54,7 @@ struct ScannerQuarantineTests {
         #expect(rig.quarantine.calls.first?.signature == "Other.Sig")
         #expect(rig.model.findings == [first])
         #expect(rig.model.quarantined.map(\.originalPath) == [second.path])
-        #expect(rig.store.updates.last == [first])
+        #expect(rig.store.remembered.last?.findings == [first])
         #expect(rig.model
             .notice == "file2.bin was moved to the quarantine folder. You can restore it from the list below.")
         #expect(rig.model.errorMessage == nil)
@@ -150,7 +150,7 @@ struct ScannerQuarantineTests {
         await rig.model.restore(record.id)
         #expect(Set(rig.model.findings.map(\.id)) == [makeFinding(1).id, makeFinding(2).id])
         #expect(rig.model.quarantined.isEmpty)
-        #expect(rig.store.updates.last?.count == 2)
+        #expect(rig.store.remembered.last?.findings.count == 2)
         let expected = [
             "Restored to /Users/someone/Downloads/file1.bin.",
             "It was flagged as Win.Test.EICAR_HDB-1, so be careful with it."
@@ -158,7 +158,7 @@ struct ScannerQuarantineTests {
         #expect(rig.model.notice == expected)
     }
 
-    @Test func restoreOfARecordFromEarlierSessionsDoesNotInventAFinding() async {
+    @Test func restoreOfARecordThatWasNeverLinkedToAFindingDoesNotInventOne() async {
         let rig = ScannerRig()
         let old = QuarantineRecord(
             id: UUID(), originalPath: "/Users/someone/old.bin", quarantinedAt: testNow, signature: "Old.Sig",
@@ -170,7 +170,7 @@ struct ScannerQuarantineTests {
         await rig.model.restore(old.id)
         #expect(rig.model.findings.isEmpty)
         #expect(rig.model.quarantined.isEmpty)
-        #expect(rig.store.updates.isEmpty)
+        #expect(rig.store.remembered.isEmpty)
     }
 
     @Test func aRestoreErrorIsShownAndTheRecordStays() async {

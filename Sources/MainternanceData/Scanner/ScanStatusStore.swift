@@ -35,23 +35,42 @@ public actor ScanStatusStore: ScanStatusRecording {
             guard let finding = item.finding else { return nil }
             findings.append(finding)
         }
-        return RecordedScanStatus(summary: stored.lastScan?.summary, findings: findings)
+        var links: [UUID: ScanFinding] = [:]
+        for entry in stored.resolvedByQuarantine ?? [] {
+            guard let id = UUID(uuidString: entry.recordID), let finding = entry.finding.finding else { return nil }
+            links[id] = finding
+        }
+        // The findings are what matters for safety, so a damaged last-scan record only loses the summary.
+        let summary = stored.lastScan?.summary
+        return RecordedScanStatus(
+            summary: summary,
+            summaryUnreadable: stored.summaryUnreadable == true || (stored.lastScan != nil && summary == nil),
+            findings: findings,
+            unattributedFromIncompleteScan: stored.unattributedFromIncompleteScan ?? 0, resolvedByQuarantine: links
+        )
     }
 
-    public func recordScan(_ summary: ScanSummary, findings: [ScanFinding]) {
-        let last = summary.cancelled ? load()?.summary : summary
-        write(RecordedScanStatus(summary: last, findings: findings))
+    public func recordScan(_ summary: ScanSummary, memory: ScanMemory) {
+        let previous = load()
+        let last = summary.cancelled ? previous?.summary : summary
+        write(last, unreadable: summary.cancelled && previous?.summaryUnreadable == true, memory)
     }
 
-    public func updateFindings(_ findings: [ScanFinding]) {
-        write(RecordedScanStatus(summary: load()?.summary, findings: findings))
+    public func remember(_ memory: ScanMemory) {
+        let previous = load()
+        write(previous?.summary, unreadable: previous?.summaryUnreadable == true, memory)
     }
 
-    private func write(_ status: RecordedScanStatus) {
+    private func write(_ summary: ScanSummary?, unreadable: Bool, _ memory: ScanMemory) {
         let stored = Stored(
             version: Self.currentVersion,
-            findings: status.findings.map(StoredFinding.init),
-            lastScan: status.summary.map(StoredSummary.init)
+            findings: memory.findings.map(StoredFinding.init),
+            lastScan: summary.map(StoredSummary.init),
+            summaryUnreadable: unreadable && summary == nil ? true : nil,
+            unattributedFromIncompleteScan: max(0, memory.unattributedFromIncompleteScan),
+            resolvedByQuarantine: memory.resolvedByQuarantine.map {
+                StoredLink(recordID: $0.key.uuidString, finding: StoredFinding($0.value))
+            }.sorted { $0.recordID < $1.recordID }
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
         let manager = FileManager.default
@@ -68,6 +87,15 @@ private struct Stored: Codable {
     var version: Int
     var findings: [StoredFinding]
     var lastScan: StoredSummary?
+    /// Set when the last-scan record was damaged and had to be dropped on a later write.
+    var summaryUnreadable: Bool?
+    var unattributedFromIncompleteScan: Int?
+    var resolvedByQuarantine: [StoredLink]?
+}
+
+private struct StoredLink: Codable {
+    var recordID: String
+    var finding: StoredFinding
 }
 
 private struct StoredFinding: Codable {

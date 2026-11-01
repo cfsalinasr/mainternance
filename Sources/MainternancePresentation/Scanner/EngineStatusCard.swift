@@ -51,15 +51,15 @@ struct EngineStatusCard: View {
     private var buttons: some View {
         VStack(alignment: .trailing, spacing: 6) {
             if model.canInstall {
-                Button("Install") { Task { await model.install() } }
-                    .accessibilityHint("Installs the ClamAV scanning engine with Homebrew")
+                Button(ScannerText.installButton) { Task { await model.install() } }
+                    .accessibilityHint(ScannerText.installHint)
             }
             if model.canUpdateDefinitions {
-                Button("Update definitions") { Task { await model.updateDefinitions() } }
-                    .accessibilityHint("Downloads the latest virus definitions")
+                Button(ScannerText.updateButton) { Task { await model.updateDefinitions() } }
+                    .accessibilityHint(ScannerText.updateHint)
             }
             if showsCheckAgain {
-                Button("Check again") { Task { await model.refreshStatus() } }
+                Button(ScannerText.checkAgainButton) { Task { await model.refreshStatus() } }
             }
         }
     }

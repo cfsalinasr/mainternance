@@ -9,7 +9,7 @@ struct ScanProgressCard: View {
             HStack(alignment: .top, spacing: 12) {
                 ProgressView().controlSize(.small).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Scanning…").font(.headline)
+                    Text(ScannerText.scanning).font(.headline)
                     Text("\(ScannerText.files(scanned)) scanned").font(.system(size: 13)).foregroundStyle(.secondary)
                     if !current.isEmpty {
                         Text(current)
@@ -21,8 +21,8 @@ struct ScanProgressCard: View {
                     }
                 }
                 Spacer()
-                Button("Cancel") { Task { await model.cancel() } }
-                    .accessibilityLabel("Cancel scan")
+                Button(ScannerText.cancelButton) { Task { await model.cancel() } }
+                    .accessibilityLabel(ScannerText.cancelScanLabel)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .solidCard()

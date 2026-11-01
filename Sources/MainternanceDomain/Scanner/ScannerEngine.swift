@@ -11,4 +11,7 @@ public protocol ScannerEngine: Sendable {
     /// (scan output can be forged by file names, so it is never trusted on its own).
     func verifyFinding(path: String) async -> VerifyResult
     func cancelScan() async
+    /// The folders a scan of `scope` walks and skips, exactly as `scan(_:)` applies them. A finished scan can only
+    /// say an older finding is gone if the finding's path is covered by it.
+    func coverage(of scope: ScanScope) -> ScanCoverage
 }

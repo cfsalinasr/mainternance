@@ -34,7 +34,7 @@ struct ScannerScanTests {
         let rig = await ScannerRig.ready()
         await rig.scanFinding([makeFinding(1), makeFinding(2)])
         #expect(rig.model.findings == [makeFinding(1), makeFinding(2)])
-        #expect(rig.store.recorded.first?.findings == [makeFinding(1), makeFinding(2)])
+        #expect(rig.store.recorded.first?.memory.findings == [makeFinding(1), makeFinding(2)])
     }
 
     @Test func aSecondScanWhileOneRunsIsRejected() async {
@@ -68,7 +68,7 @@ struct ScannerScanTests {
         #expect(rig.model.run == .finished(cancelled))
         #expect(rig.model.findings == [makeFinding(1)])
         #expect(rig.store.recorded.first?.summary.cancelled == true)
-        #expect(rig.store.recorded.first?.findings == [makeFinding(1)])
+        #expect(rig.store.recorded.first?.memory.findings == [makeFinding(1)])
         #expect(!rig.model.canCancel)
     }
 
@@ -90,7 +90,7 @@ struct ScannerScanTests {
         #expect(rig.model.findings == [makeFinding(1), makeFinding(2)])
         #expect(rig.model.errorMessage == "clamscan stopped (exit 2); 1 detection could not be attributed")
         #expect(rig.model.run == .idle)
-        #expect(rig.store.updates.last == [makeFinding(1), makeFinding(2)])
+        #expect(rig.store.remembered.last?.findings == [makeFinding(1), makeFinding(2)])
         #expect(rig.store.recorded.isEmpty)
     }
 
@@ -106,13 +106,6 @@ struct ScannerScanTests {
         #expect(rig.model.errorMessage == "clamscan stopped")
     }
 
-    @Test func aCompletedScanReplacesOlderFindings() async {
-        let rig = await ScannerRig.ready()
-        await rig.scanFinding([makeFinding(1), makeFinding(2)])
-        await rig.scanFinding([makeFinding(3)])
-        #expect(rig.model.findings == [makeFinding(3)])
-    }
-
     @Test func aScanRefusedBeforeItStartedChangesNothing() async {
         let rig = await ScannerRig.ready()
         await rig.scanFinding([makeFinding(1)])
@@ -121,7 +114,7 @@ struct ScannerScanTests {
         await rig.model.startScan(.quick)
         #expect(rig.model.findings == [makeFinding(1)])
         #expect(rig.model.errorMessage == "Scanning engine is not ready: ClamAV is not installed")
-        #expect(rig.store.updates.isEmpty)
+        #expect(rig.store.remembered.isEmpty)
     }
 
     @Test func aScanThatEndsWithoutAnyResultSaysSo() async {

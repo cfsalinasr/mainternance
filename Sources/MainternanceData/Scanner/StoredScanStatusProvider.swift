@@ -5,7 +5,8 @@ import MainternanceDomain
 ///
 /// While no scanning engine is installed it returns nil, so health has no scan checks at all and the scanner row
 /// stays "Not set up yet" (unknown is never turned into a status). Once the engine is installed, no stored scan
-/// means "present, never completed a scan" (amber), and findings, attributed or not, make health red.
+/// means "present, never completed a scan" (amber), and findings, attributed or not, make health red. Unattributed
+/// detections of a cancelled or failed scan count as findings until a completed scan replaces them.
 public struct StoredScanStatusProvider: ScanStatusProviding {
     private let store: ScanStatusStore
     private let isEngineInstalled: @Sendable () -> Bool
@@ -18,6 +19,14 @@ public struct StoredScanStatusProvider: ScanStatusProviding {
     public func currentStatus() async -> ScanStatus? {
         guard isEngineInstalled() else { return nil }
         let stored = await store.load()
-        return ScanSummaryRules.scanStatus(from: stored?.summary, unresolvedFindings: stored?.findings.count ?? 0)
+        let findings = stored?.findings ?? []
+        let status = ScanSummaryRules.scanStatus(
+            from: stored?.summary,
+            unresolvedFindings: findings.count + (stored?.unattributedFromIncompleteScan ?? 0)
+        )
+        // A damaged last-scan record with listed findings: a scan did run when it reported them, so the latest
+        // detection date stands in for the last scan instead of a false "Never scanned". Findings stay red.
+        guard stored?.summaryUnreadable == true, let latest = findings.map(\.foundAt).max() else { return status }
+        return ScanStatus(lastScan: latest, nextScan: nil, unresolvedFindings: status.unresolvedFindings)
     }
 }

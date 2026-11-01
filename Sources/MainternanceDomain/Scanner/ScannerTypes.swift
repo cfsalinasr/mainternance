@@ -27,7 +27,7 @@ public enum EngineStatus: Sendable, Equatable {
     }
 }
 
-public enum ScanScope: Sendable, Equatable {
+public enum ScanScope: Sendable, Equatable, Hashable {
     case quick
     case full
     case custom(URL)
