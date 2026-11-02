@@ -15,7 +15,9 @@ import MainternanceDomain
 public final class ScanScheduler {
     /// The summary of the last scheduled scan that ended with one (completed, cancelled or failed late).
     public private(set) var lastScheduledScanFinished: ScanSummary?
-    /// Called after each scheduled scan that ended with a summary; never for scans started by hand.
+    /// Called after each scheduled scan that ended with a summary; never for scans started by hand. Notifications
+    /// come from `ScannerViewModel.onScanCompleted` (which says whether the scan was scheduled), not from here, so
+    /// one scan never notifies twice.
     public var onScheduledScanFinished: (@MainActor (ScanSummary) -> Void)?
 
     private let scanner: ScannerViewModel
@@ -89,8 +91,11 @@ public final class ScanScheduler {
         current.lastScheduledRun = moment
         await preferences.save(current)
         // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
-        guard current.weeklyScanEnabled, scanner.canStartScan,
-              let summary = await scanner.startScan(.quick) else { return }
+        guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+        scanner.startingScheduledScan = true
+        let result = await scanner.startScan(.quick)
+        scanner.startingScheduledScan = false
+        guard let summary = result else { return }
         lastScheduledScanFinished = summary
         onScheduledScanFinished?(summary)
     }

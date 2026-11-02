@@ -12,6 +12,7 @@ extension ScannerViewModel {
             errorMessage = ScannerText.protectedFolder
             return nil
         }
+        let scheduled = startingScheduledScan
         errorMessage = nil
         notice = nil
         pendingQuarantine = nil
@@ -43,6 +44,9 @@ extension ScannerViewModel {
             }
         }
         await finish(scope, coverage, outcome)
+        if let summary = outcome.summary {
+            onScanCompleted?(ScanCompletion(summary: summary, scheduled: scheduled, failed: outcome.failure != nil))
+        }
         return outcome.summary
     }
 

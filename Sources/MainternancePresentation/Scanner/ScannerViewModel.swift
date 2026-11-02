@@ -48,6 +48,11 @@ public final class ScannerViewModel {
     public internal(set) var isRestoring = false
     /// True while a finding is being re-checked and moved.
     public internal(set) var isQuarantining = false
+    /// Called after a scan that ended with a summary was recorded (completed, cancelled, or failed late).
+    @ObservationIgnored public var onScanCompleted: (@MainActor (ScanCompletion) -> Void)?
+    /// Set by the weekly scheduler right before it calls `startScan` and cleared right after; `startScan` reads it
+    /// when the scan starts, so the scan is reported as scheduled and every other scan as started by hand.
+    @ObservationIgnored var startingScheduledScan = false
 
     @ObservationIgnored let scanner: any ScannerEngine
     @ObservationIgnored let quarantine: any QuarantineStoring
