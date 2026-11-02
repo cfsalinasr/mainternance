@@ -8,10 +8,12 @@ struct QuarantineManifestTests {
     private static let idText = "6F9619FF-8B86-D011-B42D-00C04FC964FF"
     private static let sha = String(repeating: "ab", count: 32)
 
-    private func literal(state: String, path: String = "/Users/x/Downloads/eicar.com") -> String {
+    private func literal(
+        state: String, path: String = "/Users/x/Downloads/eicar.com", sha: String = Self.sha
+    ) -> String {
         """
         [{"state":"\(state)","record":{"id":"\(Self.idText)","originalPath":"\(path)",\
-        "quarantinedAt":1700000000,"signature":"Eicar-Test-Signature","sha256":"\(Self.sha)",\
+        "quarantinedAt":1700000000,"signature":"Eicar-Test-Signature","sha256":"\(sha)",\
         "size":9000000000,"originalPermissions":493}}]
         """
     }
@@ -60,7 +62,9 @@ struct QuarantineManifestTests {
     func pendingWithMovedFile() async throws {
         let fix = try QuarantineFixture()
         try FileManager.default.createDirectory(at: fix.vault, withIntermediateDirectories: true)
-        try Data(literal(state: "pending", path: fix.area.appendingPathComponent("gone.txt").path).utf8)
+        // A restore only puts back exactly the recorded bytes, so the record carries the hash of "x".
+        let sha = QuarantineFiles.sha256Hex(of: Data("x".utf8))
+        try Data(literal(state: "pending", path: fix.area.appendingPathComponent("gone.txt").path, sha: sha).utf8)
             .write(to: fix.manifestURL)
         try Data("x".utf8).write(to: fix.vault.appendingPathComponent(Self.idText))
         let records = await fix.store.records()

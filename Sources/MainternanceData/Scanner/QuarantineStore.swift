@@ -31,6 +31,8 @@ public actor QuarantineStore: QuarantineStoring {
         var failRestorePermissions = false
         /// Runs in the copy path of a restore right before the copy is renamed to `target`.
         var beforeRestoreRename: (@Sendable (String) -> Void)?
+        /// Runs in the same-volume path of a restore after the vault copy was verified, right before it moves.
+        var beforeRestoreMove: (@Sendable () -> Void)?
         /// Runs in the copy path of a quarantine after the verified copy is in the vault, before the original goes.
         var beforeOriginalRemoval: (@Sendable () -> Void)?
         /// Runs in a restore after the destination folder was resolved and checked, before it is opened.

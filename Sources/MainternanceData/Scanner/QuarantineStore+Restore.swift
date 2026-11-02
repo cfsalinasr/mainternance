@@ -11,7 +11,23 @@ import MainternanceDomain
 /// free-name lookup (`fstatat`), the partial copy (`openat` with `O_EXCL`), the final rename (`renameatx_np` with
 /// `RENAME_EXCL`, so nothing is ever overwritten) and the permission reset (`openat` + identity check + `fchmod`).
 ///
+/// Content check. The vault copy is the last copy of the content, so both ways back must place exactly the recorded
+/// bytes, and the record (with its digest) is only dropped once the placed entry is the verified file:
+/// - Same volume: the vault file is hashed through the descriptor opened at the start (SHA-256 and size against the
+///   record) before it moves. The rename itself goes by the vault path, so afterwards the entry it placed is checked
+///   (`fstatat` in the destination folder, no follow) to be that same file (device, inode, size). If it is not, the
+///   placed entry is moved back to the vault path (`RENAME_EXCL`) and the restore fails with the record kept; if even
+///   that move fails, the restore fails with a message saying where the unexpected file is.
+/// - Other volume: the bytes written to the new partial are hashed while copying. After the rename, the entry placed
+///   must be the very file that was copied (device, inode, size) before the vault copy is discarded. If it is not,
+///   the vault copy and the record are kept and nothing is removed (neither the placed entry nor whatever now has the
+///   partial's name, as neither is known to be ours).
+///
 /// Residual, accepted and documented:
+/// - Same volume: the identity check binds the placed entry to the verified inode, not to its bytes. A process that
+///   can write to the vault file (mode `0o600` in the user's own `0o700` quarantine folder, so only the user's own
+///   processes) could rewrite it in place between the hash and the rename. It could equally rewrite the restored file
+///   right after any restore, so this gives it nothing new.
 /// - The checked folder itself can still be renamed (as a whole) after the `F_GETPATH` re-check. The file then lands
 ///   in that very folder, under its new name, and the returned path says where. A process that can rename that
 ///   folder could move the restored file there afterwards anyway, so this gives it nothing new.
@@ -128,15 +144,46 @@ extension QuarantineStore {
     }
 
     private func moveOutOnce(_ attempt: inout Attempt, folder: RestoreFolder) throws -> stat {
-        let id = attempt.id
-        if !hooks.forceCopy {
+        if !hooks.forceCopy, folder.device() == attempt.source.info.st_dev {
             do {
-                try folder.moveIn(fromPath: vaultPath(id), as: attempt.name)
+                try moveOnce(attempt, folder: folder)
                 return attempt.source.info
             } catch QuarantineFiles.MoveFailure.crossDevice {
-                // fall through to the copy path
+                // Same device but the rename still crossed a boundary: fall through to the copy path.
             }
         }
+        return try copyOnce(&attempt, folder: folder)
+    }
+
+    /// Same volume: verify the vault file through the descriptor opened at the start, rename it into place, then
+    /// check the entry the rename placed is that very file. A different file found there is moved back.
+    private func moveOnce(_ attempt: Attempt, folder: RestoreFolder) throws {
+        let vault = vaultPath(attempt.id)
+        // The vault copy is the last copy of the content: the restored bytes must be exactly the recorded ones.
+        let content = try QuarantineFiles.hash(of: attempt.source)
+        guard content.hex == attempt.expected, content.size == attempt.source.info.st_size else {
+            throw QuarantineError.changedSinceScan
+        }
+        hooks.beforeRestoreMove?()
+        try folder.moveIn(fromPath: vault, as: attempt.name)
+        if let placed = folder.entryInfo(attempt.name), QuarantineFiles.sameFile(placed, attempt.source.info) {
+            return
+        }
+        // The rename took whatever sat at the vault path at that moment, and it is not the verified file.
+        do { try folder.moveOut(attempt.name, toPath: vault) } catch {
+            let target = attempt.original.deletingLastPathComponent().appendingPathComponent(attempt.name).path
+            throw QuarantineError.ioFailure(
+                "A file other than the quarantined one ended up at \(target) and could not be moved back. "
+                    + "The quarantine record is kept."
+            )
+        }
+        throw QuarantineError.changedSinceScan
+    }
+
+    /// Other volume: copy into a new partial, verify the bytes written, rename the partial into place, and only
+    /// discard the vault copy once the entry the rename placed is the very file that was copied.
+    private func copyOnce(_ attempt: inout Attempt, folder: RestoreFolder) throws -> stat {
+        let id = attempt.id
         let partial = ".\(id.uuidString).partial"
         // A restore that crashed earlier can have left our partial behind; clear it so O_EXCL can create it again.
         QuarantineRemoval.discard(.restorePartial(folder: folder.path, id: id))
@@ -150,9 +197,21 @@ extension QuarantineStore {
         let target = attempt.original.deletingLastPathComponent().appendingPathComponent(attempt.name)
         hooks.beforeRestoreRename?(target.path)
         try folder.rename(partial, to: attempt.name)
+        guard let placed = folder.entryInfo(attempt.name), Self.isCopy(placed, of: copied) else {
+            // The rename placed some other file: it is not ours, and neither is whatever now has our partial's
+            // name. Remove nothing and keep the vault copy.
+            attempt.createdPartial = false
+            throw QuarantineError.changedSinceScan
+        }
         // The restored copy is in place and verified; failing to remove our own quarantined copy loses nothing.
         QuarantineRemoval.discard(.vaultCopy(vault: directory, id: id))
         return copied.info
+    }
+
+    /// The entry is the regular file `copy` created (same device and inode) and holds as many bytes as were written.
+    private static func isCopy(_ entry: stat, of copy: QuarantineFiles.CopyResult) -> Bool {
+        entry.st_mode & S_IFMT == S_IFREG && entry.st_dev == copy.info.st_dev && entry.st_ino == copy.info.st_ino
+            && entry.st_size == copy.size
     }
 
     /// `a.txt` -> `a (restored).txt`, then `a (restored 2).txt`, ...: the first name nothing occupies in `folder`.

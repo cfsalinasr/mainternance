@@ -46,6 +46,12 @@ struct RestoreFolder {
         return String(cString: buffer)
     }
 
+    /// The device the opened folder is on (`fstat`), or nil when it cannot be read.
+    func device() -> dev_t? {
+        var info = stat()
+        return fstat(descriptor, &info) == 0 ? info.st_dev : nil
+    }
+
     func close() {
         _ = Darwin.close(descriptor)
     }
@@ -59,6 +65,11 @@ struct RestoreFolder {
     /// Moves the item at the absolute path `source` into this folder as `name`, never overwriting.
     func moveIn(fromPath source: String, as name: String) throws {
         try Self.settle(renameatx_np(AT_FDCWD, source, descriptor, name, UInt32(RENAME_EXCL)))
+    }
+
+    /// Moves the entry `name` of this folder back out to the absolute path `destination`, never overwriting.
+    func moveOut(_ name: String, toPath destination: String) throws {
+        try Self.settle(renameatx_np(descriptor, name, AT_FDCWD, destination, UInt32(RENAME_EXCL)))
     }
 
     /// Renames `from` to `name` inside this folder, never overwriting.

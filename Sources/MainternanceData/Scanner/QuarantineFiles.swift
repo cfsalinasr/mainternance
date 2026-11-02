@@ -140,7 +140,9 @@ enum QuarantineFiles {
         _ source: OpenFile,
         into folder: Int32,
         name: String,
-        created: () -> Void = {}
+        created: () -> Void = {
+            // Default for callers with no clean-up bookkeeping: nothing to record when the file is created.
+        }
     ) throws -> CopyResult {
         let target = openat(folder, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard target >= 0 else { throw QuarantineError.ioFailure(message(errno)) }
