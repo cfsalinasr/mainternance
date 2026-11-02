@@ -45,13 +45,25 @@ otherwise; both intervals are doubled in Low Power Mode.
 **Settings** (saved in `~/Library/Application Support/Mainternance/preferences.json`):
 
 - Weekly quick scan: off until you turn it on. You pick the day and time. It runs **only while Mainternance
-  is open**; if the Mac was asleep or the app closed at that time, it runs once the next time the app is open
-  (or the Mac wakes). Turning it on does not start a scan right away.
-- Launch at login: the toggle shows what macOS reports. It works when the app runs from `/Applications`, and
-  macOS may ask you to approve it in System Settings > General > Login Items.
-- Notifications: "Problem alerts" (a scan found files to review) and "Weekly digest" (the result of each weekly
-  scan). They need your permission, which macOS asks for the first time you turn one on. They carry counts
-  only, never file names.
+  is open**; if the Mac was asleep or the app was closed at that time, it runs once, the next time Mainternance
+  runs (it checks about once a minute and when the Mac wakes). Turning it on, or changing the day or time, never
+  starts a scan right away: the new time counts from the next time it comes round. When the scanner is not ready
+  at that moment (ClamAV not installed, or a scan, install or quarantine already working) the weekly scan is
+  skipped without a notification and tried again at the next check.
+- Launch at login: the toggle shows what macOS reports. It works when the app runs from `/Applications`. If
+  macOS needs your approval the toggle shows on with a note: approve it in System Settings > General > Login
+  Items (the note goes away when you come back to the app), or turn the toggle off to withdraw the request.
+- Notifications: "Problem alerts" (a scan found something to review) and "Weekly digest" (the result, when a
+  weekly scan finishes). Both start on, but nothing is shown until you allow notifications: while macOS has never
+  asked, Settings shows "Allow notifications to receive these" with an Allow Notifications button (macOS also asks
+  when you turn a toggle on). Mainternance never asks by itself in the background. If you refused, Settings says
+  to allow them in System Settings > Notifications > Mainternance. They carry counts only, never file names: files
+  to review, "detections" for findings that could not be tied to a file, and how many files could not be read.
+  Nothing is posted when the scanner was not ready or the scan failed before it produced a result.
+- Known limits of the weekly scan and notifications: while Mainternance is the app in front, macOS may not show
+  its notification banners (the app does not yet ask macOS to show them in the foreground); macOS may delay the
+  once-a-minute check while the app sits idle in the background (App Nap), so a scan can start a little after
+  the chosen time.
 
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
 silicon), the startup-item count, macOS update status and suggestions.

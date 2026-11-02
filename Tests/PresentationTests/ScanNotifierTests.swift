@@ -48,10 +48,22 @@ struct ScanNotifierTests {
         }
     }
 
-    @Test func detectionsWithoutAFileNameCountAsFilesToReview() async {
+    /// A detection that could not be tied to a file is still something to review, but it is not called a file.
+    @Test func detectionsWithoutAFileNameAreCalledDetections() async {
         let (notifier, notifications) = notifier(digest: false)
         await notifier.scanCompleted(completion(makeSummary(findings: 0, unattributed: 2)))
-        #expect(notifications.posted.map(\.title) == ["Mainternance found 2 files to review"])
+        await notifier.scanCompleted(completion(makeSummary(findings: 0, unattributed: 1)))
+        await notifier.scanCompleted(completion(makeSummary(findings: 2, unattributed: 1)))
+        #expect(notifications.posted.map(\.title) == [
+            "Mainternance found 2 detections to review", "Mainternance found 1 detection to review",
+            "Mainternance found 2 files and 1 detection to review"
+        ])
+    }
+
+    @Test func theDigestCallsUnattributedDetectionsDetections() async {
+        let (notifier, notifications) = notifier()
+        await notifier.scanCompleted(completion(makeSummary(scanned: 5, unattributed: 1), scheduled: true))
+        #expect(notifications.posted.first?.title == "Weekly scan finished: 1 detection to review")
     }
 
     @Test func aCleanScanPostsNoAlert() async {
@@ -84,15 +96,14 @@ struct ScanNotifierTests {
         )])
     }
 
-    @Test func unreadableFoldersAreMentioned() async {
+    /// `unreadable` counts files, so the digest says how many files could not be read.
+    @Test func unreadableFilesAreCounted() async {
         let (notifier, notifications) = notifier()
         await notifier.scanCompleted(completion(makeSummary(scanned: 50, unreadable: 1), scheduled: true))
         #expect(notifications.posted.first?.title == "Weekly scan finished: nothing found")
-        #expect(notifications.posted.first?.body
-            == "Scanned 50 files. Some folders could not be read: 1 file was skipped.")
+        #expect(notifications.posted.first?.body == "Scanned 50 files. 1 file could not be read.")
         await notifier.scanCompleted(completion(makeSummary(scanned: 1, unreadable: 7), scheduled: true))
-        #expect(notifications.posted.last?.body
-            == "Scanned 1 file. Some folders could not be read: 7 files were skipped.")
+        #expect(notifications.posted.last?.body == "Scanned 1 file. 7 files could not be read.")
     }
 
     /// One notification for one scheduled scan: the digest already carries the count, so no separate alert.

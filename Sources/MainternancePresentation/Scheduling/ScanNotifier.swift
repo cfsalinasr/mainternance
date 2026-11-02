@@ -27,8 +27,9 @@ enum ScanNotices {
     static let digestID = "weekly-digest"
     static let reviewHint = "Open Mainternance and go to Scanner to review them."
 
-    /// "Problem alerts": any scan with files to review. "Weekly digest": every scheduled scan, clean or not; when it
-    /// is posted it carries the count, so the separate alert is left out (one event, one notification).
+    /// "Problem alerts": any scan with something to review. "Weekly digest": every scheduled scan that finished with
+    /// a result, clean or not; when it is posted it carries the count, so the separate alert is left out (one event,
+    /// one notification).
     static func notices(for completion: ScanCompletion, preferences: AppPreferences) -> [UserNotice] {
         if completion.scheduled, preferences.weeklyDigest {
             return [digest(completion)]
@@ -37,7 +38,8 @@ enum ScanNotices {
         return [alert(completion)]
     }
 
-    /// Files found plus detections that could not be tied to a file name (real detections all the same).
+    /// Files found plus detections that could not be tied to a file name (real detections all the same); zero means
+    /// nothing to review.
     static func toReview(_ summary: ScanSummary) -> Int {
         let (total, overflow) = max(0, summary.findings).addingReportingOverflow(summary.unattributedDetections)
         return overflow ? Int.max : total
@@ -45,24 +47,25 @@ enum ScanNotices {
 
     private static func alert(_ completion: ScanCompletion) -> UserNotice {
         let body = completion.ranToTheEnd ? reviewHint : "The scan did not finish. \(reviewHint)"
-        let title = "Mainternance found \(files(toReview(completion.summary))) to review"
+        let title = "Mainternance found \(toReviewText(completion.summary)) to review"
         return UserNotice(id: findingsID, title: title, body: body)
     }
 
     private static func digest(_ completion: ScanCompletion) -> UserNotice {
         let summary = completion.summary
         let count = toReview(summary)
+        let found = toReviewText(summary)
         let title = switch (completion.ranToTheEnd, count) {
         case (true, 0): "Weekly scan finished: nothing found"
-        case (true, _): "Weekly scan finished: \(files(count)) to review"
+        case (true, _): "Weekly scan finished: \(found) to review"
         case (false, 0): "Weekly scan did not finish"
-        case (false, _): "Weekly scan did not finish: \(files(count)) to review"
+        case (false, _): "Weekly scan did not finish: \(found) to review"
         }
         var body = "Scanned \(files(max(0, summary.scanned)))"
         body += completion.ranToTheEnd ? "." : " before it stopped."
+        // `unreadable` counts files.
         if summary.unreadable > 0 {
-            let verb = summary.unreadable == 1 ? "was" : "were"
-            body += " Some folders could not be read: \(files(summary.unreadable)) \(verb) skipped."
+            body += " \(files(summary.unreadable)) could not be read."
         }
         if count > 0 {
             body += " \(reviewHint)"
@@ -70,8 +73,23 @@ enum ScanNotices {
         return UserNotice(id: digestID, title: title, body: body)
     }
 
+    /// "2 files", "1 detection" (found but not tied to a file, so not called a file), or "2 files and 1 detection".
+    static func toReviewText(_ summary: ScanSummary) -> String {
+        let fileCount = max(0, summary.findings)
+        let detections = max(0, summary.unattributedDetections)
+        switch (fileCount, detections) {
+        case (_, 0): return files(fileCount)
+        case (0, _): return counted(detections, "detection")
+        default: return "\(files(fileCount)) and \(counted(detections, "detection"))"
+        }
+    }
+
     private static func files(_ count: Int) -> String {
-        count == 1 ? "1 file" : "\(count) files"
+        counted(count, "file")
+    }
+
+    private static func counted(_ count: Int, _ noun: String) -> String {
+        count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
     }
 }
 
