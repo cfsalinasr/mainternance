@@ -98,13 +98,18 @@ public final class ClamAVInstaller: Sendable {
             }
             let task = Task { [self] in
                 await body(continuation)
-                state.withLock {
-                    $0.current = nil
-                    $0.busy = false
-                }
+                releaseRun()
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// The run is over: forget its process and let the next install or update start.
+    private func releaseRun() {
+        state.withLock {
+            $0.current = nil
+            $0.busy = false
         }
     }
 

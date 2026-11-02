@@ -25,7 +25,7 @@ public final class ScannerServices: Sendable {
         self.installer = installer
         scanner = ClamAVScanner(
             locator: locator, runner: runner, paths: paths, definitions: DefinitionsStore(paths: paths),
-            installer: installer, home: home
+            installer: installer, environment: .init(home: home)
         )
         quarantine = QuarantineStore(directory: paths.quarantineDirectory, now: { Date() })
         let store = ScanStatusStore(file: ScanStatusStore.defaultFile(paths: paths), now: statusNow)

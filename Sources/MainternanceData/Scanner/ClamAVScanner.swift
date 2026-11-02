@@ -43,18 +43,16 @@ public final class ClamAVScanner: ScannerEngine {
         paths: ClamAVPaths,
         definitions: DefinitionsStore,
         installer: ClamAVInstaller,
-        now: @escaping @Sendable () -> Date = { Date() },
-        home: URL = FileManager.default.homeDirectoryForCurrentUser,
-        fileExists: @escaping @Sendable (String) -> Bool = ScanPathRules.lstatExists
+        environment: Environment = Environment()
     ) {
         self.locator = locator
         self.runner = runner
         self.paths = paths
         self.definitions = definitions
         self.installer = installer
-        self.now = now
-        self.home = home
-        self.fileExists = fileExists
+        now = environment.now
+        home = environment.home
+        fileExists = environment.fileExists
     }
 
     public func status() async -> EngineStatus {
@@ -317,5 +315,25 @@ public final class ClamAVScanner: ScannerEngine {
             definitionsDate: context.definitionsDate, permissionDenied: tally.permissionDenied,
             unattributedDetections: tally.unattributedDetections
         )
+    }
+}
+
+public extension ClamAVScanner {
+    /// What the scanner reads from its surroundings: the clock, the home folder and whether a path exists. The
+    /// defaults are the real ones; tests replace them.
+    struct Environment: Sendable {
+        let now: @Sendable () -> Date
+        let home: URL
+        let fileExists: @Sendable (String) -> Bool
+
+        public init(
+            now: @escaping @Sendable () -> Date = { Date() },
+            home: URL = FileManager.default.homeDirectoryForCurrentUser,
+            fileExists: @escaping @Sendable (String) -> Bool = ScanPathRules.lstatExists
+        ) {
+            self.now = now
+            self.home = home
+            self.fileExists = fileExists
+        }
     }
 }

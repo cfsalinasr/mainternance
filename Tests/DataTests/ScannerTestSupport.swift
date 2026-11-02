@@ -142,7 +142,7 @@ struct ScannerFixture {
         scanner = ClamAVScanner(
             locator: tools.locator, runner: runner, paths: paths,
             definitions: DefinitionsStore(paths: paths), installer: installer,
-            now: clock.reading, home: temp.url, fileExists: fileExists
+            environment: .init(now: clock.reading, home: temp.url, fileExists: fileExists)
         )
     }
 

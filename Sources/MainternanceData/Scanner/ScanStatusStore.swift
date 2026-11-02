@@ -279,17 +279,6 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
         writeHook.withLock { $0 }?(current.writes)
     }
 
-    /// A file that is there but cannot be read as a status is moved next to itself, never overwritten.
-    /// True when nothing unreadable is left at `file` (moved aside, or already gone).
-    private func keepUnreadableFileAside(_ manager: FileManager) -> Bool {
-        guard manager.fileExists(atPath: file.path) else { return true }
-        guard !failMovingAside else { return false }
-        let name = file.deletingPathExtension().lastPathComponent
-        let aside = file.deletingLastPathComponent()
-            .appendingPathComponent("\(name).corrupt-\(UUID().uuidString).json")
-        return (try? manager.moveItem(at: file, to: aside)) != nil
-    }
-
     // MARK: File
 
     private enum FileContent {
@@ -328,5 +317,18 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
             earlierResultsUnreadable: stored.earlierResultsUnreadable == true,
             resolvedByQuarantine: links
         ))
+    }
+}
+
+extension ScanStatusStore {
+    /// A file that is there but cannot be read as a status is moved next to itself, never overwritten.
+    /// True when nothing unreadable is left at `file` (moved aside, or already gone).
+    private func keepUnreadableFileAside(_ manager: FileManager) -> Bool {
+        guard manager.fileExists(atPath: file.path) else { return true }
+        guard !failMovingAside else { return false }
+        let name = file.deletingPathExtension().lastPathComponent
+        let aside = file.deletingLastPathComponent()
+            .appendingPathComponent("\(name).corrupt-\(UUID().uuidString).json")
+        return (try? manager.moveItem(at: file, to: aside)) != nil
     }
 }

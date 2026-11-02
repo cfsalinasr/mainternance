@@ -100,10 +100,8 @@ public struct SystemProcessRunner: ProcessRunning {
                     for line in lines {
                         sink.yield(tag(line))
                     }
-                } else if count < 0, errno == EINTR {
-                    continue
-                } else {
-                    break
+                } else if count == 0 || errno != EINTR {
+                    break // end of file or a real error; EINTR just reads again
                 }
             }
             if let last = splitter.flush() {

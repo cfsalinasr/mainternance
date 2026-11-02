@@ -24,8 +24,15 @@ struct StderrTail {
     }
 
     func failureMessage(prefix: String) -> String {
-        let lines = errors.isEmpty ? (flagged.isEmpty ? plain : flagged) : errors
+        let lines = reasonLines
         return lines.isEmpty ? prefix : "\(prefix): \(lines.joined(separator: " "))"
+    }
+
+    private var reasonLines: [String] {
+        if !errors.isEmpty {
+            return errors
+        }
+        return flagged.isEmpty ? plain : flagged
     }
 
     private static func append(_ line: String, to lines: inout [String]) {
@@ -42,7 +49,8 @@ extension ClamAVInstaller {
     /// Replaces control characters with spaces, trims and bounds the length.
     static func sanitized(_ text: String) -> String {
         let range = NSRange(text.startIndex..., in: text)
-        let plain = ansiSequence.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+        // Without the pattern the escape character still becomes a space below; only its tail stays visible.
+        let plain = ansiSequence?.stringByReplacingMatches(in: text, range: range, withTemplate: "") ?? text
         let mapped = String(String.UnicodeScalarView(plain.unicodeScalars.map {
             $0.properties.generalCategory == .control || $0.properties.generalCategory == .format ? " " : $0
         }))
@@ -59,10 +67,10 @@ extension ClamAVInstaller {
     static func parseFreshclamProgress(_ line: String) -> Double? {
         guard let segment = line.split(separator: "\r").last.map(String.init) else { return nil }
         let range = NSRange(segment.startIndex..., in: segment)
-        if let match = sizePair.firstMatch(in: segment, range: range) {
+        if let match = sizePair?.firstMatch(in: segment, range: range) {
             return sizeRatio(segment, match)
         }
-        if let match = percent.firstMatch(in: segment, range: range), let value = number(segment, match, 1) {
+        if let match = percent?.firstMatch(in: segment, range: range), let value = number(segment, match, 1) {
             return clamp(value / 100)
         }
         return nil
@@ -100,13 +108,18 @@ extension ClamAVInstaller {
         }
     }
 
-    // swiftlint:disable force_try
-    private static let sizePair = try! NSRegularExpression(
+    /// The patterns are constants; they are optional only so that a broken edit can never crash the app. A test
+    /// (`allPatternsCompile`) fails if one does not compile, and the code above treats a missing one as "no match".
+    private static let sizePair = try? NSRegularExpression(
         pattern: #"(?<![\d.\-])(\d+(?:\.\d+)?)\s*([KMGT]?i?B)\s*/\s*(\d+(?:\.\d+)?)\s*([KMGT]?i?B)"#,
         options: [.caseInsensitive]
     )
     // CSI sequences such as ESC[31m or ESC[2K.
-    private static let ansiSequence = try! NSRegularExpression(pattern: #"\u001B\[[0-?]*[ -/]*[@-~]"#)
-    private static let percent = try! NSRegularExpression(pattern: #"(?<![\d.\-])(\d+(?:\.\d+)?)\s*%"#)
-    // swiftlint:enable force_try
+    private static let ansiSequence = try? NSRegularExpression(pattern: #"\u001B\[[0-?]*[ -/]*[@-~]"#)
+    private static let percent = try? NSRegularExpression(pattern: #"(?<![\d.\-])(\d+(?:\.\d+)?)\s*%"#)
+
+    /// True when every pattern above compiled (pinned by a test).
+    static var allPatternsCompile: Bool {
+        sizePair != nil && ansiSequence != nil && percent != nil
+    }
 }

@@ -8,6 +8,11 @@ struct FreshclamParsingTests {
         ClamAVInstaller.parseFreshclamProgress(line)
     }
 
+    @Test("every output pattern compiles (a broken one would silently stop progress and escape stripping)")
+    func patternsCompile() {
+        #expect(ClamAVInstaller.allPatternsCompile)
+    }
+
     @Test("progress forms from freshclam")
     func progressTable() throws {
         let full = try #require(parse("Time: 4.3s, ETA: 0.0s [=========================>] 62.58MiB/62.58MiB"))
