@@ -19,8 +19,8 @@ public enum AppDestination: String, Sendable, CaseIterable {
     /// hidden from the sidebar and unreachable by links; their code stays in the repo and comes back one by one.
     public var isAvailable: Bool {
         switch self {
-        case .home, .settings, .scanner: true
-        case .files, .cleanup, .startup, .uninstaller: false
+        case .home, .settings, .scanner, .startup: true
+        case .files, .cleanup, .uninstaller: false
         }
     }
 }
@@ -167,8 +167,8 @@ public struct HealthEvaluator: Sendable {
     private func startup(_ count: Int) -> HealthCheck {
         let reason = switch count {
         case ...0: "No new items"
-        case 1: "1 new login item"
-        default: "\(count) new login items"
+        case 1: "1 new startup item"
+        default: "\(count) new startup items"
         }
         return HealthCheck(
             id: .startupItems, state: count > 0 ? .needsAttention : .good,

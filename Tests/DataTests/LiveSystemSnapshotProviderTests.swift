@@ -33,9 +33,21 @@ private struct Readers {
     })
     var cpu = sequencedCPU(busyTicks)
     var gpu = GPUReader(read: { 34 })
+    var startup: (any StartupListing)?
 
     var provider: LiveSystemSnapshotProvider {
-        LiveSystemSnapshotProvider(disk: disk, memory: memory, thermal: thermal, battery: battery, cpu: cpu, gpu: gpu)
+        LiveSystemSnapshotProvider(
+            disk: disk, memory: memory, thermal: thermal, battery: battery, cpu: cpu, gpu: gpu, startup: startup
+        )
+    }
+}
+
+/// Answers every listing with the same snapshot.
+private struct FixedStartupListing: StartupListing {
+    let snapshot: StartupSnapshot
+
+    func list() async -> StartupSnapshot {
+        snapshot
     }
 }
 
@@ -138,6 +150,44 @@ struct LiveSystemSnapshotProviderTests {
         let overview = await load()
         #expect(overview.report.checks.map(\.id) == [.diskSpace, .thermal])
         #expect(overview.report.overall == .good)
+    }
+
+    @Test("the new startup item count comes from the startup lister once a baseline exists")
+    func startupCountFromLister() async {
+        var readers = Readers()
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: true, newCount: 2))
+        #expect(await readers.provider.currentSnapshot().newStartupItemCount == 2)
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: true, newCount: 0))
+        #expect(await readers.provider.currentSnapshot().newStartupItemCount == 0)
+    }
+
+    @Test("without a baseline, or when the lister cannot say, the count is unknown, never 0")
+    func startupCountUnknown() async {
+        var readers = Readers()
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: false, newCount: nil))
+        #expect(await readers.provider.currentSnapshot().newStartupItemCount == nil)
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: false, newCount: 3))
+        #expect(await readers.provider.currentSnapshot().newStartupItemCount == nil)
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: true, newCount: nil))
+        #expect(await readers.provider.currentSnapshot().newStartupItemCount == nil)
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(
+            baselineEstablished: true, newCount: 1, reviewUnreadable: true
+        ))
+        #expect(await readers.provider.currentSnapshot().newStartupItemCount == nil)
+    }
+
+    @Test("Home's startup check follows the real count and links to Startup")
+    func startupCheckEndToEnd() async throws {
+        var readers = Readers()
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: true, newCount: 2))
+        let load = LoadOverview(
+            snapshots: readers.provider, scans: noScanner(), actions: NoSuggestedActionsProvider()
+        )
+        let check = try #require(await load().report.checks.first { $0.id == .startupItems })
+        #expect(check.state == .needsAttention)
+        #expect(check.reason == "2 new startup items")
+        #expect(check.destination == .startup)
+        #expect(AppDestination.startup.isAvailable)
     }
 
     @Test func emptyProvidersReturnNothing() async {

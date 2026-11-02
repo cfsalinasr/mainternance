@@ -24,8 +24,11 @@ enum CompositionRoot {
     /// poll: the CPU reader keeps its baseline in it.
     static func make() -> Composition {
         let services = ScannerServices()
+        // The startup review baseline sits next to the scanner's files:
+        // <Application Support>/Mainternance/startup-review.json. Home counts new items with the read-only counter.
+        let startupServices = StartupServices(directory: services.paths.supportDirectory)
         let load = LoadOverview(
-            snapshots: LiveSystemSnapshotProvider(),
+            snapshots: LiveSystemSnapshotProvider(startup: startupServices.newItemCounter),
             scans: services.statusProvider,
             actions: NoSuggestedActionsProvider()
         )
@@ -46,8 +49,6 @@ enum CompositionRoot {
         let automation = ScanAutomation(
             scanner: scannerModel, settings: settings, preferences: preferences, notifications: notifications
         )
-        // The review baseline sits in the same folder: <Application Support>/Mainternance/startup-review.json.
-        let startupServices = StartupServices(directory: services.paths.supportDirectory)
         let startup = StartupViewState(
             lister: startupServices.lister, controller: startupServices.controller,
             reviewer: startupServices.reviewer,

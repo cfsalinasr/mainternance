@@ -65,15 +65,31 @@ otherwise; both intervals are doubled in Low Power Mode.
   once-a-minute check while the app sits idle in the background (App Nap), so a scan can start a little after
   the chosen time.
 
+**Startup** (Startup screen, and the "Startup items" check on Home):
+
+- Lists the launch agents and daemons that start programs on this Mac: your own agents
+  (`~/Library/LaunchAgents`), agents for all users (`/Library/LaunchAgents`) and system daemons
+  (`/Library/LaunchDaemons`). Each row says what is registered and by which file, whether launchd has it on or off
+  ("Unknown" when that cannot be read), and offers Reveal in Finder. A file that cannot be read is listed as such,
+  never hidden. The app makes no "safe" or "suspicious" judgement.
+- Only your own agents can be switched off and on (`launchctl disable`/`enable` for your user: reversible, no
+  administrator, nothing deleted or moved). The change **takes effect at your next login**. Agents for all users
+  and daemons need an administrator: change them in the app that installed them.
+- Login items you added in System Settings > General > Login Items are managed by macOS and are **not listed**:
+  an app cannot read them.
+- "New" means not present when you last chose Mark all as reviewed. The first time the screen opens it only
+  records what is there (nothing counts as new yet). The list of reviewed items is kept in
+  `~/Library/Application Support/Mainternance/startup-review.json`. Home shows the number of new items once that
+  list exists, and nothing (rather than "0") before.
+
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
-silicon), the startup-item count, macOS update status and suggestions.
+silicon), macOS update status and suggestions.
 
 **Planned, not available yet** (hidden in the app until each one works; Home lists them under
 "Coming next"):
 
 - File explorer
 - Cleanup
-- Startup items
 - Uninstaller
 
 Later plans bring these back one by one.
@@ -81,8 +97,8 @@ Later plans bring these back one by one.
 ## Install
 
 Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar to see the
-popover with the live readings, then choose Open Mainternance to show the window, which has Home and
-Settings (see What is live).
+popover with the live readings, then choose Open Mainternance to show the window, which has Home, Scanner,
+Startup and Settings (see What is live).
 
 - `scripts/build-app.sh` builds a release binary and assembles and signs
   `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).

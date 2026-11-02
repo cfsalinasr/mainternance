@@ -154,8 +154,8 @@ struct HealthEvaluatorTests {
     @Test func startupItems() {
         #expect(check(.startupItems, snapshot: makeSnapshot(startup: 0))?.state == .good)
         #expect(check(.startupItems, snapshot: makeSnapshot(startup: 0))?.reason == "No new items")
-        #expect(check(.startupItems, snapshot: makeSnapshot(startup: 1))?.reason == "1 new login item")
-        #expect(check(.startupItems, snapshot: makeSnapshot(startup: 3))?.reason == "3 new login items")
+        #expect(check(.startupItems, snapshot: makeSnapshot(startup: 1))?.reason == "1 new startup item")
+        #expect(check(.startupItems, snapshot: makeSnapshot(startup: 3))?.reason == "3 new startup items")
         #expect(check(.startupItems, snapshot: makeSnapshot(startup: 3))?.state == .needsAttention)
     }
 

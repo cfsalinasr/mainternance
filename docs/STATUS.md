@@ -10,8 +10,10 @@ Last updated: 2026-11-02.
 ## Done on branch `feat/schedule-notifications` (plan `docs/superpowers/plans/2026-11-02-schedule-notifications-settings.md`)
 All six tasks are implemented: live Settings saved to `preferences.json`, Launch at login through macOS (shows the real state), an opt-in weekly quick scan that runs only while the app is open (a missed slot runs once later; also checked when the Mac wakes), and notifications for scan findings and the weekly result (counts only, never file names; they need permission). Not merged yet: ask the owner before opening or merging the pull request.
 
+## Done on branch `feat/startup-items` (plan `docs/superpowers/plans/2026-11-02-startup-items.md`)
+All three tasks are implemented: a real Startup screen listing launch agents and daemons (your own, for all users, system daemons) with launchd's on/off state, Reveal in Finder, switching your own agents off and on (`launchctl disable`/`enable`, takes effect at the next login), a review baseline with "New" badges and Mark all as reviewed, and the real count of new startup items on Home. Not merged yet: ask the owner before opening or merging the pull request.
+
 ## Remaining plans (not started)
-- Startup items
 - Cleanup
 - Uninstaller
 - File explorer
@@ -25,5 +27,6 @@ All six tasks are implemented: live Settings saved to `preferences.json`, Launch
 - Popover: after "Open Mainternance" the popover closes, the window stays open, and one click on the menu bar icon reopens it without leaving the icon highlighted.
 - App CPU in Activity Monitor stays near 0% with the popover and window closed.
 - Launch at login from `/Applications`, including the approval step in System Settings > General > Login Items.
+- Startup: switching one of your own agents off, logging out and in, and checking it no longer starts (then switching it back on).
 - Notifications: the permission prompt, then a weekly scan set a few minutes ahead (see `docs/testing-the-scanner.md`).
 - First real scanner run with real ClamAV (not done yet): Install button, Update definitions, the harmless EICAR test file (see `docs/testing-the-scanner.md`).
