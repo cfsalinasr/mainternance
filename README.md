@@ -40,8 +40,18 @@ otherwise; both intervals are doubled in Low Power Mode.
   permanent delete in the app.
 - Without Full Disk Access some folders cannot be read; the app says so and keeps any detection it could not
   re-check until a scan has covered it.
-- Weekly scheduling and notifications are **not** included yet.
 - To try it safely, see `docs/testing-the-scanner.md`.
+
+**Settings** (saved in `~/Library/Application Support/Mainternance/preferences.json`):
+
+- Weekly quick scan: off until you turn it on. You pick the day and time. It runs **only while Mainternance
+  is open**; if the Mac was asleep or the app closed at that time, it runs once the next time the app is open
+  (or the Mac wakes). Turning it on does not start a scan right away.
+- Launch at login: the toggle shows what macOS reports. It works when the app runs from `/Applications`, and
+  macOS may ask you to approve it in System Settings > General > Login Items.
+- Notifications: "Problem alerts" (a scan found files to review) and "Weekly digest" (the result of each weekly
+  scan). They need your permission, which macOS asks for the first time you turn one on. They carry counts
+  only, never file names.
 
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
 silicon), the startup-item count, macOS update status and suggestions.
@@ -54,8 +64,7 @@ silicon), the startup-item count, macOS update status and suggestions.
 - Startup items
 - Uninstaller
 
-Settings are not applied yet either. Later plans bring these back one by one, plus notifications,
-launch at login and scheduling.
+Later plans bring these back one by one.
 
 ## Install
 
@@ -70,8 +79,8 @@ Settings (see What is live).
   every rebuild. Run `scripts/make-signing-cert.sh` once to create the stable self-signed identity
   `Mainternance Local Signing` in your login keychain (it asks for your password once; use `--dry-run`
   to preview). Later builds pick it up automatically.
-- To open it at login, add it under System Settings > General > Login Items. The Settings toggle is not
-  connected yet; a later plan wires it to the system.
+- To open it at login, turn on Launch at login in Settings (install it with `--install` first, so it runs from
+  `/Applications`). If macOS asks, approve it in System Settings > General > Login Items.
 - Full Disk Access is optional: grant it under System Settings > Privacy & Security if you want scans to read
   protected folders (see `docs/testing-the-scanner.md`).
 

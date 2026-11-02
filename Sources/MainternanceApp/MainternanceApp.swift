@@ -16,13 +16,18 @@ struct MainternanceApp: App {
 
     init() {
         let composition = CompositionRoot.make()
-        CompositionRoot.stopScannerOnQuit(composition.scannerServices)
+        let automation = composition.automation
+        CompositionRoot.stopScannerOnQuit(composition.scannerServices, automation: automation)
+        CompositionRoot.checkScheduleOnWake(automation)
         let model = composition.overview
         model.start()
         viewModel = model
         let settings = composition.settings
         states = WindowStates(scanner: composition.scannerModel, settings: settings)
+        // The loaded values reach the scheduler and the notifier through `settings.onChange`. The scheduler holds
+        // the defaults (weekly scan off) until then, so starting it first cannot run a scan the owner turned off.
         Task { await settings.load() }
+        automation.start()
         visibility = VisibilityCoordinator(viewModel: model)
     }
 

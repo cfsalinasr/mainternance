@@ -11,6 +11,8 @@ struct Composition {
     /// Kept so the quit hook can stop a running scan or install.
     let scannerServices: ScannerServices
     let settings: SettingsViewState
+    /// The weekly scheduler and the scan notifications, already connected to Settings and the Scanner.
+    let automation: ScanAutomation
 }
 
 @MainActor
@@ -33,24 +35,40 @@ enum CompositionRoot {
             protectedFolders: services.ownFolders,
             openURL: { NSWorkspace.shared.open($0) }
         )
-        // Settings live next to the scanner's files: <Application Support>/Mainternance/preferences.json.
+        // Settings live next to the scanner's files: <Application Support>/Mainternance/preferences.json. One store
+        // and one notification service are shared: Settings and the scheduler write the same file.
+        let preferences = PreferencesStore(directory: services.paths.supportDirectory)
+        let notifications = UserNotificationService()
         let settings = SettingsViewState(
-            preferences: PreferencesStore(directory: services.paths.supportDirectory),
-            loginItem: LoginItemService(),
-            notifications: UserNotificationService()
+            preferences: preferences, loginItem: LoginItemService(), notifications: notifications
+        )
+        let automation = ScanAutomation(
+            scanner: scannerModel, settings: settings, preferences: preferences, notifications: notifications
         )
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
-            settings: settings
+            settings: settings, automation: automation
         )
     }
 
     /// Stops the scanner's child processes (clamscan, brew, freshclam) when the app quits, so none outlives it.
-    static func stopScannerOnQuit(_ services: ScannerServices) {
+    /// Stops the scheduler as well, so no scheduled scan starts while the app quits.
+    static func stopScannerOnQuit(_ services: ScannerServices, automation: ScanAutomation) {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { _ in
+            // AppKit posts this on the main thread; running it inline keeps the quit hook synchronous.
+            MainActor.assumeIsolated { automation.stop() }
             services.terminateNow()
+        }
+    }
+
+    /// A weekly slot missed while the Mac slept is checked as soon as it wakes.
+    static func checkScheduleOnWake(_ automation: ScanAutomation) {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { automation.macDidWake() }
         }
     }
 }
