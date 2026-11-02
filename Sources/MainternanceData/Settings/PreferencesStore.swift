@@ -7,21 +7,26 @@ import Synchronization
 ///
 /// A file that cannot be decoded is never overwritten and never deleted: it is moved aside as
 /// `preferences.json.damaged-<unix seconds>` (with `-2`, `-3`, ... when that name is taken) before anything new is
-/// written, and loading gives the defaults. At most `maxDamagedCopies` such copies are made; after that (or if the
-/// move fails) the damaged file stays where it is and saving is skipped, so the owner's file stays as it was. A
-/// schedule out of range is clamped on load; a missing field takes its default (so a field added later never resets
+/// written, and loading gives the defaults. At most `maxDamagedCopies` such copies are kept: once that many exist, the
+/// newest damaged file takes the place of the oldest copy (`FileManager.replaceItemAt`, then a rename to a fresh
+/// name), so saving keeps working. If moving aside fails, the damaged file stays where it is and saving is skipped.
+/// A file that exists but cannot be READ (no permission, a directory in its place, an I/O error) is not damaged: it is
+/// left alone, loading gives the defaults, and nothing is saved until a later load reads the file (or finds it gone),
+/// so defaults shown after a passing read error are never written over the owner's choices.
+/// A schedule out of range is clamped on load; a missing field takes its default (so a field added later never resets
 /// the owner's other choices).
 /// Reads and writes happen inside one lock, so concurrent saves and updates are serialised and the file is always
 /// whole; `update` reads, changes and writes inside that one lock.
 public final class PreferencesStore: PreferencesStoring, Sendable {
-    /// How many damaged copies may pile up beside the file. They are kept for the owner; nothing removes them.
+    /// How many damaged copies may sit beside the file. Beyond that the newest replaces the oldest.
     static let maxDamagedCopies = 5
     private static let damagedPrefix = "preferences.json.damaged-"
 
     private let directory: URL
     private let file: URL
     private let now: @Sendable () -> Date
-    private let lock = Mutex(())
+    /// True from a read that failed until a load reads the file (or finds it missing or damaged): writes are skipped.
+    private let lock = Mutex(false)
     private let moveAsideFails = Mutex(false)
     private let afterReadHook = Mutex<(@Sendable () -> Void)?>(nil)
 
@@ -45,39 +50,54 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
     }
 
     public func load() async -> AppPreferences {
-        lock.withLock { _ in
-            switch readFile() {
-            case .missing:
+        lock.withLock { unreadable in
+            let state = readFile()
+            if case .unreadable = state {
+                unreadable = true
                 return .defaults
+            }
+            unreadable = false
+            switch state {
             case let .readable(prefs):
                 return prefs
             case .damaged:
                 _ = moveAside()
+                return .defaults
+            case .missing, .unreadable:
                 return .defaults
             }
         }
     }
 
     public func save(_ preferences: AppPreferences) async {
-        lock.withLock { _ in
-            if case .damaged = readFile(), !moveAside() {
+        lock.withLock { unreadable in
+            switch readFile() {
+            case .unreadable:
+                unreadable = true
                 return
+            case .damaged:
+                guard !unreadable, moveAside() else { return }
+            case .missing, .readable:
+                guard !unreadable else { return }
             }
             write(preferences)
         }
     }
 
     public func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> AppPreferences {
-        lock.withLock { _ in
+        lock.withLock { unreadable in
             var base = AppPreferences.defaults
-            var writable = true
+            var writable = !unreadable
             switch readFile() {
             case .missing:
                 break
             case let .readable(prefs):
                 base = prefs
             case .damaged:
-                writable = moveAside()
+                writable = writable && moveAside()
+            case .unreadable:
+                unreadable = true
+                writable = false
             }
             afterRead?()
             let next = base.updated(now: now(), change)
@@ -92,37 +112,73 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         case missing
         case readable(AppPreferences)
         case damaged
+        /// The file exists but its bytes could not be read; says nothing about its contents.
+        case unreadable
     }
 
     private func readFile() -> FileState {
         guard FileManager.default.fileExists(atPath: file.path) else { return .missing }
+        guard let data = try? Data(contentsOf: file) else { return .unreadable }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
-        guard let data = try? Data(contentsOf: file),
-              var prefs = try? decoder.decode(AppPreferences.self, from: data)
-        else { return .damaged }
+        guard var prefs = try? decoder.decode(AppPreferences.self, from: data) else { return .damaged }
         prefs.schedule = prefs.schedule.clamped()
         return .readable(prefs)
     }
 
-    /// Returns false when the damaged file is still in place. Never replaces or deletes anything: the move fails
-    /// rather than overwrite, and a taken name gets a counter.
+    /// Returns false when the damaged file is still in place. Never deletes anything: a new copy gets a name not yet
+    /// taken (`moveItem` refuses an existing destination), and once `maxDamagedCopies` exist the damaged file replaces
+    /// the oldest copy through `replaceItemAt`, then is renamed so the copies stay ordered by age.
     private func moveAside() -> Bool {
         guard !failMovingAside else { return false }
         let manager = FileManager.default
-        let existing = (try? manager.contentsOfDirectory(atPath: directory.path)) ?? []
-        guard existing.count(where: { $0.hasPrefix(Self.damagedPrefix) }) < Self.maxDamagedCopies else {
-            return false
+        let copies = ((try? manager.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .compactMap(DamagedCopy.init(name:))
+            .sorted()
+        let stamp = Int(now().timeIntervalSince1970)
+        let counter = (copies.filter { $0.stamp == stamp }.map(\.counter).max() ?? 0) + 1
+        let fresh = directory.appendingPathComponent(DamagedCopy.name(stamp: stamp, counter: counter))
+        guard copies.count >= Self.maxDamagedCopies, let oldest = copies.first else {
+            return (try? manager.moveItem(at: file, to: fresh)) != nil
         }
-        let stamp = "\(Self.damagedPrefix)\(Int(now().timeIntervalSince1970))"
-        for attempt in 1 ... Self.maxDamagedCopies + 1 {
-            let name = attempt == 1 ? stamp : "\(stamp)-\(attempt)"
-            let aside = directory.appendingPathComponent(name)
-            // `moveItem` refuses an existing destination, so an earlier copy is never overwritten.
-            guard !manager.fileExists(atPath: aside.path) else { continue }
-            return (try? manager.moveItem(at: file, to: aside)) != nil
+        let target = directory.appendingPathComponent(oldest.name)
+        guard let placed = try? manager.replaceItemAt(target, withItemAt: file) else { return false }
+        // A failed rename still leaves the copy kept, only under the older name.
+        try? manager.moveItem(at: placed, to: fresh)
+        return true
+    }
+
+    /// A copy named `preferences.json.damaged-<stamp>` (counter 1) or `preferences.json.damaged-<stamp>-<counter>`.
+    private struct DamagedCopy: Comparable {
+        let name: String
+        let stamp: Int
+        let counter: Int
+
+        /// Nil for a name that is not a damaged copy; a copy with an unexpected suffix sorts as the oldest.
+        init?(name: String) {
+            guard name.hasPrefix(PreferencesStore.damagedPrefix) else { return nil }
+            self.name = name
+            let parts = name.dropFirst(PreferencesStore.damagedPrefix.count).split(separator: "-")
+            let first = parts.first.flatMap { Int($0) }
+            let second = parts.count == 2 ? Int(parts[1]) : 1
+            if parts.count <= 2, let first, let second {
+                stamp = first
+                counter = second
+            } else {
+                stamp = Int.min
+                counter = 0
+            }
         }
-        return false
+
+        static func name(stamp: Int, counter: Int) -> String {
+            counter == 1
+                ? "\(PreferencesStore.damagedPrefix)\(stamp)"
+                : "\(PreferencesStore.damagedPrefix)\(stamp)-\(counter)"
+        }
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            (lhs.stamp, lhs.counter, lhs.name) < (rhs.stamp, rhs.counter, rhs.name)
+        }
     }
 
     private func write(_ preferences: AppPreferences) {

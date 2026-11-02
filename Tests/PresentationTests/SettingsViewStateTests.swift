@@ -13,7 +13,8 @@ struct SettingsRig {
     nonisolated static let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     init(stored: AppPreferences = .defaults, authorization: NotificationAuthorization = .notDetermined) {
-        store = FakePreferencesStore(stored)
+        // The store judges a far-future run with the same clock as the state, like the real store does.
+        store = FakePreferencesStore(stored, now: { SettingsRig.now })
         notifications = FakeNotifications(authorization)
         state = SettingsViewState(
             preferences: store, loginItem: login, notifications: notifications, now: { SettingsRig.now }
@@ -155,8 +156,11 @@ struct SettingsViewStateTests {
         await rig.state.load()
         await rig.state.setWeeklyScanEnabled(true)
         #expect(rig.state.current.lastScheduledRun == SettingsRig.now)
+        #expect(rig.store.stored.lastScheduledRun == SettingsRig.now) // the persisted value, not only the view's
+        #expect(rig.store.saves.last?.lastScheduledRun == SettingsRig.now)
         await rig.state.setTime(hour: 4, minute: 0)
         #expect(rig.state.current.lastScheduledRun == SettingsRig.now)
+        #expect(rig.store.stored.lastScheduledRun == SettingsRig.now)
     }
 
     /// The scheduler records its runs in the same file; a Settings change must not erase that record, or the

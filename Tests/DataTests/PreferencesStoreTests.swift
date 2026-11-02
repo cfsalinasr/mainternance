@@ -5,43 +5,7 @@ import Testing
 
 /// Every test works in its own temp directory, never the real Application Support.
 @Suite("Preferences store")
-struct PreferencesStoreTests {
-    private func fileURL(_ temp: TempDirectory) -> URL {
-        temp.url.appendingPathComponent("prefs/preferences.json")
-    }
-
-    /// The damaged copy made at `PreferencesStoreTests.now` (unix seconds 1_800_000_000).
-    private func asideURL(_ temp: TempDirectory) -> URL {
-        temp.url.appendingPathComponent("prefs/preferences.json.damaged-1800000000")
-    }
-
-    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
-
-    private func store(_ temp: TempDirectory) -> PreferencesStore {
-        PreferencesStore(directory: temp.url.appendingPathComponent("prefs", isDirectory: true), now: { Self.now })
-    }
-
-    private func names(_ temp: TempDirectory) throws -> [String] {
-        try FileManager.default.contentsOfDirectory(atPath: fileURL(temp).deletingLastPathComponent().path).sorted()
-    }
-
-    private func writeRaw(_ text: String, _ temp: TempDirectory) throws {
-        try FileManager.default.createDirectory(
-            at: fileURL(temp).deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        try Data(text.utf8).write(to: fileURL(temp))
-    }
-
-    private var sample: AppPreferences {
-        var prefs = AppPreferences.defaults
-        prefs.launchAtLogin = true
-        prefs.weeklyScanEnabled = true
-        prefs.schedule = ScanSchedule(weekday: 5, hour: 21, minute: 45)
-        prefs.problemAlerts = false
-        prefs.lastScheduledRun = Date(timeIntervalSince1970: 1_800_000_000)
-        return prefs
-    }
-
+struct PreferencesStoreTests: PreferencesStoreFixture {
     @Test("a missing file loads the defaults and creates nothing")
     func missing() async throws {
         let temp = try TempDirectory()
@@ -168,38 +132,6 @@ struct PreferencesStoreTests {
         let loaded = await store(temp).load()
         #expect((0 ..< 40).contains(loaded.schedule.minute))
         #expect(!FileManager.default.fileExists(atPath: asideURL(temp).path))
-    }
-
-    // MARK: Damaged copies are kept, never deleted
-
-    @Test("each damaged file gets its own timestamped copy; an earlier copy is never replaced or deleted")
-    func damagedCopiesAreKept() async throws {
-        let temp = try TempDirectory()
-        let prefs = store(temp)
-        try writeRaw("first", temp)
-        _ = await prefs.load()
-        try writeRaw("second", temp)
-        _ = await prefs.load() // same second: a distinct name, not the first copy's
-        #expect(try names(temp) == ["preferences.json.damaged-1800000000", "preferences.json.damaged-1800000000-2"])
-        #expect(try String(contentsOf: asideURL(temp), encoding: .utf8) == "first")
-        let second = asideURL(temp).deletingLastPathComponent()
-            .appendingPathComponent("preferences.json.damaged-1800000000-2")
-        #expect(try String(contentsOf: second, encoding: .utf8) == "second")
-    }
-
-    @Test("once the bounded number of damaged copies exists, a new damaged file stays in place and is not overwritten")
-    func damagedCopiesAreBounded() async throws {
-        let temp = try TempDirectory()
-        let prefs = store(temp)
-        for index in 0 ..< PreferencesStore.maxDamagedCopies {
-            try writeRaw("damaged \(index)", temp)
-            _ = await prefs.load()
-        }
-        try writeRaw("one too many", temp)
-        #expect(await prefs.load() == .defaults)
-        await prefs.save(sample)
-        #expect(try String(contentsOf: fileURL(temp), encoding: .utf8) == "one too many")
-        #expect(try names(temp).count == PreferencesStore.maxDamagedCopies + 1)
     }
 
     // MARK: Read-modify-write
