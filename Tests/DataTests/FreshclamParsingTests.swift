@@ -26,9 +26,9 @@ struct FreshclamParsingTests {
 
     @Test("clamped to 0...1")
     func clamped() throws {
-        #expect(try #require(parse("150%")) == 1)
-        #expect(try #require(parse("0%")) == 0)
-        #expect(try #require(parse("[=] 9MiB/1MiB")) == 1)
+        #expect(try abs(#require(parse("150%")) - 1) < 1e-9)
+        #expect(try abs(#require(parse("0%"))) < 1e-9)
+        #expect(try abs(#require(parse("[=] 9MiB/1MiB")) - 1) < 1e-9)
     }
 
     @Test("lines without progress are nil", arguments: [
@@ -41,11 +41,11 @@ struct FreshclamParsingTests {
     }
 
     @Test("huge and odd numbers never crash")
-    func huge() {
+    func huge() throws {
         let digits = String(repeating: "9", count: 400)
         #expect(parse("\(digits)%") == nil)
         #expect(parse("\(digits)MiB/\(digits)MiB") == nil)
-        #expect(parse("99999999999999999999%") == 1)
+        #expect(try abs(#require(parse("99999999999999999999%")) - 1) < 1e-9)
         #expect(parse("1MiB/99999999999999999999999TiB") != nil)
         #expect(parse(String(repeating: "\r", count: 10)) == nil)
         #expect(parse("\u{0}%\u{FFFD}1/2") == nil)

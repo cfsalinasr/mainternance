@@ -22,24 +22,35 @@ struct ScannerTypesTests {
         #expect(status(defs: nil) == .updateNeeded(definitionsAge: nil))
     }
 
+    /// Ages are `Double`s from date arithmetic, so they are compared with a tolerance.
+    private func isReady(_ status: EngineStatus, age expected: TimeInterval) -> Bool {
+        guard case let .ready(age?) = status else { return false }
+        return abs(age - expected) < 1e-6
+    }
+
+    private func needsUpdate(_ status: EngineStatus, age expected: TimeInterval) -> Bool {
+        guard case let .updateNeeded(age?) = status else { return false }
+        return abs(age - expected) < 1e-6
+    }
+
     @Test func installedWithoutHomebrewIsStillUsable() {
-        #expect(status(brew: false, defs: now.addingTimeInterval(-60)) == .ready(definitionsAge: 60))
+        #expect(isReady(status(brew: false, defs: now.addingTimeInterval(-60)), age: 60))
     }
 
     @Test func freshDefinitionsAreReady() {
-        #expect(status(defs: now) == .ready(definitionsAge: 0))
+        #expect(isReady(status(defs: now), age: 0))
     }
 
     @Test func exactlySevenDaysIsReady() {
-        #expect(status(defs: now.addingTimeInterval(-week)) == .ready(definitionsAge: week))
+        #expect(isReady(status(defs: now.addingTimeInterval(-week)), age: week))
     }
 
     @Test func sevenDaysPlusOneSecondNeedsUpdate() {
-        #expect(status(defs: now.addingTimeInterval(-week - 1)) == .updateNeeded(definitionsAge: week + 1))
+        #expect(needsUpdate(status(defs: now.addingTimeInterval(-week - 1)), age: week + 1))
     }
 
     @Test func futureDefinitionsDateIsAgeZeroAndReady() {
-        #expect(status(defs: now.addingTimeInterval(3600)) == .ready(definitionsAge: 0))
+        #expect(isReady(status(defs: now.addingTimeInterval(3600)), age: 0))
     }
 
     private func summary(cancelled: Bool, end: Date) -> ScanSummary {

@@ -50,7 +50,8 @@ struct QuarantineManifestTests {
         #expect(Set(fields.keys) == [
             "id", "originalPath", "quarantinedAt", "signature", "sha256", "size", "originalPermissions"
         ])
-        #expect(fields["quarantinedAt"] as? Double == 1_700_000_000)
+        let seconds = try #require(fields["quarantinedAt"] as? Double)
+        #expect(abs(seconds - 1_700_000_000) < 1e-6)
         let decoded = try QuarantineManifest.decode(data)
         #expect(decoded.first?.record == record)
     }

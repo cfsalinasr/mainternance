@@ -47,7 +47,17 @@ struct FreshclamUpdateTests {
             .stdout("Time: 4.3s, ETA: 0.0s [=========================>] 62.58MiB/62.58MiB")
         ], status: 0, sideEffect: { writeDefinitions(paths) })
         let events = await collectEvents(sut(rig, runner).updateDefinitions())
-        #expect(events == [.stage("Downloading definitions…"), .progress(0.5), .progress(1), .finished])
+        #expect(events.count == 4)
+        #expect(events.first == .stage("Downloading definitions…"))
+        #expect(events.last == .finished)
+        let progress = events.compactMap { event -> Double? in
+            if case let .progress(value?) = event {
+                return value
+            }
+            return nil
+        }
+        #expect(progress.count == 2)
+        #expect(zip(progress, [0.5, 1.0]).allSatisfy { abs($0 - $1) < 1e-9 })
 
         let call = try #require(runner.recorded.first)
         #expect(runner.recorded.count == 1)

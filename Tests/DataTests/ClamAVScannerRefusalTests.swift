@@ -43,7 +43,12 @@ struct ClamAVScannerRefusalTests {
     @Test("status reflects installation and definitions")
     func statusMapping() async throws {
         let ready = try ScannerFixture.replaying([], status: 0)
-        #expect(await ready.scanner.status() == .ready(definitionsAge: 3600))
+        let readyStatus = await ready.scanner.status()
+        guard case let .ready(age?) = readyStatus else {
+            Issue.record("expected ready, got \(readyStatus)")
+            return
+        }
+        #expect(abs(age - 3600) < 1)
         let none = try ScannerFixture(definitionsAge: nil, runner: FakeRunner.replaying([], status: 0))
         #expect(await none.scanner.status() == .updateNeeded(definitionsAge: nil))
         let absent = try ScannerFixture(tools: ["brew"], runner: FakeRunner.replaying([], status: 0))
