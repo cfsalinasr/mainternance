@@ -281,18 +281,4 @@ struct QuarantineCrossVolumeTests {
         #expect(leftovers == ["a (restored).txt", "a.txt"])
         #expect(await store.records().isEmpty)
     }
-
-    @Test("when the original cannot be removed the file is not lost and nothing is half-recorded")
-    func originalNotRemovable() async throws {
-        let fix = try QuarantineFixture()
-        let store = forcedCopyStore(fix)
-        let file = try fix.makeFile("a.txt", "keep")
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fix.area.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fix.area.path) }
-        await #expect(throws: QuarantineError.self) { try await store.quarantine(path: file.path, signature: "S") }
-        #expect(try String(contentsOf: file, encoding: .utf8) == "keep")
-        #expect(await store.records().isEmpty)
-        let vaultFiles = try FileManager.default.contentsOfDirectory(atPath: fix.vault.path)
-        #expect(vaultFiles.filter { $0 != "index.json" }.isEmpty)
-    }
 }

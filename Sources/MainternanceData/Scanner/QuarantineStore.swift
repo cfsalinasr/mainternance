@@ -18,7 +18,8 @@ import MainternanceDomain
 /// Race safety: the source is opened once with `O_NOFOLLOW`; type, size and hash come from that descriptor; the
 /// physical parent folder is compared before and after and re-checked against `ProtectedPaths` right before the move;
 /// the move never overwrites (`RENAME_EXCL`); the moved item must be the very same file; permissions are applied with
-/// `fchmod` on a descriptor.
+/// `fchmod` on a descriptor. A restore is bound to its checked destination folder (see
+/// `QuarantineStore+Restore.swift`).
 public actor QuarantineStore: QuarantineStoring {
     /// Test seams. Production code uses the defaults.
     struct Hooks: Sendable {
@@ -30,6 +31,12 @@ public actor QuarantineStore: QuarantineStoring {
         var failRestorePermissions = false
         /// Runs in the copy path of a restore right before the copy is renamed to `target`.
         var beforeRestoreRename: (@Sendable (String) -> Void)?
+        /// Runs in the copy path of a quarantine after the verified copy is in the vault, before the original goes.
+        var beforeOriginalRemoval: (@Sendable () -> Void)?
+        /// Runs in a restore after the destination folder was resolved and checked, before it is opened.
+        var beforeRestoreFolderOpen: (@Sendable () -> Void)?
+        /// Runs in a restore after the destination folder was opened and checked, before anything is written to it.
+        var afterRestoreFolderOpen: (@Sendable () -> Void)?
     }
 
     let directory: URL
@@ -94,32 +101,6 @@ public actor QuarantineStore: QuarantineStoring {
         // If this write fails the entry stays `pending` and the next load promotes it: the file is not lost.
         try? write(entries)
         return record
-    }
-
-    /// Restores the file and returns the path it really went to (`a (restored).txt` when something is in the way).
-    /// A failed permission reset after the move does not fail the restore: the file is back, and keeps the
-    /// quarantine's `0o600` until the permissions are fixed by hand. Special bits (setuid, sticky) are never restored.
-    public func restore(_ id: UUID) throws -> String {
-        var entries = try load()
-        guard let index = entries.firstIndex(where: { $0.state == .stored && $0.record.id == id }) else {
-            throw QuarantineError.missing
-        }
-        let record = entries[index].record
-        let original = URL(fileURLWithPath: record.originalPath)
-        let blocked = ProtectedPaths.isProtected(record.originalPath, including: [directory])
-        guard !blocked else { throw QuarantineError.protectedPath }
-        var isFolder: ObjCBool = false
-        guard fileManager.fileExists(atPath: original.deletingLastPathComponent().path, isDirectory: &isFolder),
-              isFolder.boolValue else { throw QuarantineError.restoreTargetMissing }
-        let target = try moveOut(id: id, to: original)
-        entries.remove(at: index)
-        try? write(entries)
-        removeSidecar(id)
-        if hooks.failRestorePermissions {
-            return target
-        }
-        try? QuarantineFiles.setPermissions(record.originalPermissions, atPath: target)
-        return target
     }
 
     /// Items in the quarantine folder that no record describes (no sidecar and no manifest entry). They are never
@@ -194,21 +175,23 @@ public actor QuarantineStore: QuarantineStoring {
             QuarantineRemoval.discard(.vaultArtifact(vault: directory, name: partialName))
             throw Self.wrap(error)
         }
+        hooks.beforeOriginalRemoval?()
         do {
             try QuarantineRemoval.remove(.verifiedOriginal(
                 folder: origin.folder, folderIdentity: origin.folderIdentity, name: origin.name, file: file.info
             ))
         } catch {
-            // The original is still where it was (or changed): our copy is not needed and must not count as stored.
-            if let id = UUID(uuidString: (stored as NSString).lastPathComponent) {
-                QuarantineRemoval.discard(.vaultCopy(vault: directory, id: id))
-            }
+            // Keep our verified copy in every failure case. No check of the original is atomic with removing the
+            // copy: the original may have been replaced meanwhile, leaving the copy as the only one of the old
+            // content. The rollback leaves the entry `pending` while something sits at the original path, and the
+            // next load makes it `pending` (original still has the recorded content) or `stored` (it changed).
             throw Self.wrap(error)
         }
     }
 
     /// Puts the file back after a failed quarantine and drops its sidecar and entry. If the file cannot be put
-    /// back, everything stays in place: the next load resolves it, and the file is never lost.
+    /// back (for example because something sits at the original path), the copy, sidecar and `pending` entry stay in
+    /// place: the next load resolves them, and the file is never lost.
     private func rollbackQuarantine(_ record: QuarantineRecord, stored: String) {
         let original = record.originalPath
         if QuarantineFiles.linkInfo(stored) != nil {
@@ -220,75 +203,6 @@ public actor QuarantineStore: QuarantineStoring {
         if var entries = try? load() {
             entries.removeAll { $0.record.id == record.id }
             try? write(entries)
-        }
-    }
-
-    /// Moves the quarantined item back next to `original`, never overwriting; returns the final path.
-    private func moveOut(id: UUID, to original: URL) throws -> String {
-        let stored = vaultPath(id)
-        let source: QuarantineFiles.OpenFile
-        do { source = try QuarantineFiles.openRegular(stored) } catch QuarantineError.notRegularFile {
-            throw QuarantineError.ioFailure("The quarantined item is not a regular file, so nothing was restored.")
-        }
-        defer { source.close() }
-        for _ in 0 ..< 8 {
-            let target = freeTarget(for: original)
-            if ProtectedPaths.isProtected(target.path, including: [directory]) {
-                throw QuarantineError.protectedPath
-            }
-            let partial = target.deletingLastPathComponent().appendingPathComponent(".\(id.uuidString).partial").path
-            let folder = target.deletingLastPathComponent().path
-            do {
-                try moveOutOnce(id: id, source: source, target: target.path, partial: partial)
-                return target.path
-            } catch QuarantineFiles.MoveFailure.destinationExists {
-                // Something appeared at this name meanwhile: drop our half-written copy (the next try creates it
-                // again with O_EXCL) and pick the next free name.
-                QuarantineRemoval.discard(.restorePartial(folder: folder, id: id))
-                continue
-            } catch {
-                QuarantineRemoval.discard(.restorePartial(folder: folder, id: id))
-                throw Self.wrap(error)
-            }
-        }
-        throw QuarantineError.ioFailure("No free name was found to restore the file.")
-    }
-
-    private func moveOutOnce(id: UUID, source: QuarantineFiles.OpenFile, target: String, partial: String) throws {
-        let stored = vaultPath(id)
-        if !hooks.forceCopy {
-            do {
-                try QuarantineFiles.renameNoOverwrite(stored, to: target)
-                return
-            } catch QuarantineFiles.MoveFailure.crossDevice {
-                // fall through to the copy path
-            }
-        }
-        let copied = try QuarantineFiles.copy(source, toNewFile: partial)
-        guard copied.size == source.info.st_size else { throw QuarantineError.changedSinceScan }
-        hooks.beforeRestoreRename?(target)
-        try QuarantineFiles.renameNoOverwrite(partial, to: target)
-        // The restored copy is in place and verified; failing to remove our own quarantined copy loses nothing.
-        QuarantineRemoval.discard(.vaultCopy(vault: directory, id: id))
-    }
-
-    /// `a.txt` -> `a (restored).txt`, then `a (restored 2).txt`, ...: the first name nothing occupies.
-    private func freeTarget(for original: URL) -> URL {
-        if QuarantineFiles.linkInfo(original.path) == nil {
-            return original
-        }
-        let folder = original.deletingLastPathComponent()
-        let name = original.lastPathComponent as NSString
-        let ext = name.pathExtension
-        let stem = name.deletingPathExtension
-        var attempt = 1
-        while true {
-            let marker = attempt == 1 ? " (restored)" : " (restored \(attempt))"
-            let candidate = folder.appendingPathComponent(stem + marker + (ext.isEmpty ? "" : "." + ext))
-            if QuarantineFiles.linkInfo(candidate.path) == nil {
-                return candidate
-            }
-            attempt += 1
         }
     }
 

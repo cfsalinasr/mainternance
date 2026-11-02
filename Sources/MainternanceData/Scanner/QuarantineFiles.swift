@@ -22,6 +22,13 @@ enum QuarantineFiles {
         }
     }
 
+    /// What `copy` wrote: its hash and size, and the identity of the new file.
+    struct CopyResult {
+        let hex: String
+        let size: Int64
+        let info: stat
+    }
+
     private static let chunkSize = 1 << 20
 
     static func message(_ code: Int32) -> String {
@@ -122,9 +129,22 @@ enum QuarantineFiles {
     /// Copies the descriptor's content to a NEW file at `partial` (`O_EXCL`, mode `0o600`), hashing while copying,
     /// and flushes it. Returns the hash and size of what was written.
     static func copy(_ source: OpenFile, toNewFile partial: String) throws -> (hex: String, size: Int64) {
-        let target = open(partial, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        let copied = try copy(source, into: AT_FDCWD, name: partial)
+        return (copied.hex, copied.size)
+    }
+
+    /// Like `copy(_:toNewFile:)`, creating `name` relative to the open folder `folder` (`openat`). Also returns the
+    /// identity (`fstat`) of the file it created.
+    static func copy(
+        _ source: OpenFile,
+        into folder: Int32,
+        name: String
+    ) throws -> CopyResult {
+        let target = openat(folder, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard target >= 0 else { throw QuarantineError.ioFailure(message(errno)) }
         defer { _ = close(target) }
+        var info = stat()
+        guard fstat(target, &info) == 0 else { throw QuarantineError.ioFailure(message(errno)) }
         var hasher = SHA256()
         var size: Int64 = 0
         try forEachChunk(source.descriptor) { chunk in
@@ -141,7 +161,7 @@ enum QuarantineFiles {
             }
         }
         guard fsync(target) == 0 else { throw QuarantineError.ioFailure(message(errno)) }
-        return (hex(hasher.finalize()), size)
+        return CopyResult(hex: hex(hasher.finalize()), size: size, info: info)
     }
 
     /// Atomic rename that fails instead of replacing an existing destination.

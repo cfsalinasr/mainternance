@@ -192,7 +192,10 @@ struct QuarantineRaceTests {
         try? FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: decoy)
     }
 
-    @Test("a symlink swapped in after the checks is moved back and refused (rename path)", arguments: [false, true])
+    @Test(
+        "a symlink swapped in after the checks is refused and the real content is never lost",
+        arguments: [false, true]
+    )
     func symlinkSwap(forceCopy: Bool) async throws {
         let temp = try TempDirectory()
         let area = temp.url.appendingPathComponent("files", isDirectory: true)
@@ -211,9 +214,18 @@ struct QuarantineRaceTests {
         ) }
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: victim) == decoy.path)
         #expect(try String(contentsOf: decoy, encoding: .utf8) == "decoy")
-        #expect(await store.records().isEmpty)
-        let left = try FileManager.default.contentsOfDirectory(atPath: vault.path)
-        #expect(left.filter { $0 != "index.json" }.isEmpty)
+        let records = await store.records()
+        if forceCopy {
+            // The real file was removed by the swap: the verified vault copy is now its only copy, so it is kept
+            // and counts as stored.
+            #expect(records.map(\.originalPath) == [victim])
+            let copy = try vault.appendingPathComponent(#require(records.first).id.uuidString)
+            #expect(try String(contentsOf: copy, encoding: .utf8) == "real")
+        } else {
+            #expect(records.isEmpty)
+            let left = try FileManager.default.contentsOfDirectory(atPath: vault.path)
+            #expect(left.filter { $0 != "index.json" }.isEmpty)
+        }
     }
 
     @Test("a parent folder swapped for a symlink after the open is detected and nothing moves")
