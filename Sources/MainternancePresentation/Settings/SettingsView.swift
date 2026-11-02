@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 public struct SettingsView: View {
@@ -29,8 +30,11 @@ public struct SettingsView: View {
             }
             .padding(20)
         }
-        // macOS may have changed (System Settings) while the window was closed.
+        // macOS may have changed (System Settings) while the window was closed, or while another app was in front.
         .task { await state.refreshStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await state.refreshStatus() }
+        }
     }
 
     private var general: some View {
@@ -88,6 +92,14 @@ public struct SettingsView: View {
                 set: { value in Task { await state.setWeeklyDigest(value) } }
             ))
             .accessibilityHint(SettingsText.weeklyDigestHint)
+            if let note = state.notificationPermissionNote {
+                HStack(spacing: 10) {
+                    Text(note).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Button(SettingsText.allowNotificationsButton) {
+                        Task { await state.requestNotificationPermission() }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()

@@ -13,16 +13,19 @@ struct AutomationRig {
     let automation: ScanAutomation
 
     /// Saved: weekly scan on (Sunday 02:00 UTC, last run a week before), both notification toggles as given.
-    static func make(alerts: Bool = true, digest: Bool = true) async -> AutomationRig {
+    static func make(
+        alerts: Bool = true, digest: Bool = true, lastRun: Date = utc("2026-10-25 02:00"),
+        now: Date = utc("2026-11-01 02:00")
+    ) async -> AutomationRig {
         let scanner = await ScannerRig.ready()
         var saved = AppPreferences.defaults
         saved.weeklyScanEnabled = true
-        saved.lastScheduledRun = utc("2026-10-25 02:00")
+        saved.lastScheduledRun = lastRun
         saved.problemAlerts = alerts
         saved.weeklyDigest = digest
         let store = FakePreferencesStore(saved)
         let notifications = FakeNotifications(.allowed)
-        let clock = TestClock(utc("2026-11-01 02:00"))
+        let clock = TestClock(now)
         let settings = SettingsViewState(
             preferences: store, loginItem: FakeLoginItem(), notifications: notifications, now: { clock.now }
         )
@@ -122,5 +125,62 @@ struct ScanAutomationTests {
             await Task.yield()
         }
         #expect(rig.automation.scheduler.tickCount == before + 1)
+    }
+
+    // MARK: Settings and the scheduler write the same file
+
+    /// Settings' save is held while the scheduler records its run: when Settings' change lands, the run stays.
+    @Test func aSettingsChangeSavedAfterTheScheduledRunKeepsTheRun() async {
+        let rig = await AutomationRig.make()
+        rig.finishWith(findings: 0)
+        await rig.settings.load()
+        rig.store.configure { $0.holdNextSave = true }
+        var calls = rig.store.saveCalls.makeAsyncIterator()
+        let change = Task { await rig.settings.setProblemAlerts(false) }
+        _ = await calls.next()
+        await rig.automation.scheduler.tick()
+        #expect(rig.scanner.engine.scans == [.quick])
+        rig.store.releaseSave()
+        await change.value
+        #expect(rig.store.stored.lastScheduledRun == utc("2026-11-01 02:00"))
+        #expect(!rig.store.stored.problemAlerts)
+    }
+
+    /// The scheduler's record is held while Settings saves a change: when the record lands, the change stays.
+    @Test func aScheduledRunSavedAfterASettingsChangeKeepsTheChange() async {
+        let rig = await AutomationRig.make()
+        rig.finishWith(findings: 0)
+        await rig.settings.load()
+        rig.store.configure { $0.holdNextSave = true }
+        var calls = rig.store.saveCalls.makeAsyncIterator()
+        let tick = Task { await rig.automation.scheduler.tick() }
+        _ = await calls.next()
+        await rig.settings.setWeeklyDigest(false)
+        rig.store.releaseSave()
+        await tick.value
+        #expect(rig.scanner.engine.scans == [.quick])
+        #expect(rig.store.stored.lastScheduledRun == utc("2026-11-01 02:00"))
+        #expect(!rig.store.stored.weeklyDigest)
+        #expect(rig.store.stored.weeklyScanEnabled)
+    }
+
+    /// Moving the day and time through values that already passed this week (as the time picker's arrows do)
+    /// never starts a scan; the new time runs from next week on.
+    @Test func steppingTheScheduleThroughPassedTimesNeverStartsAScan() async {
+        let rig = await AutomationRig.make(lastRun: utc("2026-11-01 02:00"), now: utc("2026-11-04 10:00"))
+        rig.finishWith(findings: 0)
+        await rig.settings.load()
+        await rig.settings.setWeekday(4) // Wednesday: today
+        await rig.automation.scheduler.tick()
+        for (hour, minute) in [(3, 0), (8, 0), (9, 0), (9, 30), (9, 59), (10, 0)] {
+            await rig.settings.setTime(hour: hour, minute: minute)
+            await rig.automation.scheduler.tick()
+        }
+        await rig.settings.setTime(hour: 10, minute: 0) // the same time saved again
+        await rig.automation.scheduler.tick()
+        #expect(rig.scanner.engine.scans.isEmpty)
+        rig.clock.set(utc("2026-11-11 10:00"))
+        await rig.automation.scheduler.tick()
+        #expect(rig.scanner.engine.scans == [.quick])
     }
 }

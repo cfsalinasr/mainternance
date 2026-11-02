@@ -45,11 +45,14 @@ public final class ScanScheduler {
         self.sleep = sleep
     }
 
-    /// Takes new preferences. The newer `lastScheduledRun` wins, so values that do not know about a run recorded
-    /// meanwhile cannot make that slot run again. While the timer runs, checks at once.
+    /// Takes new preferences. The newer valid `lastScheduledRun` wins (`ScanSchedule.laterRun`), so values that do
+    /// not know about a run recorded meanwhile, or carry one far in the future, cannot make that slot run again.
+    /// While the timer runs, checks at once.
     public func update(_ preferences: AppPreferences) {
         var next = preferences
-        next.lastScheduledRun = Self.later(preferences.lastScheduledRun, current.lastScheduledRun)
+        next.lastScheduledRun = ScanSchedule.laterRun(
+            preferences.lastScheduledRun, current.lastScheduledRun, now: now()
+        )
         current = next
         if loop != nil {
             Task { await tick() }
@@ -89,7 +92,11 @@ public final class ScanScheduler {
         isTicking = true
         defer { isTicking = false }
         current.lastScheduledRun = moment
-        await preferences.save(current)
+        // Only the run is written (one locked read-modify-write): Settings owns every other field in the file.
+        let written = await preferences.update { $0.lastScheduledRun = moment }
+        current.lastScheduledRun = ScanSchedule.laterRun(
+            current.lastScheduledRun, written.lastScheduledRun, now: moment
+        )
         // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
         guard current.weeklyScanEnabled, scanner.canStartScan else { return }
         scanner.startingScheduledScan = true
@@ -98,13 +105,5 @@ public final class ScanScheduler {
         guard let summary = result else { return }
         lastScheduledScanFinished = summary
         onScheduledScanFinished?(summary)
-    }
-
-    private static func later(_ first: Date?, _ second: Date?) -> Date? {
-        switch (first, second) {
-        case let (first?, second?): max(first, second)
-        case let (first?, nil): first
-        case let (nil, second): second
-        }
     }
 }

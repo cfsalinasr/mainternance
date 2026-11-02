@@ -234,4 +234,30 @@ struct ScanSchedulerTests {
         rig.scheduler.stop()
         #expect(rig.scanner.engine.scans == [.quick])
     }
+
+    /// The scheduler writes only its run: a value Settings saved meanwhile is not written back over.
+    @Test func theSchedulerWritesOnlyItsRun() async {
+        let rig = await SchedulerRig.make(lastRun: nil, now: utc("2026-11-04 10:00"))
+        rig.store.configure { $0.stored.problemAlerts = false; $0.stored.schedule.minute = 45 }
+        await rig.scheduler.tick()
+        #expect(rig.scanner.engine.scans == [.quick])
+        #expect(rig.store.stored.lastScheduledRun == utc("2026-11-04 10:00"))
+        #expect(!rig.store.stored.problemAlerts)
+        #expect(rig.store.stored.schedule.minute == 45)
+    }
+
+    /// A recorded run more than a week ahead is not real: it does not block the schedule, and values carrying one
+    /// cannot replace a real run recorded in this slot (which would make the slot run twice).
+    @Test func aRunRecordedFarAheadIsIgnored() async {
+        let now = utc("2026-11-04 10:00")
+        let rig = await SchedulerRig.make(lastRun: now.addingTimeInterval(30 * 86400), now: now)
+        await rig.scheduler.tick()
+        #expect(rig.scanner.engine.scans == [.quick])
+        var bogus = rig.prefs
+        bogus.lastScheduledRun = now.addingTimeInterval(60 * 86400)
+        rig.scheduler.update(bogus)
+        rig.clock.set(utc("2026-11-04 10:05"))
+        await rig.scheduler.tick()
+        #expect(rig.scanner.engine.scans == [.quick])
+    }
 }

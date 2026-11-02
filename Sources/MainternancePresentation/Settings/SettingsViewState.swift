@@ -31,12 +31,20 @@ enum SettingsText {
     static let launchAtLogin = "Launch at login"
     static let weeklyScanToggle = "Run a quick scan every week"
     static let problemAlerts = "Problem alerts"
-    static let problemAlertsHint = "A notification when a scan finds files to review"
+    static let problemAlertsHint = "A notification when a scan finds something to review"
     static let weeklyDigest = "Weekly digest"
-    static let weeklyDigestHint = "A notification with the result of each weekly scan"
+    static let weeklyDigestHint = "A notification with the result when a weekly scan finishes"
     static let weeklyScanOff = "The weekly quick scan is off."
-    static let runsWhileOpen = "Runs only while Mainternance is open; turn on Launch at login to keep it running."
-    static let runsWhileOpenAtLogin = "Runs only while Mainternance is open; it opens at login."
+    static let runsWhileOpen = "It runs only while Mainternance is open; turn on Launch at login to keep it running."
+    static let runsWhileOpenAtLogin = "It runs only while Mainternance is open; it opens at login."
+    static let runsOnceApproved = [
+        "It runs only while Mainternance is open;",
+        "it opens at login once you allow it in System Settings > General > Login Items."
+    ].joined(separator: " ")
+    static let missedRun =
+        "If the Mac is asleep or Mainternance is closed at that time, it runs the next time Mainternance runs."
+    static let allowNotifications = "Allow notifications to receive these"
+    static let allowNotificationsButton = "Allow Notifications"
     static let loginApproval = [
         "Launch at login needs your approval:",
         "open System Settings > General > Login Items and allow Mainternance."
@@ -56,9 +64,12 @@ enum SettingsText {
 /// The live Settings screen. Values are saved through `PreferencesStoring`; "Launch at login" and the notification
 /// permission always show what macOS reports, never what was asked for.
 ///
-/// Saves run one after another in the order the changes were made, so the last change is the one on disk. A save
-/// keeps the newer of the two `lastScheduledRun` values (the scheduler records its runs in the same file), so a
-/// Settings change can never erase that record and make the weekly scan run twice in one week.
+/// Each change is written with `PreferencesStoring.update`, which changes only the fields that change touched in
+/// one locked read-modify-write; the scheduler records its runs in the same file the same way, so neither can write
+/// back an old value of the other's fields. Changes are written one after another in the order they were made.
+///
+/// Notification permission is only ever requested from an action here (turning a toggle on, or the "Allow
+/// Notifications" button), never from a background event.
 @MainActor
 @Observable
 public final class SettingsViewState {
@@ -78,6 +89,8 @@ public final class SettingsViewState {
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var pendingSave: Task<Date?, Never>?
     @ObservationIgnored private var askedForPermission = false
+    /// False until the permission was read once, so nothing is claimed about it before.
+    private var authorizationKnown = false
 
     public init(
         preferences: any PreferencesStoring, loginItem: any LoginItemControlling,
@@ -92,9 +105,10 @@ public final class SettingsViewState {
 
     // MARK: - Derived state
 
-    /// The toggle shows the real login-item state: on only when macOS has it enabled.
+    /// The toggle shows the real login-item state: on when macOS has it enabled or registered and waiting for the
+    /// owner's approval (with a note saying where), so turning it off can unregister it.
     var launchAtLogin: Bool {
-        loginStatus == .enabled
+        loginStatus == .enabled || loginStatus == .requiresApproval
     }
 
     var weekday: Int {
@@ -132,6 +146,15 @@ public final class SettingsViewState {
         }
     }
 
+    /// Shown with the "Allow Notifications" button while macOS has never been asked and a notification toggle is
+    /// on (a fresh install has both on).
+    var notificationPermissionNote: String? {
+        guard authorizationKnown, notificationAuthorization == .notDetermined,
+              current.problemAlerts || current.weeklyDigest
+        else { return nil }
+        return SettingsText.allowNotifications
+    }
+
     /// The lines shown under the controls, each once.
     var notes: [String] {
         var seen: [String] = []
@@ -147,17 +170,26 @@ public final class SettingsViewState {
     public func load() async {
         let loaded = await preferences.load()
         loginStatus = loginItem.status()
-        notificationAuthorization = await notifications.authorization()
+        await readAuthorization()
         current = loaded
         current.launchAtLogin = launchAtLogin
         onChange?(current)
     }
 
-    /// Re-reads what macOS reports (the owner may have changed it in System Settings). Writes nothing.
+    /// Re-reads what macOS reports (the owner may have changed it in System Settings). Writes nothing. An approval
+    /// note from an earlier attempt goes once approval is no longer pending.
     public func refreshStatus() async {
         loginStatus = loginItem.status()
+        if message == SettingsText.loginApproval, loginStatus != .requiresApproval {
+            message = nil
+        }
         current.launchAtLogin = launchAtLogin
+        await readAuthorization()
+    }
+
+    private func readAuthorization() async {
         notificationAuthorization = await notifications.authorization()
+        authorizationKnown = true
     }
 
     // MARK: - Changes
@@ -173,29 +205,53 @@ public final class SettingsViewState {
             loginStatus = loginItem.status()
             message = error.localizedDescription
         }
-        current.launchAtLogin = launchAtLogin
-        await commit()
+        let shown = launchAtLogin
+        await commit { $0.launchAtLogin = shown }
     }
 
     /// Turning it on marks the current week as done, so the first scheduled scan runs at the next scheduled time
-    /// rather than at once for a time that already passed.
+    /// rather than at once for a time that already passed. The notification permission is re-read so the note
+    /// asking for it shows when it is still undecided.
     public func setWeeklyScanEnabled(_ enabled: Bool) async {
-        if enabled, !current.weeklyScanEnabled {
-            current.lastScheduledRun = Self.later(current.lastScheduledRun, now())
+        let markDone = enabled && !current.weeklyScanEnabled
+        let moment = now()
+        await commit { prefs in
+            prefs.weeklyScanEnabled = enabled
+            if markDone {
+                Self.markCurrentWeekDone(&prefs, at: moment)
+            }
         }
-        current.weeklyScanEnabled = enabled
-        await commit()
+        if enabled {
+            await readAuthorization()
+        }
     }
 
+    /// Like turning the scan on, a new day (or the same one chosen again) marks the current week as done: a time
+    /// that already passed this week never starts a scan at once.
     public func setWeekday(_ value: Int) async {
-        current.schedule.weekday = ScheduleInput.weekday(value)
-        await commit()
+        let day = ScheduleInput.weekday(value)
+        let moment = now()
+        await commit { prefs in
+            prefs.schedule.weekday = day
+            Self.markCurrentWeekDone(&prefs, at: moment)
+        }
     }
 
+    /// See `setWeekday`: each step of the time picker marks the current week as done.
     public func setTime(hour: Int, minute: Int) async {
-        current.schedule.hour = ScheduleInput.hour(hour)
-        current.schedule.minute = ScheduleInput.minute(minute)
-        await commit()
+        let hour = ScheduleInput.hour(hour)
+        let minute = ScheduleInput.minute(minute)
+        let moment = now()
+        await commit { prefs in
+            prefs.schedule.hour = hour
+            prefs.schedule.minute = minute
+            Self.markCurrentWeekDone(&prefs, at: moment)
+        }
+    }
+
+    /// The recorded run becomes `moment` unless a later valid one is already recorded.
+    private nonisolated static func markCurrentWeekDone(_ prefs: inout AppPreferences, at moment: Date) {
+        prefs.lastScheduledRun = ScanSchedule.laterRun(prefs.lastScheduledRun, moment, now: moment)
     }
 
     func setTime(from date: Date, calendar: Calendar = .current) async {
@@ -204,54 +260,48 @@ public final class SettingsViewState {
     }
 
     public func setProblemAlerts(_ enabled: Bool) async {
-        current.problemAlerts = enabled
+        await commit { $0.problemAlerts = enabled }
         if enabled {
             await askForPermissionIfUndecided()
         }
-        await commit()
     }
 
     public func setWeeklyDigest(_ enabled: Bool) async {
-        current.weeklyDigest = enabled
+        await commit { $0.weeklyDigest = enabled }
         if enabled {
             await askForPermissionIfUndecided()
         }
-        await commit()
     }
 
-    /// macOS shows its prompt only while undecided; it is asked at most once per launch.
-    private func askForPermissionIfUndecided() async {
-        notificationAuthorization = await notifications.authorization()
-        guard notificationAuthorization == .notDetermined, !askedForPermission else { return }
+    /// The "Allow Notifications" button. macOS shows its prompt only while undecided.
+    public func requestNotificationPermission() async {
         askedForPermission = true
         notificationAuthorization = await notifications.requestAuthorization()
+        authorizationKnown = true
     }
 
-    /// Reports the change at once (the scheduler must hold the new values before anything is written), then saves
-    /// `current` after every earlier save finished, keeping the newer `lastScheduledRun`.
-    private func commit() async {
+    /// Turning a toggle on asks at most once per launch, and only while undecided.
+    private func askForPermissionIfUndecided() async {
+        await readAuthorization()
+        guard notificationAuthorization == .notDetermined, !askedForPermission else { return }
+        await requestNotificationPermission()
+    }
+
+    /// Applies `change` to the shown values and reports them at once (the scheduler and the notifier must hold
+    /// them before anything is written), then writes the same change through `update` after every earlier write
+    /// finished. A run the scheduler recorded meanwhile comes back with the result and is kept.
+    private func commit(_ change: @escaping @Sendable (inout AppPreferences) -> Void) async {
+        change(&current)
         onChange?(current)
-        let snapshot = current
         let previous = pendingSave
         let store = preferences
-        let save = Task<Date?, Never> {
-            await previous?.value
-            var merged = snapshot
-            merged.lastScheduledRun = await Self.later(snapshot.lastScheduledRun, store.load().lastScheduledRun)
-            await store.save(merged)
-            return merged.lastScheduledRun
+        let write = Task<Date?, Never> {
+            _ = await previous?.value
+            return await store.update(change).lastScheduledRun
         }
-        pendingSave = save
-        let lastRun = await save.value
-        current.lastScheduledRun = Self.later(current.lastScheduledRun, lastRun)
-    }
-
-    private nonisolated static func later(_ first: Date?, _ second: Date?) -> Date? {
-        switch (first, second) {
-        case let (first?, second?): max(first, second)
-        case let (first?, nil): first
-        case let (nil, second): second
-        }
+        pendingSave = write
+        let recorded = await write.value
+        current.lastScheduledRun = ScanSchedule.laterRun(current.lastScheduledRun, recorded, now: now())
     }
 
     // MARK: - Text
@@ -267,18 +317,16 @@ public final class SettingsViewState {
         calendar.date(from: DateComponents(hour: hour, minute: minute)) ?? Date(timeIntervalSinceReferenceDate: 0)
     }
 
-    /// "Weekly quick scan, Sunday 02:00. Runs only while ..."; the clock follows the locale (12 h or 24 h).
+    /// "Weekly, Sunday 02:00: a quick scan. It runs only while ..."; the day and time come from
+    /// `ScanSchedule.description`, whose clock follows the locale (12 h or 24 h).
     func scheduleSummary(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         guard current.weeklyScanEnabled else { return SettingsText.weeklyScanOff }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = locale
-        calendar.timeZone = timeZone
-        let day = ScanSchedule.weekdayName(weekday, calendar: calendar)
-        let time = calendar.date(from: DateComponents(hour: hour, minute: minute))
-            .map {
-                $0.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: timeZone).hour().minute())
-            } ?? ""
-        let keepsRunning = launchAtLogin ? SettingsText.runsWhileOpenAtLogin : SettingsText.runsWhileOpen
-        return "Weekly quick scan, \(day) \(time). \(keepsRunning)"
+        let keepsRunning = switch loginStatus {
+        case .enabled: SettingsText.runsWhileOpenAtLogin
+        case .requiresApproval: SettingsText.runsOnceApproved
+        case .disabled, .unavailable: SettingsText.runsWhileOpen
+        }
+        let when = current.schedule.description(locale: locale, timeZone: timeZone)
+        return "\(when): a quick scan. \(keepsRunning) \(SettingsText.missedRun)"
     }
 }

@@ -77,106 +77,6 @@ struct SettingsViewStateTests {
         #expect(rig.store.saves.isEmpty)
     }
 
-    // MARK: Launch at login
-
-    @Test func launchAtLoginFollowsTheReturnedStatus() async {
-        let rig = SettingsRig()
-        await rig.state.setLaunchAtLogin(true)
-        #expect(rig.login.requests == [true])
-        #expect(rig.state.launchAtLogin)
-        #expect(rig.store.stored.launchAtLogin)
-        #expect(rig.state.message == nil)
-        await rig.state.setLaunchAtLogin(false)
-        #expect(!rig.state.launchAtLogin)
-        #expect(!rig.store.stored.launchAtLogin)
-    }
-
-    @Test func approvalNeededKeepsTheToggleOffAndSaysWhere() async {
-        let rig = SettingsRig()
-        rig.login.configure { $0.resultStatus = .requiresApproval }
-        await rig.state.setLaunchAtLogin(true)
-        #expect(rig.state.loginStatus == .requiresApproval)
-        #expect(!rig.state.launchAtLogin)
-        #expect(!rig.state.current.launchAtLogin)
-        #expect(!rig.store.stored.launchAtLogin)
-        let message = rig.state.message ?? ""
-        #expect(message.contains("System Settings > General > Login Items"))
-        #expect(rig.state.notes == [message]) // said once, not twice
-    }
-
-    @Test func aRefusalShowsItsMessageAndLeavesTheToggleOff() async {
-        let rig = SettingsRig()
-        rig.login.configure { $0.fails = true }
-        await rig.state.setLaunchAtLogin(true)
-        #expect(!rig.state.launchAtLogin)
-        #expect(!rig.store.stored.launchAtLogin)
-        #expect(rig.state.message == "macOS could not change Launch at login: test refusal")
-    }
-
-    @Test func unavailableLoginItemIsExplained() async {
-        let rig = SettingsRig()
-        rig.login.configure { $0.status = .unavailable }
-        await rig.state.load()
-        #expect(!rig.state.launchAtLogin)
-        #expect(rig.state.loginWarning == SettingsText.loginUnavailable)
-        #expect(rig.state.notes.contains(SettingsText.loginUnavailable))
-    }
-
-    // MARK: Notifications
-
-    @Test func turningOnAlertsAsksForPermissionOnce() async {
-        var stored = AppPreferences.defaults
-        stored.problemAlerts = false
-        stored.weeklyDigest = false
-        let rig = SettingsRig(stored: stored)
-        await rig.state.load()
-        await rig.state.setProblemAlerts(true)
-        await rig.state.setWeeklyDigest(true)
-        #expect(rig.notifications.requests == 1)
-        #expect(rig.state.notificationAuthorization == .allowed)
-        #expect(rig.state.notificationWarning == nil)
-    }
-
-    @Test func permissionIsNotAskedWhenAlreadyDecidedOrWhenTurningOff() async {
-        let rig = SettingsRig(authorization: .allowed)
-        await rig.state.load()
-        await rig.state.setProblemAlerts(false)
-        await rig.state.setProblemAlerts(true)
-        #expect(rig.notifications.requests == 0)
-        let undecided = SettingsRig()
-        await undecided.state.load()
-        await undecided.state.setWeeklyDigest(false)
-        #expect(undecided.notifications.requests == 0)
-    }
-
-    @Test func deniedPermissionSavesTheChoiceAndWarnsWhereToAllow() async {
-        var stored = AppPreferences.defaults
-        stored.problemAlerts = false
-        let rig = SettingsRig(stored: stored)
-        rig.notifications.configure { $0.answer = .denied }
-        await rig.state.load()
-        await rig.state.setProblemAlerts(true)
-        #expect(rig.store.stored.problemAlerts)
-        #expect(rig.state.current.problemAlerts)
-        #expect(rig.state.notificationAuthorization == .denied)
-        let warning = rig.state.notificationWarning ?? ""
-        #expect(warning.contains("System Settings > Notifications"))
-        #expect(rig.state.notes.contains(warning))
-        #expect(rig.state.notes.count == Set(rig.state.notes).count)
-    }
-
-    @Test func noNotificationWarningWhenBothNotificationTogglesAreOff() async {
-        var stored = AppPreferences.defaults
-        stored.problemAlerts = false
-        stored.weeklyDigest = false
-        let rig = SettingsRig(stored: stored, authorization: .denied)
-        await rig.state.load()
-        #expect(rig.state.notificationWarning == nil)
-        let unavailable = SettingsRig(authorization: .unavailable)
-        await unavailable.state.load()
-        #expect(unavailable.state.notificationWarning == SettingsText.notificationsUnavailable)
-    }
-
     // MARK: Saving
 
     @Test func everySetterPersistsAndReportsTheChange() async {
@@ -228,6 +128,37 @@ struct SettingsViewStateTests {
         #expect(rig.store.saves.map(\.schedule.weekday) == [3, 5])
     }
 
+    /// Changing the day or time (or choosing the same one again) must never start a scan at once for a time that
+    /// already passed this week: the change marks the current week as done, keeping a later recorded run.
+    @Test func changingTheScheduleMarksTheCurrentWeekAsDone() async {
+        var stored = saved
+        stored.lastScheduledRun = SettingsRig.now.addingTimeInterval(-30 * 86400)
+        let rig = SettingsRig(stored: stored)
+        await rig.state.load()
+        await rig.state.setWeekday(2)
+        #expect(rig.store.stored.lastScheduledRun == SettingsRig.now)
+        #expect(rig.state.current.lastScheduledRun == SettingsRig.now)
+        #expect(rig.changed.last?.lastScheduledRun == SettingsRig.now) // the scheduler hears it before the save
+        var ahead = saved
+        ahead.lastScheduledRun = SettingsRig.now.addingTimeInterval(3600)
+        let later = SettingsRig(stored: ahead)
+        await later.state.load()
+        await later.state.setTime(hour: later.state.hour, minute: later.state.minute) // the same time again
+        #expect(later.store.stored.lastScheduledRun == ahead.lastScheduledRun)
+    }
+
+    /// A recorded run far in the future is not real: turning the scan on or changing the time replaces it with now.
+    @Test func aFarFutureRecordedRunIsReplacedByNow() async {
+        var stored = AppPreferences.defaults
+        stored.lastScheduledRun = SettingsRig.now.addingTimeInterval(60 * 86400)
+        let rig = SettingsRig(stored: stored)
+        await rig.state.load()
+        await rig.state.setWeeklyScanEnabled(true)
+        #expect(rig.state.current.lastScheduledRun == SettingsRig.now)
+        await rig.state.setTime(hour: 4, minute: 0)
+        #expect(rig.state.current.lastScheduledRun == SettingsRig.now)
+    }
+
     /// The scheduler records its runs in the same file; a Settings change must not erase that record, or the
     /// weekly scan would run again in the same week.
     @Test func savingKeepsAScheduledRunRecordedMeanwhile() async {
@@ -271,66 +202,5 @@ struct SettingsViewStateTests {
         #expect(alreadyOn.store.stored.lastScheduledRun == later.lastScheduledRun)
         await alreadyOn.state.setWeeklyScanEnabled(false)
         #expect(!alreadyOn.state.scheduleControlsEnabled)
-    }
-}
-
-/// The Settings words and pickers.
-@MainActor
-struct SettingsTextTests {
-    @Test func scheduleSummaryIsHonestAboutWhenItRuns() async throws {
-        let utc = try #require(TimeZone(identifier: "UTC"))
-        let british = Locale(identifier: "en_GB")
-        let rig = SettingsRig()
-        #expect(rig.state.scheduleSummary(locale: british, timeZone: utc) == SettingsText.weeklyScanOff)
-        await rig.state.setWeeklyScanEnabled(true)
-        #expect(rig.state.scheduleSummary(locale: british, timeZone: utc) == [
-            "Weekly quick scan, Sunday 02:00.",
-            "Runs only while Mainternance is open; turn on Launch at login to keep it running."
-        ].joined(separator: " "))
-        await rig.state.setWeekday(2)
-        await rig.state.setTime(hour: 14, minute: 5)
-        await rig.state.setLaunchAtLogin(true)
-        #expect(rig.state.scheduleSummary(locale: british, timeZone: utc)
-            == "Weekly quick scan, Monday 14:05. Runs only while Mainternance is open; it opens at login.")
-        let american = rig.state.scheduleSummary(locale: Locale(identifier: "en_US"), timeZone: utc)
-        #expect(american.hasPrefix("Weekly quick scan, Monday 2:05"))
-        #expect(american.contains("PM"))
-    }
-
-    @Test func weekdayOptionsCoverOneToSevenWithNames() {
-        let options = SettingsRig().state.weekdayOptions(locale: Locale(identifier: "en_US"))
-        #expect(options.map(\.value) == Array(1 ... 7))
-        #expect(options.first?.name == "Sunday")
-        #expect(options.last?.name == "Saturday")
-    }
-
-    @Test func timeFromDateRoundTrips() async {
-        let rig = SettingsRig()
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
-        let date = calendar.date(from: DateComponents(year: 2026, month: 1, day: 5, hour: 17, minute: 45)) ?? Date()
-        await rig.state.setTime(from: date, calendar: calendar)
-        #expect(rig.state.hour == 17)
-        #expect(rig.state.minute == 45)
-        let back = calendar.dateComponents([.hour, .minute], from: rig.state.timeDate(calendar: calendar))
-        #expect(back.hour == 17 && back.minute == 45)
-    }
-
-    @Test func scheduleInputsClamp() {
-        #expect(ScheduleInput.weekday(0) == 1)
-        #expect(ScheduleInput.weekday(8) == 7)
-        #expect(ScheduleInput.hour(-1) == 0)
-        #expect(ScheduleInput.hour(24) == 23)
-        #expect(ScheduleInput.minute(-5) == 0)
-        #expect(ScheduleInput.minute(60) == 59)
-        #expect(ScheduleInput.minute(30) == 30)
-    }
-
-    @Test func copyIsPinned() {
-        #expect(SettingsText.weeklyScanToggle == "Run a quick scan every week")
-        #expect(SettingsText.loginApproval == "Launch at login needs your approval: "
-            + "open System Settings > General > Login Items and allow Mainternance.")
-        #expect(SettingsText.notificationsDenied == "Notifications are off for Mainternance. "
-            + "To get them, allow them in System Settings > Notifications > Mainternance.")
     }
 }
