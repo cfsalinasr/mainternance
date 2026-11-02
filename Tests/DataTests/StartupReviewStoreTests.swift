@@ -38,10 +38,30 @@ struct StartupReviewStoreTests {
         let later = await services.lister.list()
         #expect(later.newCount == 1)
         #expect(later.items.filter(\.isNew).map(\.label) == ["com.example.b"])
-        await services.reviewer.markReviewed(later.items.map(\.reviewKey))
+        #expect(await services.reviewer.markReviewed(later))
         let reviewed = await services.lister.list()
         #expect(reviewed.newCount == 0)
         #expect(reviewed.items.allSatisfy { !$0.isNew })
+    }
+
+    @Test("Home's counter is read again only after a minute, or once the screen listed or marked as reviewed")
+    func counterIsCached() async throws {
+        let fixture = try StartupFixture()
+        let clock = TestClock()
+        let services = fixture.services(clock: clock.reading)
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        _ = await services.lister.list() // the baseline
+        #expect(await services.newItemCounter.list().newCount == 0)
+        try fixture.job("com.example.b", in: fixture.userFolder)
+        clock.advance(59)
+        #expect(await services.newItemCounter.list().newCount == 0) // cached: no file read
+        clock.advance(1)
+        #expect(await services.newItemCounter.list().newCount == 1) // a minute old: read again
+        let listed = await services.lister.list() // the Startup screen refreshed
+        try fixture.job("com.example.c", in: fixture.userFolder)
+        #expect(await services.newItemCounter.list().newCount == 2)
+        #expect(await services.reviewer.markReviewed(listed))
+        #expect(await services.newItemCounter.list().newCount == 1) // only c, added after that listing
     }
 
     @Test("Home's counter never writes the baseline and never runs launchctl")
@@ -76,6 +96,111 @@ struct StartupReviewStoreTests {
         #expect(states == [
             "com.user.off": false, "com.user.default": true, "com.allusers.off": false, "com.daemon.off": false
         ])
+    }
+
+    @Test("with no launchd entry for a label, the plist's own Disabled key decides: true is Off, else On")
+    func plistDisabledKey() async throws {
+        let fixture = try StartupFixture()
+        let program = ["/bin/true"]
+        try fixture.plist("a.plist", in: fixture.userFolder, ["Label": "com.file.off", "Disabled": true,
+                                                              "ProgramArguments": program])
+        try fixture.plist("b.plist", in: fixture.userFolder, ["Label": "com.file.on", "Disabled": false,
+                                                              "ProgramArguments": program])
+        try fixture.plist("c.plist", in: fixture.userFolder, ["Label": "com.override.on", "Disabled": true,
+                                                              "ProgramArguments": program])
+        try fixture.plist("d.plist", in: fixture.daemonFolder, ["Label": "com.daemon.off", "Disabled": true,
+                                                                "ProgramArguments": program])
+        try fixture.job("com.file.silent", in: fixture.userFolder)
+        fixture.launchctl.configure {
+            $0.user = FakeLaunchctl.disabledOutput([("com.override.on", true)])
+            $0.system = FakeLaunchctl.disabledOutput([])
+        }
+        let items = await fixture.services().lister.list().items
+        let states = Dictionary(uniqueKeysWithValues: items.map { ($0.label ?? "", $0.isEnabled) })
+        #expect(states == [
+            "com.file.off": false, "com.file.on": true, "com.override.on": true, "com.daemon.off": false,
+            "com.file.silent": true
+        ])
+    }
+
+    @Test("an item keyed by its path while unreadable is not new once it reads with its label")
+    func unreadableThenLabeled() async throws {
+        let fixture = try StartupFixture()
+        let services = fixture.services()
+        let path = try fixture.raw("com.example.a.plist", in: fixture.userFolder, Data("garbage".utf8))
+        _ = await services.lister.list() // baseline: the path, since there was no label to read
+        #expect(try savedKeys(fixture) == ["path:\(path)"])
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        let later = await services.lister.list()
+        #expect(later.newCount == 0)
+        #expect(later.items.allSatisfy { !$0.isNew })
+    }
+
+    @Test("an invalid label is remembered by path")
+    func invalidLabelByPath() async throws {
+        let fixture = try StartupFixture()
+        let path = try fixture.job("--version", in: fixture.userFolder, file: "odd.plist")
+        _ = await fixture.services().lister.list()
+        #expect(try savedKeys(fixture) == ["path:\(path)"])
+    }
+
+    @Test("marking as reviewed while a launchd folder cannot be opened keeps what was known for that folder")
+    func unreadableFolderKeepsKnownKeys() async throws {
+        let fixture = try StartupFixture()
+        let services = fixture.services()
+        try fixture.job("com.allusers.a", in: fixture.agentFolder)
+        try fixture.job("com.user.a", in: fixture.userFolder)
+        try fixture.job("com.user.gone", in: fixture.userFolder, file: "gone.plist")
+        _ = await services.lister.list()
+        let manager = FileManager.default
+        try manager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fixture.agentFolder.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.agentFolder.path) }
+        let blind = await services.lister.list()
+        #expect(blind.unreadableFolders == [fixture.agentFolder.path])
+        var moved = blind
+        moved.items.removeAll { $0.label == "com.user.gone" } // not part of what was reviewed
+        #expect(await services.reviewer.markReviewed(moved))
+        #expect(try savedKeys(fixture) == ["label:com.allusers.a", "label:com.user.a"])
+        try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.agentFolder.path)
+        let seen = await services.lister.list()
+        #expect(seen.items.first { $0.label == "com.allusers.a" }?.isNew == false)
+        #expect(seen.items.first { $0.label == "com.user.gone" }?.isNew == true) // readable folders are exact
+    }
+
+    @Test("a review folder that cannot be written: the first baseline says so and Mark all as reviewed fails")
+    func readOnlyReviewFolder() async throws {
+        let fixture = try StartupFixture()
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        let manager = FileManager.default
+        try manager.createDirectory(at: fixture.reviewFolder, withIntermediateDirectories: true)
+        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.reviewFolder.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.reviewFolder.path) }
+        let services = fixture.services()
+        let first = await services.lister.list()
+        #expect(first.reviewReadOnly)
+        #expect(first.newCount == nil)
+        #expect(!first.baselineEstablished)
+        #expect(await !services.reviewer.markReviewed(first))
+        #expect(fixture.names(in: fixture.reviewFolder).isEmpty)
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.reviewFolder.path)
+        let writable = await services.lister.list()
+        #expect(!writable.reviewReadOnly)
+        #expect(await services.reviewer.markReviewed(writable))
+    }
+
+    @Test("an existing review in a folder that became read-only is still read, but flagged as not savable")
+    func readOnlyExistingReview() async throws {
+        let fixture = try StartupFixture()
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        let services = fixture.services()
+        _ = await services.lister.list()
+        let manager = FileManager.default
+        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.reviewFolder.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.reviewFolder.path) }
+        let later = await services.lister.list()
+        #expect(later.baselineEstablished)
+        #expect(later.newCount == 0)
+        #expect(later.reviewReadOnly)
     }
 
     @Test("when launchctl fails, the state is unknown for that domain only")

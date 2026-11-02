@@ -103,11 +103,14 @@ struct StartupFixture {
 
     typealias PathGuard = @Sendable (String) -> Bool
 
-    func services(isProtected: @escaping PathGuard = { ProtectedPaths.isProtected($0) }) -> StartupServices {
+    func services(
+        isProtected: @escaping PathGuard = { ProtectedPaths.isProtected($0) },
+        clock: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_800_000_000) }
+    ) -> StartupServices {
         let fake = trash
         return StartupServices(
             runner: launchctl.runner, directory: reviewFolder, uid: 501, sources: sources,
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }, trash: { try fake.trash($0) },
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }, clock: clock, trash: { try fake.trash($0) },
             isProtected: isProtected
         )
     }
@@ -136,6 +139,13 @@ struct StartupFixture {
         let url = folder.appendingPathComponent(name)
         try data.write(to: url)
         return url.path
+    }
+
+    /// A snapshot holding one of the owner's agents per label, as the screen hands it to `markReviewed`.
+    static func listing(_ labels: String...) -> StartupSnapshot {
+        StartupSnapshot(items: labels.map {
+            StartupItem(kind: .userAgent, plistPath: "/nowhere/\($0).plist", label: $0)
+        })
     }
 
     func names(in folder: URL) -> [String] {

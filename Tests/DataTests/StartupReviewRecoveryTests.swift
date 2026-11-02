@@ -49,7 +49,7 @@ struct StartupReviewRecoveryTests {
         #expect(snapshot.reviewUnreadable)
         #expect(snapshot.newCount == nil)
         #expect(snapshot.items.allSatisfy { !$0.isNew })
-        await services.reviewer.markReviewed(["label:com.example.a"])
+        #expect(await !services.reviewer.markReviewed(StartupFixture.listing("com.example.a")))
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fixture.reviewFile.path)
         #expect(try reviewText(fixture) == #"{"reviewed":["label:com.example.old"]}"#)
         #expect(fixture.names(in: fixture.reviewFolder) == ["startup-review.json"])
@@ -61,8 +61,27 @@ struct StartupReviewRecoveryTests {
         try FileManager.default.createDirectory(at: fixture.reviewFile, withIntermediateDirectories: true)
         let services = fixture.services()
         #expect(await services.lister.list().reviewUnreadable)
-        await services.reviewer.markReviewed(["label:x"])
+        #expect(await !services.reviewer.markReviewed(StartupFixture.listing("x")))
         #expect(fixture.names(in: fixture.reviewFolder) == ["startup-review.json"])
+    }
+
+    @Test("a FIFO in place of the file is unreadable and never blocks; an oversized file is moved aside as damaged")
+    func boundedRead() async throws {
+        let fixture = try StartupFixture()
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        try FileManager.default.createDirectory(at: fixture.reviewFolder, withIntermediateDirectories: true)
+        #expect(mkfifo(fixture.reviewFile.path, 0o600) == 0)
+        let services = fixture.services()
+        let blocked = await within(5, "a FIFO must not block the review store") { await services.lister.list() }
+        #expect(blocked?.reviewUnreadable == true)
+        #expect(await within(5, "nor Mark all as reviewed") {
+            await services.reviewer.markReviewed(StartupFixture.listing("a"))
+        } == false)
+        let other = try StartupFixture()
+        try writeReview(String(repeating: " ", count: StartupReviewStore.maxBytes + 1), other)
+        let large = await other.services().lister.list()
+        #expect(!large.reviewUnreadable)
+        #expect(other.names(in: other.reviewFolder) == ["startup-review.json", asideName])
     }
 
     @Test("past the bounded number of damaged copies the oldest goes to the (fake) Trash, never deleted")
@@ -71,7 +90,7 @@ struct StartupReviewRecoveryTests {
         let services = fixture.services()
         for index in 0 ... StartupReviewStore.maxDamagedCopies {
             try writeReview("damaged \(index)", fixture)
-            await services.reviewer.markReviewed(["label:a"])
+            #expect(await services.reviewer.markReviewed(StartupFixture.listing("a")))
         }
         #expect(fixture.trash.trashed.map(\.lastPathComponent) == [asideName])
         let trashed = fixture.trash.folder.appendingPathComponent(asideName)
@@ -86,7 +105,7 @@ struct StartupReviewRecoveryTests {
         let fixture = try StartupFixture()
         for index in 0 ..< StartupReviewStore.maxDamagedCopies {
             try writeReview("damaged \(index)", fixture)
-            await fixture.services().reviewer.markReviewed(["label:a"])
+            #expect(await fixture.services().reviewer.markReviewed(StartupFixture.listing("a")))
         }
         let asked = Mutex<[String]>([])
         let guarded = fixture.services { path in
@@ -95,7 +114,7 @@ struct StartupReviewRecoveryTests {
         }
         try writeReview("one too many", fixture)
         let snapshot = await guarded.lister.list()
-        await guarded.reviewer.markReviewed(["label:a"])
+        #expect(await !guarded.reviewer.markReviewed(StartupFixture.listing("a")))
         #expect(snapshot.reviewUnreadable)
         #expect(snapshot.newCount == nil)
         #expect(asked.withLock { $0 }.first == fixture.reviewFolder.appendingPathComponent(asideName).path)
@@ -114,7 +133,7 @@ struct StartupReviewRecoveryTests {
         let services = fixture.services()
         for index in 0 ..< StartupReviewStore.maxDamagedCopies {
             try writeReview("damaged \(index)", fixture)
-            await services.reviewer.markReviewed(["label:a"])
+            #expect(await services.reviewer.markReviewed(StartupFixture.listing("a")))
         }
         #expect(fixture.trash.trashed.isEmpty)
         for stray in strays {

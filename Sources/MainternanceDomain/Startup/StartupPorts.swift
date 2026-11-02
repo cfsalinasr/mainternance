@@ -2,8 +2,10 @@ import Foundation
 
 /// Why a startup item could not be switched.
 public enum StartupError: Error, Equatable, LocalizedError {
-    /// Not one of the owner's own agents (or its file could not be read): it needs an administrator.
+    /// Not one of the owner's own agents: read-only here by design.
     case notAllowed
+    /// The item's file could not be read, so nothing about it is trusted enough to switch.
+    case unreadable
     /// The label is missing or not safe to pass to `launchctl`.
     case invalidLabel
     /// `launchctl` refused; carries its reason.
@@ -12,8 +14,10 @@ public enum StartupError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notAllowed:
-            "Only your own agents can be switched here. This one needs an administrator: "
-                + "change it in the app that installed it."
+            "Only your own agents can be switched here. "
+                + "This one is installed for all users: change it in the app that installed it."
+        case .unreadable:
+            "This item's file could not be read, so nothing was changed."
         case .invalidLabel:
             "This item's label cannot be passed to launchctl safely, so nothing was changed."
         case let .failed(reason):
@@ -35,6 +39,8 @@ public protocol StartupControlling: Sendable {
 
 /// Remembers which items the owner has seen.
 public protocol StartupReviewing: Sendable {
-    /// Makes `labels` (the items' `reviewKey`s) the new baseline: nothing in it counts as new afterwards.
-    func markReviewed(_ labels: [String]) async
+    /// Makes the items in `snapshot` the new baseline: none of them counts as new afterwards. What was known
+    /// before for a folder the snapshot could not open is kept. False when the baseline could not be saved
+    /// (nothing changed).
+    func markReviewed(_ snapshot: StartupSnapshot) async -> Bool
 }

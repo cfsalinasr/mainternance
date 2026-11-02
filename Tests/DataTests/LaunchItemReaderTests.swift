@@ -27,7 +27,19 @@ struct LaunchItemReaderTests {
         #expect(item.runsAtLoad == true)
         #expect(item.readProblem == nil)
         #expect(item.isEnabled == nil) // the reader knows nothing about launchd's state
+        #expect(!item.disabledInFile)
         #expect(item.canToggle)
+    }
+
+    @Test("the plist's Disabled key is read: only true counts as disabled")
+    func disabledKey() throws {
+        let fixture = try StartupFixture()
+        try fixture.plist("a.plist", in: fixture.userFolder, ["Label": "com.a", "Disabled": true])
+        try fixture.plist("b.plist", in: fixture.userFolder, ["Label": "com.b", "Disabled": false])
+        try fixture.plist("c.plist", in: fixture.userFolder, ["Label": "com.c", "Disabled": "yes"])
+        let items = fixture.reader.read().items
+        #expect(items.map(\.label) == ["com.a", "com.b", "com.c"])
+        #expect(items.map(\.disabledInFile) == [true, false, false])
     }
 
     @Test("Program wins over ProgramArguments; a binary property list reads the same")

@@ -16,6 +16,7 @@ struct StartupViewStateTests {
         await rig.state.refresh()
         #expect(rig.state.snapshot == StartupRig.sample)
         #expect(!rig.state.isLoading)
+        #expect(!rig.state.showsLoading)
         #expect(rig.state.items(of: .userAgent).map(\.label) == ["com.example.updater", "com.example.sync"])
         #expect(rig.state.items(of: .systemAgent).count == 1)
         #expect(rig.state.items(of: .systemDaemon).count == 1)
@@ -54,13 +55,13 @@ struct StartupViewStateTests {
         await rig.state.refresh()
         for item in rig.state.items(of: .systemAgent) + rig.state.items(of: .systemDaemon) {
             #expect(!item.canToggle)
-            #expect(rig.state.adminNote(item) == StartupText.needsAdmin)
+            #expect(rig.state.readOnlyNote(item) == StartupText.allUsersNote)
             await rig.state.setEnabled(item.id, false)
         }
         #expect(rig.fake.toggles.isEmpty)
         #expect(rig.state.message == StartupError.notAllowed.errorDescription)
         let own = try #require(rig.state.items(of: .userAgent).first)
-        #expect(rig.state.adminNote(own) == nil)
+        #expect(rig.state.readOnlyNote(own) == nil)
     }
 
     @Test("an id that is not listed changes nothing")
@@ -86,7 +87,7 @@ struct StartupViewStateTests {
         #expect(rig.state.snapshot?.newCount == 0)
     }
 
-    @Test("the first listing says it shows a baseline from today, until everything is marked as reviewed")
+    @Test("only the listing that created the baseline says so; the next reading (which can show New) does not")
     func baselineNote() async {
         var first = StartupRig.sample
         first.baselineEstablished = false
@@ -95,11 +96,10 @@ struct StartupViewStateTests {
         #expect(rig.state.baselineNote == nil) // nothing claimed before the first reading
         await rig.state.refresh()
         #expect(rig.state.baselineNote == "Showing a baseline from today: nothing counts as new yet.")
-        rig.fake.configure { $0.snapshot.baselineEstablished = true }
-        await rig.state.refresh() // a later reading in the same session still started from today's baseline
-        #expect(rig.state.baselineNote == StartupText.baselineFromToday)
-        await rig.state.markAllReviewed()
+        rig.fake.configure { $0.snapshot = StartupRig.sample } // a later reading, with one item new
+        await rig.state.refresh()
         #expect(rig.state.baselineNote == nil)
+        #expect(rig.state.snapshot?.items.contains(where: \.isNew) == true)
     }
 
     @Test("an unreadable review says nothing is marked as new; an established one says nothing")
@@ -175,25 +175,33 @@ struct StartupViewStateTests {
         #expect(rig.state.folderNotes == ["Could not open /Library/LaunchDaemons, so its items are not listed."])
         #expect(rig.state.rowNotes(twice) == [StartupText.duplicate])
         let other = try #require(rig.state.items(of: .systemAgent).first)
-        #expect(rig.state.rowNotes(other) == [StartupText.duplicate, StartupText.needsAdmin])
+        #expect(rig.state.rowNotes(other) == [StartupText.duplicate, StartupText.allUsersNote])
         let broken = try #require(rig.state.items(of: .userAgent).first { $0.readProblem != nil })
         #expect(rig.state.rowNotes(broken) == ["Could not be read: bad."])
         #expect(rig.state.notes == rig.state.folderNotes)
         await rig.state.setEnabled(broken.id, true) // a file that could not be read is never switched
-        #expect(rig.state.message == StartupError.notAllowed.errorDescription)
-        #expect(rig.state.notes == [StartupError.notAllowed.errorDescription ?? ""] + rig.state.folderNotes)
+        #expect(rig.state.message == StartupError.unreadable.errorDescription)
+        #expect(rig.state.notes == [StartupError.unreadable.errorDescription ?? ""] + rig.state.folderNotes)
+    }
+
+    @Test("label and program are shown without bidi, zero-width or control characters")
+    func sanitizedDetail() {
+        let item = StartupItem(
+            kind: .userAgent, plistPath: "/x/a.plist", label: "com.\u{202E}evil\u{200B}", program: "/bin/a\u{0007}b"
+        )
+        #expect(StartupRig().state.detail(item) == "com.evil · /bin/ab")
     }
 
     @Test("section titles and the footer are plain")
     func copy() {
         #expect(StartupKind.allCases.map(StartupText.sectionTitle) == [
-            "Your login items and agents", "Agents for all users", "System daemons"
+            "Your agents", "Agents for all users", "System daemons"
         ])
         #expect(StartupText.loginItemsFooter == [
             "Login items you added in System Settings > General > Login Items are managed by macOS",
             "and are not listed here."
         ].joined(separator: " "))
-        #expect(StartupText.needsAdmin == "Needs an administrator: change it in the app that installed it.")
+        #expect(StartupText.allUsersNote == "Installed for all users: Mainternance only switches your own agents.")
         #expect(StartupText.markAllReviewed == "Mark all as reviewed")
     }
 }

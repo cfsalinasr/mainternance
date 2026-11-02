@@ -8,10 +8,13 @@ enum StartupText {
     static let title = "Startup"
     static let intro = "Launch agents and daemons start programs when you log in or when the Mac starts."
     static let takesEffect = "Takes effect at your next login."
-    static let needsAdmin = "Needs an administrator: change it in the app that installed it."
+    static let allUsersNote = "Installed for all users: Mainternance only switches your own agents."
     static let baselineFromToday = "Showing a baseline from today: nothing counts as new yet."
     static let reviewUnreadable =
         "The list of items you already reviewed could not be read, so nothing is marked as new."
+    static let reviewNotSaved =
+        "Your review could not be saved, so nothing will be marked as new. Mark all as reviewed is off."
+    static let reviewSaveFailed = "Could not save your review, so nothing changed."
     static let loginItemsFooter = [
         "Login items you added in System Settings > General > Login Items are managed by macOS",
         "and are not listed here."
@@ -28,7 +31,7 @@ enum StartupText {
 
     static func sectionTitle(_ kind: StartupKind) -> String {
         switch kind {
-        case .userAgent: "Your login items and agents"
+        case .userAgent: "Your agents"
         case .systemAgent: "Agents for all users"
         case .systemDaemon: "System daemons"
         }
@@ -63,8 +66,6 @@ public final class StartupViewState {
     /// The result of the last action when it needs words.
     public private(set) var message: String?
     private var loadsInFlight = 0
-    /// True from a reading that only created the baseline until everything is marked as reviewed.
-    private var showingFirstBaseline = false
 
     @ObservationIgnored private let lister: any StartupListing
     @ObservationIgnored private let controller: any StartupControlling
@@ -89,6 +90,11 @@ public final class StartupViewState {
         loadsInFlight > 0
     }
 
+    /// The spinner: only while nothing has been read yet (a later reading keeps the rows on screen).
+    var showsLoading: Bool {
+        snapshot == nil && isLoading
+    }
+
     /// The "nothing found" message, only once something was read.
     var showsEmptyState: Bool {
         snapshot?.items.isEmpty == true
@@ -103,7 +109,11 @@ public final class StartupViewState {
         if snapshot.reviewUnreadable {
             return StartupText.reviewUnreadable
         }
-        return showingFirstBaseline || !snapshot.baselineEstablished ? StartupText.baselineFromToday : nil
+        if snapshot.reviewReadOnly {
+            return StartupText.reviewNotSaved
+        }
+        // Only the reading that created the baseline says so; the next one can already show items as New.
+        return snapshot.baselineEstablished ? nil : StartupText.baselineFromToday
     }
 
     var folderNotes: [String] {
@@ -119,14 +129,16 @@ public final class StartupViewState {
         return seen
     }
 
-    /// Only what was read can be marked as reviewed.
+    /// Only what was read can be marked as reviewed, and only while the review can be read and saved.
     var canMarkReviewed: Bool {
-        snapshot != nil
+        guard let snapshot else { return false }
+        return !snapshot.reviewUnreadable && !snapshot.reviewReadOnly
     }
 
-    /// "label · program", with plain words for what the file does not say.
+    /// "label · program" as display text (no bidi, zero-width or control characters), with plain words for what
+    /// the file does not say.
     func detail(_ item: StartupItem) -> String {
-        "\(item.label ?? StartupText.noLabel) · \(item.program ?? StartupText.noProgram)"
+        "\(item.displayLabel ?? StartupText.noLabel) · \(item.displayProgram ?? StartupText.noProgram)"
     }
 
     func duplicateNote(_ item: StartupItem) -> String? {
@@ -134,14 +146,14 @@ public final class StartupViewState {
         return StartupText.duplicate
     }
 
-    /// The small lines under a row: why it could not be read, a shared label, who may change it.
+    /// The small lines under a row: why it could not be read, a shared label, why it has no switch.
     func rowNotes(_ item: StartupItem) -> [String] {
-        [item.readProblem, duplicateNote(item), adminNote(item)].compactMap(\.self)
+        [item.readProblem, duplicateNote(item), readOnlyNote(item)].compactMap(\.self)
     }
 
-    /// Shown instead of a switch on items for all users and daemons.
-    func adminNote(_ item: StartupItem) -> String? {
-        item.kind == .userAgent ? nil : StartupText.needsAdmin
+    /// Shown instead of a switch on items for all users and daemons: read-only here by design.
+    func readOnlyNote(_ item: StartupItem) -> String? {
+        item.kind == .userAgent ? nil : StartupText.allUsersNote
     }
 
     /// A switch only for the owner's own agents whose state is known: a switch for an unknown state would claim one.
@@ -155,17 +167,19 @@ public final class StartupViewState {
 
     // MARK: - Actions
 
-    /// Reads everything again. Leaves `message` alone.
+    /// Reads everything again; the last action's message goes.
     public func refresh() async {
+        message = nil
+        await reload()
+    }
+
+    private func reload() async {
         generation += 1
         let mine = generation
         loadsInFlight += 1
         defer { loadsInFlight -= 1 }
         let read = await lister.list()
         guard mine == generation else { return }
-        if !read.baselineEstablished, !read.reviewUnreadable {
-            showingFirstBaseline = true
-        }
         snapshot = read
     }
 
@@ -173,8 +187,15 @@ public final class StartupViewState {
     /// listed or already switching; refused with the reason for an item that cannot be switched.
     public func setEnabled(_ id: String, _ enabled: Bool) async {
         guard let item = snapshot?.items.first(where: { $0.id == id }), !busyIDs.contains(id) else { return }
+        message = nil
         guard item.canToggle else {
-            let reason: StartupError = item.kind == .userAgent && item.readProblem == nil ? .invalidLabel : .notAllowed
+            let reason: StartupError = if item.kind != .userAgent {
+                .notAllowed
+            } else if item.readProblem != nil {
+                .unreadable
+            } else {
+                .invalidLabel
+            }
             message = reason.errorDescription
             return
         }
@@ -186,16 +207,20 @@ public final class StartupViewState {
             message = error.localizedDescription
             return
         }
-        await refresh()
+        await reload()
         message = StartupText.takesEffect
     }
 
-    /// Makes everything listed now the baseline, then reads again: no item is new afterwards.
+    /// Makes everything listed now the baseline, then reads again: no item is new afterwards. A review that could
+    /// not be saved says so. Not offered while the review cannot be read or saved (`canMarkReviewed`).
     public func markAllReviewed() async {
-        guard let items = snapshot?.items else { return }
-        await reviewer.markReviewed(items.map(\.reviewKey))
-        showingFirstBaseline = false
-        await refresh()
+        guard canMarkReviewed, let current = snapshot else { return }
+        message = nil
+        let saved = await reviewer.markReviewed(current)
+        await reload()
+        if !saved {
+            message = StartupText.reviewSaveFailed
+        }
     }
 
     /// Shows the item's property list in Finder; only for items in the snapshot.

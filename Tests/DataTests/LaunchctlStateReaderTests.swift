@@ -24,6 +24,26 @@ struct LaunchctlStateReaderTests {
         #expect(LaunchctlStateReader.parse(["", "\tdisabled services = {", "\t}", ""]) == [:])
     }
 
+    @Test("parsing stops at the block's closing brace: later blocks are ignored")
+    func laterBlocksIgnored() {
+        let lines = sample + [
+            "",
+            "\tlogin item associations = {",
+            "\t\t\"com.example.helper\" => [ com.example.app ]",
+            "\t}"
+        ]
+        #expect(LaunchctlStateReader.parse(lines) == LaunchctlStateReader.parse(sample))
+        #expect(LaunchctlStateReader.parse(["\tdisabled services = {", "\t}", "something else"]) == [:])
+    }
+
+    @Test("an unterminated block is unknown, even with a later block's text after it")
+    func unterminated() {
+        #expect(LaunchctlStateReader.parse(Array(sample.dropLast())) == nil)
+        #expect(LaunchctlStateReader.parse([
+            "\tdisabled services = {", "\t\t\"com.a\" => enabled", "\tlogin item associations = {"
+        ]) == nil)
+    }
+
     @Test("anything but the expected block is unknown, never 'enabled'", arguments: [
         [String](),
         ["Usage: launchctl print-disabled <domain-target>"],
@@ -31,9 +51,9 @@ struct LaunchctlStateReaderTests {
         ["\tdisabled services = {", "\t\t\"com.a\" => maybe", "\t}"],
         ["\tdisabled services = {", "\t\tcom.a => enabled", "\t}"],
         ["\tdisabled services = {", "\t\t\"com.a\" => true", "\t}"],
-        ["\tdisabled services = {", "\t}", "something else"],
         ["preamble", "\tdisabled services = {", "\t}"],
-        ["\tdisabled services = {", "\t\t\"\" => enabled", "\t}"]
+        ["\tdisabled services = {", "\t\t\"\" => enabled", "\t}"],
+        ["\tdisabled services = {", "\t\t\"com.a\" => enabled", "\tlogin item associations = {", "\t}"]
     ])
     func unexpectedTextIsUnknown(_ lines: [String]) {
         #expect(LaunchctlStateReader.parse(lines) == nil)

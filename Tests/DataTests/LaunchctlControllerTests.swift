@@ -27,10 +27,11 @@ struct LaunchctlControllerTests {
     func notAllowed() async {
         let launchctl = FakeLaunchctl()
         let controller = LaunchctlController(runner: launchctl.runner, uid: 501)
-        for item in [
-            agent("com.a", kind: .systemAgent), agent("com.a", kind: .systemDaemon), agent("com.a", problem: "bad")
-        ] {
+        for item in [agent("com.a", kind: .systemAgent), agent("com.a", kind: .systemDaemon)] {
             await #expect(throws: StartupError.notAllowed) { try await controller.setEnabled(item, false) }
+        }
+        await #expect(throws: StartupError.unreadable) {
+            try await controller.setEnabled(agent("com.a", problem: "bad"), false)
         }
         #expect(launchctl.calls.isEmpty)
     }

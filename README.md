@@ -74,13 +74,17 @@ otherwise; both intervals are doubled in Low Power Mode.
   never hidden. The app makes no "safe" or "suspicious" judgement.
 - Only your own agents can be switched off and on (`launchctl disable`/`enable` for your user: reversible, no
   administrator, nothing deleted or moved). The change **takes effect at your next login**. Agents for all users
-  and daemons need an administrator: change them in the app that installed them.
+  and daemons are installed for all users and are read-only here by design: Mainternance only switches your own
+  agents. When launchd has no setting of its own for an item, its file's `Disabled` key decides (On unless it
+  says `true`).
 - Login items you added in System Settings > General > Login Items are managed by macOS and are **not listed**:
   an app cannot read them.
 - "New" means not present when you last chose Mark all as reviewed. The first time the screen opens it only
   records what is there (nothing counts as new yet). The list of reviewed items is kept in
   `~/Library/Application Support/Mainternance/startup-review.json`. Home shows the number of new items once that
-  list exists, and nothing (rather than "0") before.
+  list exists, and nothing (rather than "0") before; it reads the files at most once a minute, and again right
+  after the Startup screen lists or marks as reviewed. If the list cannot be saved, the screen says so and
+  Mark all as reviewed is off.
 
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
 silicon), macOS update status and suggestions.

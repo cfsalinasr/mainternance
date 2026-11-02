@@ -15,7 +15,7 @@ public struct StartupView: View {
                 Text(StartupText.title).font(.title2.bold())
                 Text(StartupText.intro).font(.system(size: 12)).foregroundStyle(.secondary)
                 notes
-                if state.snapshot == nil, state.isLoading {
+                if state.showsLoading {
                     ProgressView(StartupText.loading)
                 }
                 if state.showsEmptyState {

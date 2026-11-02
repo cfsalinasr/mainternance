@@ -11,6 +11,8 @@ final class FakeStartup: StartupListing, StartupControlling, StartupReviewing {
         var controlError: StartupError?
         var toggles: [(id: String, enabled: Bool)] = []
         var reviewed: [[String]] = []
+        /// False makes `markReviewed` fail (nothing saved).
+        var reviewSaves = true
         var lists = 0
     }
 
@@ -43,15 +45,17 @@ final class FakeStartup: StartupListing, StartupControlling, StartupReviewing {
         }
     }
 
-    func markReviewed(_ labels: [String]) async {
+    func markReviewed(_ snapshot: StartupSnapshot) async -> Bool {
         state.withLock { current in
-            current.reviewed.append(labels)
-            let keys = Set(labels)
+            current.reviewed.append(snapshot.items.map(\.reviewKey))
+            guard current.reviewSaves else { return false }
+            let keys = Set(snapshot.items.map(\.reviewKey))
             for index in current.snapshot.items.indices where keys.contains(current.snapshot.items[index].reviewKey) {
                 current.snapshot.items[index].isNew = false
             }
             current.snapshot.baselineEstablished = true
             current.snapshot.newCount = current.snapshot.items.count(where: \.isNew)
+            return true
         }
     }
 
@@ -111,5 +115,28 @@ struct StartupRig {
             ],
             baselineEstablished: true, newCount: 1
         )
+    }
+}
+
+/// A lister whose readings wait until the test releases them, one at a time.
+final class GatedListing: StartupListing {
+    private let waiting = Mutex<[CheckedContinuation<StartupSnapshot, Never>]>([])
+
+    func list() async -> StartupSnapshot {
+        await withCheckedContinuation { continuation in
+            waiting.withLock { $0.append(continuation) }
+        }
+    }
+
+    /// Returns once a reading is waiting.
+    func waitForCall() async {
+        while waiting.withLock({ $0.isEmpty }) {
+            await Task.yield()
+        }
+    }
+
+    func release(_ snapshot: StartupSnapshot) {
+        let next = waiting.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+        next?.resume(returning: snapshot)
     }
 }

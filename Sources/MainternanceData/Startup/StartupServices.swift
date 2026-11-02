@@ -4,13 +4,16 @@ import MainternanceDomain
 /// Lists the launchd jobs, adds launchd's on/off state and what is new since the owner's last review.
 ///
 /// `readsState` false (Home's counter) skips `launchctl` (every state stays unknown) and never writes the baseline.
+/// With `invalidates`, every listing marks Home's cached count as stale (the screen just read everything again).
 struct StartupLister: StartupListing {
     let reader: LaunchItemReader
     let states: LaunchctlStateReader
     let review: StartupReviewStore
     let readsState: Bool
+    var invalidates: CachedStartupListing?
 
     func list() async -> StartupSnapshot {
+        defer { invalidates?.invalidate() }
         let found = reader.read()
         var items = found.items
         if readsState {
@@ -21,20 +24,21 @@ struct StartupLister: StartupListing {
                 // Agents (the owner's and those for all users) run in the login session; daemons in the system.
                 let known = items[index].kind == .systemDaemon ? systemStates : userStates
                 guard let known, let label = items[index].label else { continue }
-                items[index].isEnabled = known[label] ?? true // no entry: launchd has not switched it off
+                // No launchd entry: the plist's own Disabled key decides (true is off; false or absent is on).
+                items[index].isEnabled = known[label] ?? !items[index].disabledInFile
             }
         }
-        let keys = Set(items.map(\.reviewKey))
         var snapshot = StartupSnapshot(unreadableFolders: found.unreadableFolders)
-        switch review.baseline(establishing: readsState ? keys : nil) {
+        switch review.baseline(establishing: readsState ? items : nil) {
         case let .reviewed(seen):
-            for index in items.indices where !seen.contains(items[index].reviewKey) {
+            for index in items.indices where !items[index].isReviewed(in: seen) {
                 items[index].isNew = true
             }
             snapshot.baselineEstablished = true
             snapshot.newCount = items.count(where: \.isNew)
-        case .missing:
-            break
+            snapshot.reviewReadOnly = readsState && !review.canWrite()
+        case let .missing(saved):
+            snapshot.reviewReadOnly = readsState && !saved
         case .unreadable:
             snapshot.reviewUnreadable = true
         }
@@ -48,13 +52,32 @@ struct StartupLister: StartupListing {
     }
 }
 
+/// Saves the Startup screen's review. What was known before for a launchd folder the snapshot could not open is
+/// kept, and Home's cached count is marked stale.
+struct StartupReviewer: StartupReviewing {
+    let review: StartupReviewStore
+    let sources: [LaunchItemSource]
+    let cache: CachedStartupListing
+
+    func markReviewed(_ snapshot: StartupSnapshot) async -> Bool {
+        defer { cache.invalidate() }
+        let blind = Set(sources.filter { snapshot.unreadableFolders.contains($0.folder.path) }.map(\.kind))
+        return review.markReviewed(snapshot.items, keeping: blind)
+    }
+}
+
 /// The startup pieces for the whole app, sharing one review store.
 public struct StartupServices: Sendable {
+    /// How old Home's count of new items may get before the files are read again.
+    static let counterMinimumAge: TimeInterval = 60
+
     /// The Startup screen's lister: reads launchd's state and creates the review baseline on its first listing.
     public let lister: any StartupListing
     public let controller: any StartupControlling
     public let reviewer: any StartupReviewing
     /// Home's count of new items: reads the files and the baseline only; never runs `launchctl`, never writes.
+    /// Home polls every few seconds, so the answer is reused for up to `counterMinimumAge`, and read again as soon
+    /// as the Startup screen lists or marks as reviewed.
     public let newItemCounter: any StartupListing
 
     /// `directory` holds `startup-review.json` (the app's Application Support folder).
@@ -66,22 +89,28 @@ public struct StartupServices: Sendable {
     ) {
         self.init(
             runner: runner, directory: directory, uid: uid, sources: LaunchItemReader.standardSources(home: home),
-            now: Date.init, trash: PreferencesStore.moveToTrash, isProtected: { ProtectedPaths.isProtected($0) }
+            now: Date.init, clock: Date.init, trash: PreferencesStore.moveToTrash,
+            isProtected: { ProtectedPaths.isProtected($0) }
         )
     }
 
-    /// Tests pass temp folders, a fake runner, a fake Trash and a fixed clock.
+    /// Tests pass temp folders, a fake runner, a fake Trash, a fixed `now` (for the saved review) and a `clock`
+    /// (for the age of Home's cached count).
     init(
         runner: any ProcessRunning, directory: URL, uid: uid_t, sources: [LaunchItemSource],
-        now: @escaping @Sendable () -> Date, trash: @escaping @Sendable (URL) throws -> Void,
-        isProtected: @escaping @Sendable (String) -> Bool
+        now: @escaping @Sendable () -> Date, clock: @escaping @Sendable () -> Date,
+        trash: @escaping @Sendable (URL) throws -> Void, isProtected: @escaping @Sendable (String) -> Bool
     ) {
         let reader = LaunchItemReader(sources: sources)
         let states = LaunchctlStateReader(runner: runner, uid: uid)
         let review = StartupReviewStore(directory: directory, now: now, trash: trash, isProtected: isProtected)
-        lister = StartupLister(reader: reader, states: states, review: review, readsState: true)
-        newItemCounter = StartupLister(reader: reader, states: states, review: review, readsState: false)
+        let counter = CachedStartupListing(
+            base: StartupLister(reader: reader, states: states, review: review, readsState: false),
+            minimumAge: Self.counterMinimumAge, now: clock
+        )
+        lister = StartupLister(reader: reader, states: states, review: review, readsState: true, invalidates: counter)
+        newItemCounter = counter
         controller = LaunchctlController(runner: runner, uid: uid)
-        reviewer = review
+        reviewer = StartupReviewer(review: review, sources: sources, cache: counter)
     }
 }

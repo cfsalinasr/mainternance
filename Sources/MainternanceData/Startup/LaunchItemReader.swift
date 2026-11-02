@@ -75,7 +75,8 @@ struct LaunchItemReader: Sendable {
         let label = (job["Label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let program = (job["Program"] as? String) ?? ((job["ProgramArguments"] as? [Any])?.first as? String)
         return StartupItem(
-            kind: kind, plistPath: path, label: label, program: program, runsAtLoad: job["RunAtLoad"] as? Bool
+            kind: kind, plistPath: path, label: label, program: program, runsAtLoad: job["RunAtLoad"] as? Bool,
+            disabledInFile: (job["Disabled"] as? Bool) == true
         )
     }
 
@@ -97,27 +98,15 @@ struct LaunchItemReader: Sendable {
         }
     }
 
-    /// The file's bytes, read through one descriptor opened non-blocking (a FIFO cannot hang the reader) and checked
-    /// with `fstat` on that same descriptor (no swap between the check and the read).
+    /// The file's bytes, through `BoundedFileRead` (non-blocking, regular files only, at most `maxBytes`).
     static func readBounded(_ path: String) -> Result<Data, ReadProblem> {
-        let descriptor = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
-        guard descriptor >= 0 else { return .failure(.cannotOpen(String(cString: strerror(errno)))) }
-        defer { close(descriptor) }
-        var info = stat()
-        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return .failure(.notRegularFile) }
-        guard info.st_size <= maxBytes else { return .failure(.tooLarge) }
-        var data = Data()
-        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
-        while data.count <= maxBytes {
-            let count = chunk.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, $0.count) }
-            if count > 0 {
-                data.append(contentsOf: chunk[0 ..< count])
-            } else if count == 0 {
-                return .success(data)
-            } else if errno != EINTR {
-                return .failure(.cannotOpen(String(cString: strerror(errno))))
+        BoundedFileRead.data(at: path, maxBytes: maxBytes).mapError { failure in
+            switch failure {
+            case .missing: .cannotOpen(String(cString: strerror(ENOENT)))
+            case let .cannotOpen(reason): .cannotOpen(reason)
+            case .notRegularFile: .notRegularFile
+            case .tooLarge: .tooLarge
             }
         }
-        return .failure(.tooLarge) // it grew past the limit after it was checked
     }
 }
