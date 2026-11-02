@@ -6,7 +6,6 @@ struct SampleDataCopyTests {
         #expect(SampleDataCopy.badgeText == "Sample data")
         #expect(SampleDataCopy.badgeAccessibilityLabel == "Sample data, not your real files")
         #expect(SampleDataCopy.sidebarMarker == "Sample")
-        #expect(SampleDataCopy.settingsNote == "Not connected yet: these settings are not applied.")
     }
 
     @Test func settingsRefreshNoteMentionsLowPowerMode() {

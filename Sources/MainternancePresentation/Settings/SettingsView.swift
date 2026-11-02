@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 public struct SettingsView: View {
@@ -17,23 +18,31 @@ public struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Settings").font(.title2.bold())
-                // At the top so it covers every control below, not only the notification toggles.
-                Text(SampleDataCopy.settingsNote).font(.system(size: 12)).foregroundStyle(.secondary)
                 general
                 schedule
                 notifications
+                ForEach(state.notes, id: \.self) { note in
+                    Text(note).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
                 Text(Self.refreshNote)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
             .padding(20)
         }
+        // macOS may have changed (System Settings) while the window was closed, or while another app was in front.
+        .task { await state.refreshStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await state.refreshStatus() }
+        }
     }
 
     private var general: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Launch at login", isOn: Binding(get: { state.launchAtLogin }, set: { state.launchAtLogin = $0 }))
-                .accessibilityHint("Saved in this preview only")
+            Toggle(SettingsText.launchAtLogin, isOn: Binding(
+                get: { state.launchAtLogin },
+                set: { value in Task { await state.setLaunchAtLogin(value) } }
+            ))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
@@ -42,19 +51,29 @@ public struct SettingsView: View {
     private var schedule: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Scan schedule").font(.headline)
-            Picker("Day", selection: Binding(get: { state.weekday }, set: { state.setWeekday($0) })) {
+            Toggle(SettingsText.weeklyScanToggle, isOn: Binding(
+                get: { state.current.weeklyScanEnabled },
+                set: { value in Task { await state.setWeeklyScanEnabled(value) } }
+            ))
+            Picker("Day", selection: Binding(
+                get: { state.weekday },
+                set: { value in Task { await state.setWeekday(value) } }
+            )) {
                 ForEach(state.weekdayOptions()) { Text($0.name).tag($0.value) }
             }
             .accessibilityLabel("Scan day")
+            .disabled(!state.scheduleControlsEnabled)
             DatePicker(
                 "Time",
-                selection: Binding(get: { state.timeDate() }, set: { state.setTime(from: $0) }),
+                selection: Binding(
+                    get: { state.timeDate() },
+                    set: { value in Task { await state.setTime(from: value) } }
+                ),
                 displayedComponents: .hourAndMinute
             )
             .accessibilityLabel("Scan time")
+            .disabled(!state.scheduleControlsEnabled)
             Text(state.scheduleSummary()).font(.system(size: 12)).foregroundStyle(.secondary)
-                .accessibilityLabel(state.scheduleAccessibilityLabel())
-            Text(ScanScheduleStore.previewCaption).font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
@@ -63,10 +82,24 @@ public struct SettingsView: View {
     private var notifications: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Notifications").font(.headline)
-            Toggle("Problem alerts", isOn: Binding(get: { state.problemAlerts }, set: { state.problemAlerts = $0 }))
-                .accessibilityHint("Saved in this preview only")
-            Toggle("Weekly digest", isOn: Binding(get: { state.weeklyDigest }, set: { state.weeklyDigest = $0 }))
-                .accessibilityHint("Saved in this preview only")
+            Toggle(SettingsText.problemAlerts, isOn: Binding(
+                get: { state.current.problemAlerts },
+                set: { value in Task { await state.setProblemAlerts(value) } }
+            ))
+            .accessibilityHint(SettingsText.problemAlertsHint)
+            Toggle(SettingsText.weeklyDigest, isOn: Binding(
+                get: { state.current.weeklyDigest },
+                set: { value in Task { await state.setWeeklyDigest(value) } }
+            ))
+            .accessibilityHint(SettingsText.weeklyDigestHint)
+            if let note = state.notificationPermissionNote {
+                HStack(spacing: 10) {
+                    Text(note).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Button(SettingsText.allowNotificationsButton) {
+                        Task { await state.requestNotificationPermission() }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()

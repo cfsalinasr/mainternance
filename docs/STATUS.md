@@ -4,11 +4,17 @@ Last updated: 2026-11-02.
 
 ## Shipped on `main`
 - Menu bar item and popover plus a main window (Home, Settings) showing **live readings** of this Mac: free disk space (the figure System Settings shows), memory pressure, thermal state, battery (percent, charging, health, cycles), CPU, GPU. Unknown data is shown as unknown, never faked. See `README.md` ("What is live").
+- Malware scanner (PR #3): ClamAV installed through Homebrew from the app, quick/full/folder scans, quarantine and restore, status on Home.
 - Build, sign and install scripts (`scripts/build-app.sh`, `scripts/make-signing-cert.sh`), CI, SonarCloud and CodeRabbit.
 
-## In progress: malware scanner (branch `feat/scanner-engine`, plan `docs/superpowers/plans/2026-10-29-scanner-engine.md`)
-The scanner is built: Tasks 1-8 are implemented and reviewed (locator, runner, installer, scan runner, quarantine, Scanner screen, Home status, docs). Pull request #3 is open and going through CI, SonarCloud and CodeRabbit. Still pending: the first check with real ClamAV (below). Ask the owner before merging or installing.
-Not started (separate plans): file explorer, cleanup, startup items, uninstaller, notifications, launch at login, weekly scheduling.
+## Done on branch `feat/schedule-notifications` (plan `docs/superpowers/plans/2026-11-02-schedule-notifications-settings.md`)
+All six tasks are implemented: live Settings saved to `preferences.json`, Launch at login through macOS (shows the real state), an opt-in weekly quick scan that runs only while the app is open (a missed slot runs once later; also checked when the Mac wakes), and notifications for scan findings and the weekly result (counts only, never file names; they need permission). Not merged yet: ask the owner before opening or merging the pull request.
+
+## Remaining plans (not started)
+- Startup items
+- Cleanup
+- Uninstaller
+- File explorer
 
 ## Rules that apply to all remaining work
 - Nothing is deleted automatically: quarantine moves a file only after the user confirms, and it can always be restored. No permanent delete.
@@ -18,4 +24,6 @@ Not started (separate plans): file explorer, cleanup, startup items, uninstaller
 ## Needs a human (cannot be verified without a screen)
 - Popover: after "Open Mainternance" the popover closes, the window stays open, and one click on the menu bar icon reopens it without leaving the icon highlighted.
 - App CPU in Activity Monitor stays near 0% with the popover and window closed.
+- Launch at login from `/Applications`, including the approval step in System Settings > General > Login Items.
+- Notifications: the permission prompt, then a weekly scan set a few minutes ahead (see `docs/testing-the-scanner.md`).
 - First real scanner run with real ClamAV (not done yet): Install button, Update definitions, the harmless EICAR test file (see `docs/testing-the-scanner.md`).
