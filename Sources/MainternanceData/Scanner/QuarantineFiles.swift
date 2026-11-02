@@ -70,6 +70,13 @@ enum QuarantineFiles {
         return String(cString: real)
     }
 
+    /// Device and inode of the folder at `path` (a physical path from `realParent`).
+    static func folderIdentity(_ path: String) throws -> stat {
+        var info = stat()
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw QuarantineError.changedSinceScan }
+        return info
+    }
+
     /// Streams the descriptor from the start in 1 MiB chunks.
     private static func forEachChunk(_ descriptor: Int32, _ body: (UnsafeRawBufferPointer) throws -> Void) throws {
         guard lseek(descriptor, 0, SEEK_SET) >= 0 else { throw QuarantineError.ioFailure(message(errno)) }

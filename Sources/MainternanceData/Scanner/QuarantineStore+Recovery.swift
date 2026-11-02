@@ -110,7 +110,7 @@ extension QuarantineStore {
     }
 
     func removeSidecar(_ id: UUID) {
-        try? fileManager.removeItem(at: sidecarURL(id))
+        QuarantineRemoval.discard(.vaultArtifact(vault: directory, name: "\(id.uuidString).json"))
     }
 
     private func readSidecars() -> [QuarantineRecord] {
@@ -136,7 +136,7 @@ extension QuarantineStore {
         let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
         var removed = false
         for name in names where name.hasSuffix(".partial") {
-            try? fileManager.removeItem(at: directory.appendingPathComponent(name))
+            QuarantineRemoval.discard(.vaultArtifact(vault: directory, name: name))
             removed = true
         }
         return removed

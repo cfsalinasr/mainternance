@@ -260,6 +260,28 @@ struct QuarantineCrossVolumeTests {
             .contains { $0.hasSuffix(".partial") })
     }
 
+    @Test("a name taken during a copy restore drops the half-written copy and restores under the next name")
+    func copyRestoreRetriesAfterNameTaken() async throws {
+        let fix = try QuarantineFixture()
+        let file = try fix.makeFile("a.txt", "mine")
+        let original = file.path
+        var hooks = QuarantineStore.Hooks(forceCopy: true)
+        hooks.beforeRestoreRename = { target in
+            if target == original, !FileManager.default.fileExists(atPath: original) {
+                try? Data("intruder".utf8).write(to: URL(fileURLWithPath: original))
+            }
+        }
+        let store = QuarantineStore(directory: fix.vault, now: { Date() }, hooks: hooks)
+        let record = try await store.quarantine(path: original, signature: "S")
+        let restored = try await store.restore(record.id)
+        #expect(restored == fix.area.appendingPathComponent("a (restored).txt").path)
+        #expect(try String(contentsOfFile: restored, encoding: .utf8) == "mine")
+        #expect(try String(contentsOf: file, encoding: .utf8) == "intruder")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: fix.area.path).sorted()
+        #expect(leftovers == ["a (restored).txt", "a.txt"])
+        #expect(await store.records().isEmpty)
+    }
+
     @Test("when the original cannot be removed the file is not lost and nothing is half-recorded")
     func originalNotRemovable() async throws {
         let fix = try QuarantineFixture()
