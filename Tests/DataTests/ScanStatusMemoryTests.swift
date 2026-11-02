@@ -133,6 +133,26 @@ struct ScanStatusMemoryTests {
         #expect(temp.names.filter { $0.hasPrefix("scan-status.corrupt-") }.count == 1) // a good file is not moved
     }
 
+    @Test("when the unreadable file cannot be moved aside nothing is written over it, and a later save retries")
+    func unreadableFileNotOverwrittenWhenMoveFails() async throws {
+        let temp = try TempDirectory()
+        try Data("this is not json".utf8).write(to: file(temp))
+        let sut = ScanStatusStore(file: file(temp))
+        sut.failMovingAside = true
+        await sut.remember(ScanMemory(findings: [finding(1)]))
+        #expect(try String(contentsOf: file(temp), encoding: .utf8) == "this is not json")
+        #expect(temp.names.filter { $0.hasPrefix("scan-status.corrupt-") }.isEmpty)
+        #expect(sut.writeCount == 0)
+        #expect(await sut.load()?.findings == [finding(1)]) // still remembered in memory
+        sut.failMovingAside = false
+        await sut.flush()
+        let aside = temp.names.filter { $0.hasPrefix("scan-status.corrupt-") }
+        #expect(aside.count == 1)
+        let kept = try Data(contentsOf: temp.url.appendingPathComponent(#require(aside.first)))
+        #expect(String(bytes: kept, encoding: .utf8) == "this is not json")
+        #expect(await ScanStatusStore(file: file(temp)).load()?.findings == [finding(1)])
+    }
+
     @Test("a missing file is not 'moved aside'")
     func missingFileNothingToKeep() async throws {
         let temp = try TempDirectory()

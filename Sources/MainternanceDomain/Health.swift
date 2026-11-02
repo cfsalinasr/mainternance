@@ -207,8 +207,12 @@ public struct HealthEvaluator: Sendable {
         return HealthCheck(id: .lastScan, state: state, title: "Last scan", reason: reason, destination: .scanner)
     }
 
+    /// Whole days since `date`, 0 for a date in the future. Clamped before the conversion: a damaged saved date can
+    /// be far outside the `Int` range, and converting that would stop the app.
     private static func days(since date: Date, now: Date) -> Int {
-        max(0, Int((now.timeIntervalSince(date) / 86400).rounded(.down)))
+        let days = (now.timeIntervalSince(date) / 86400).rounded(.down)
+        guard days.isFinite, days > 0 else { return 0 }
+        return days >= Double(Int.max) ? Int.max : Int(days)
     }
 
     private static func ageState(days: Int) -> HealthState {

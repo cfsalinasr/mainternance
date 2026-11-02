@@ -59,6 +59,13 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
     private let sleep: @Sendable (Duration) async throws -> Void
     private let state = Mutex(State())
     private let writeHook = Mutex<(@Sendable (Int) -> Void)?>(nil)
+    private let moveAsideFails = Mutex(false)
+
+    /// Test seam: makes moving an unreadable file aside fail.
+    var failMovingAside: Bool {
+        get { moveAsideFails.withLock { $0 } }
+        set { moveAsideFails.withLock { $0 = newValue } }
+    }
 
     /// Test seam: called with the number of writes so far, after each write.
     var onWrite: (@Sendable (Int) -> Void)? {
@@ -260,7 +267,8 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
             attributes: [.posixPermissions: 0o700]
         )
         if current.unreadableOnDisk {
-            keepUnreadableFileAside(manager)
+            // Never write over a file that could not be moved aside: stay pending and try again later.
+            guard keepUnreadableFileAside(manager) else { return }
             current.unreadableOnDisk = false
         }
         guard (try? data.write(to: file, options: .atomic)) != nil else { return }
@@ -272,12 +280,14 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
     }
 
     /// A file that is there but cannot be read as a status is moved next to itself, never overwritten.
-    private func keepUnreadableFileAside(_ manager: FileManager) {
-        guard manager.fileExists(atPath: file.path) else { return }
+    /// True when nothing unreadable is left at `file` (moved aside, or already gone).
+    private func keepUnreadableFileAside(_ manager: FileManager) -> Bool {
+        guard manager.fileExists(atPath: file.path) else { return true }
+        guard !failMovingAside else { return false }
         let name = file.deletingPathExtension().lastPathComponent
         let aside = file.deletingLastPathComponent()
             .appendingPathComponent("\(name).corrupt-\(UUID().uuidString).json")
-        try? manager.moveItem(at: file, to: aside)
+        return (try? manager.moveItem(at: file, to: aside)) != nil
     }
 
     // MARK: File

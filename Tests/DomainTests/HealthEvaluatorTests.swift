@@ -170,6 +170,18 @@ struct HealthEvaluatorTests {
         #expect(check(.lastScan, scan: scan(daysAgo: -1))?.state == .good)
     }
 
+    @Test func extremeLastScanDatesDoNotCrash() {
+        let ancient = ScanStatus(lastScan: Date(timeIntervalSince1970: -1e300), nextScan: nil, unresolvedFindings: 0)
+        #expect(check(.lastScan, scan: ancient)?.state == .problem)
+        let future = ScanStatus(lastScan: Date(timeIntervalSince1970: 1e300), nextScan: nil, unresolvedFindings: 0)
+        #expect(check(.lastScan, scan: future)?.reason == "Today")
+        let unfinished = ScanStatus(
+            lastScan: Date(timeIntervalSince1970: -1e300), nextScan: nil, unresolvedFindings: 0,
+            lastScanDidNotFinish: true
+        )
+        #expect(check(.lastScan, scan: unfinished)?.state == .problem)
+    }
+
     @Test func osUpdate() {
         #expect(check(.osUpdate, snapshot: makeSnapshot(osUpdate: false))?.reason == "Up to date")
         #expect(check(.osUpdate, snapshot: makeSnapshot(osUpdate: true))?.state == .needsAttention)
