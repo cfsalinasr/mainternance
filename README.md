@@ -30,13 +30,25 @@ Only part of the app reads your Mac today. Screens that are not backed by a work
 Readings are refreshed about every 2 s while the popover or window is open and about every 45 s
 otherwise; both intervals are doubled in Low Power Mode.
 
+**Malware scanner** (Scanner screen, and its status on Home):
+
+- On-demand scans (quick, full or a folder you choose) with ClamAV, which the app installs for you through
+  Homebrew (Homebrew must already be installed). The app keeps its own config and virus database in
+  `~/Library/Application Support/Mainternance/ClamAV` and never edits Homebrew's files.
+- It matches known signatures only. There is **no real-time protection**: nothing is checked unless you run a scan.
+- Nothing is deleted. Quarantine moves a file only after you confirm, and Restore puts it back. There is no
+  permanent delete in the app.
+- Without Full Disk Access some folders cannot be read; the app says so and keeps any detection it could not
+  re-check until a scan has covered it.
+- Weekly scheduling and notifications are **not** included yet.
+- To try it safely, see `docs/testing-the-scanner.md`.
+
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
-silicon), the startup-item count, macOS update status, scanner status and suggestions.
+silicon), the startup-item count, macOS update status and suggestions.
 
 **Planned, not available yet** (hidden in the app until each one works; Home lists them under
 "Coming next"):
 
-- Malware scanner
 - File explorer
 - Cleanup
 - Startup items
@@ -60,7 +72,8 @@ Settings (see What is live).
   to preview). Later builds pick it up automatically.
 - To open it at login, add it under System Settings > General > Login Items. The Settings toggle is not
   connected yet; a later plan wires it to the system.
-- Full Disk Access is not needed yet; it is granted later, in the scanner plan.
+- Full Disk Access is optional: grant it under System Settings > Privacy & Security if you want scans to read
+  protected folders (see `docs/testing-the-scanner.md`).
 
 ## Building
 
