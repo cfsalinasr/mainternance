@@ -13,7 +13,7 @@ struct ScanResultCard: View {
                     // The state is the icon AND the title text, never color alone.
                     Image(systemName: report.symbol)
                         .font(.system(size: 22))
-                        .foregroundStyle(summary.isClean && summary.isComplete ? Color.green : Color.orange)
+                        .foregroundStyle(report.isCleanAndComplete ? Color.green : Color.orange)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(report.title).font(.headline)

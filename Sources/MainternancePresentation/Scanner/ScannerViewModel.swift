@@ -105,6 +105,15 @@ public final class ScannerViewModel {
         }
     }
 
+    /// "Check again" re-reads the engine status; it helps only when Homebrew was missing or the check failed.
+    public var canCheckAgain: Bool {
+        guard !isBusy, let engine else { return false }
+        switch engine {
+        case .homebrewMissing, .failed: return true
+        default: return false
+        }
+    }
+
     public var canCancel: Bool {
         if case .scanning = run {
             return true

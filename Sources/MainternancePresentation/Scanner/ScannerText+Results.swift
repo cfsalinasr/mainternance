@@ -8,6 +8,8 @@ extension ScannerText {
         var title: String
         var symbol: String
         var lines: [String]
+        /// Nothing found and nothing skipped: the only result shown as fully good (green).
+        var isCleanAndComplete: Bool
     }
 
     /// What the finished scan says. Plain facts only: what was scanned, how many files, what could not be read,
@@ -18,7 +20,8 @@ extension ScannerText {
             finishedLine(summary.endedAt, locale: locale, timeZone: timeZone)
         ]
         if summary.unreadable > 0 {
-            lines.append("\(files(summary.unreadable, locale: locale)) could not be read and were not scanned.")
+            let verb = summary.unreadable == 1 ? "was" : "were"
+            lines.append("\(files(summary.unreadable, locale: locale)) could not be read and \(verb) not scanned.")
         }
         lines.append(definitionsLine(summary.definitionsDate, locale: locale, timeZone: timeZone))
         if summary.cancelled {
@@ -33,18 +36,19 @@ extension ScannerText {
         if summary.scope == .full {
             lines.append(cloudAdvisory)
         }
-        let (title, symbol) = headline(summary)
-        return Report(title: title, symbol: symbol, lines: lines)
+        let cleanAndComplete = !summary.cancelled && summary.isClean && summary.isComplete
+        let (title, symbol) = headline(summary, cleanAndComplete: cleanAndComplete)
+        return Report(title: title, symbol: symbol, lines: lines, isCleanAndComplete: cleanAndComplete)
     }
 
-    private static func headline(_ summary: ScanSummary) -> (String, String) {
+    private static func headline(_ summary: ScanSummary, cleanAndComplete: Bool) -> (String, String) {
         if summary.cancelled {
             return ("Scan cancelled", "stop.circle")
         }
         if !summary.isClean {
             return ("Detections found", "exclamationmark.triangle.fill")
         }
-        if summary.isComplete {
+        if cleanAndComplete {
             return ("No threats found", "checkmark.circle.fill")
         }
         return ("No threats found in the files that could be read", "exclamationmark.circle")

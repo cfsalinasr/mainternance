@@ -103,7 +103,8 @@ enum ScannerText {
     static func permissionExplanation(_ count: Int, locale: Locale = .current) -> String {
         [
             "\(files(count, locale: locale)) could not be read because macOS denied access.",
-            "This usually means Mainternance does not have Full Disk Access. Those files were not scanned."
+            "This usually means Mainternance does not have Full Disk Access. "
+                + (count == 1 ? "That file was not scanned." : "Those files were not scanned.")
         ].joined(separator: " ")
     }
 

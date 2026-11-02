@@ -132,6 +132,8 @@ struct ScannerQuarantineTests {
         var calls = rig.engine.scanCalls.makeAsyncIterator()
         _ = await calls.next() // the first scan call was consumed by scanFinding; wait for this one
         _ = await calls.next()
+        // Finding 2 must be listed while the scan still runs, so only the busy guard can refuse it.
+        #expect(await rig.model.wait { rig.model.findings.contains(makeFinding(2)) && rig.model.run.isWorking })
         rig.model.requestQuarantine(makeFinding(2).id)
         #expect(rig.model.pendingQuarantine == nil)
         rig.engine.finishScan()

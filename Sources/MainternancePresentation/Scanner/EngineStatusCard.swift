@@ -58,17 +58,9 @@ struct EngineStatusCard: View {
                 Button(ScannerText.updateButton) { Task { await model.updateDefinitions() } }
                     .accessibilityHint(ScannerText.updateHint)
             }
-            if showsCheckAgain {
+            if model.canCheckAgain {
                 Button(ScannerText.checkAgainButton) { Task { await model.refreshStatus() } }
             }
-        }
-    }
-
-    private var showsCheckAgain: Bool {
-        guard !model.isBusy else { return false }
-        switch model.engine {
-        case .homebrewMissing, .failed: return true
-        default: return false
         }
     }
 }

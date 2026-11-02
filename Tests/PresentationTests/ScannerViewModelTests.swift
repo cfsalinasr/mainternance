@@ -45,6 +45,34 @@ struct ScannerViewModelTests {
         }
     }
 
+    @Test func checkAgainIsOfferedOnlyWhenHomebrewIsMissingOrTheCheckFailed() async {
+        let cases: [(EngineStatus, Bool)] = [
+            (.homebrewMissing, true),
+            (.failed(message: "boom"), true),
+            (.ready(definitionsAge: 10), false),
+            (.updateNeeded(definitionsAge: nil), false),
+            (.notInstalled, false),
+            (.installing(stage: "x"), false),
+            (.downloadingDefinitions, false)
+        ]
+        for (status, expected) in cases {
+            let rig = ScannerRig()
+            rig.engine.configure { $0.status = status }
+            await rig.model.refreshStatus()
+            #expect(rig.model.canCheckAgain == expected, "\(status)")
+        }
+        #expect(!ScannerRig().model.canCheckAgain) // status not known yet
+    }
+
+    @Test func checkAgainIsNotOfferedWhileBusy() async {
+        let rig = ScannerRig()
+        rig.engine.configure { $0.status = .failed(message: "boom") }
+        await rig.model.refreshStatus()
+        rig.model.run = .installing(stage: "x", progress: nil)
+        #expect(rig.model.isBusy)
+        #expect(!rig.model.canCheckAgain)
+    }
+
     // MARK: Install and definitions
 
     @Test func installFlowEndsIdleWithTheRefreshedStatus() async {

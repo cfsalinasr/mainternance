@@ -35,6 +35,7 @@ struct ScannerTextTests {
     @Test func aCleanCompleteScanSaysWhatWasScannedAndNothingMore() {
         let result = report(makeSummary(scope: .quick, scanned: 1234))
         #expect(result.title == "No threats found")
+        #expect(result.isCleanAndComplete)
         #expect(result.lines
             .contains("Quick scan: Downloads, Desktop, Applications and the Launch Agents and Launch Daemons folders."))
         #expect(result.lines.contains("1,234 files scanned."))
@@ -49,8 +50,9 @@ struct ScannerTextTests {
     @Test func unreadableFilesMakeItPartialAndNeverClean() {
         let result = report(makeSummary(scanned: 10, unreadable: 3, denied: 3))
         #expect(result.title == "No threats found in the files that could be read")
+        #expect(!result.isCleanAndComplete)
         #expect(result.lines.contains("3 files could not be read and were not scanned."))
-        #expect(report(makeSummary(unreadable: 1)).lines.contains("1 file could not be read and were not scanned."))
+        #expect(report(makeSummary(unreadable: 1)).lines.contains("1 file could not be read and was not scanned."))
     }
 
     @Test func unattributedDetectionsAreShownAndNeverClean() {
@@ -63,12 +65,14 @@ struct ScannerTextTests {
     @Test func findingsTitleDoesNotClaimCleanEvenWhenEverythingWasReadable() {
         let result = report(makeSummary(findings: 2))
         #expect(result.title == "Detections found")
+        #expect(!result.isCleanAndComplete)
         #expect(result.lines.contains("2 files flagged as a possible threat."))
     }
 
     @Test func aCancelledScanSaysOnlyPartWasChecked() {
         let result = report(makeSummary(scanned: 5, cancelled: true))
         #expect(result.title == "Scan cancelled")
+        #expect(!result.isCleanAndComplete)
         #expect(result.lines.contains("You cancelled this scan, so only part of the files were checked."))
     }
 
@@ -89,6 +93,7 @@ struct ScannerTextTests {
             "4 files could not be read because macOS denied access.",
             "This usually means Mainternance does not have Full Disk Access. Those files were not scanned."
         ].joined(separator: " "))
+        #expect(ScannerText.permissionExplanation(1, locale: british).hasSuffix("That file was not scanned."))
     }
 
     @Test func engineCardsSayWhatIsTrue() {
