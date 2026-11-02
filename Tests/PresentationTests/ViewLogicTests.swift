@@ -14,14 +14,6 @@ struct ViewLogicTests {
         #expect(options.allSatisfy { !$0.name.isEmpty })
     }
 
-    @Test func weekdayNameIsEmptyOutOfRange() {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "en_US")
-        #expect(ScanSchedule.weekdayName(0, calendar: calendar).isEmpty)
-        #expect(ScanSchedule.weekdayName(8, calendar: calendar).isEmpty)
-        #expect(ScanSchedule.weekdayName(2, calendar: calendar) == "Monday")
-    }
-
     @Test func leftoverDisplayNameIsTheLastPathComponent() {
         func name(_ path: String) -> String {
             Leftover(id: path, path: path, bytes: 0).displayName

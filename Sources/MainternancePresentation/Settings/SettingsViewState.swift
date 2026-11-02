@@ -1,4 +1,5 @@
 import Foundation
+import MainternanceDomain
 import Observation
 
 /// Pure range checks for the scan schedule inputs.

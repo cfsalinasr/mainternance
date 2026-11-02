@@ -1,4 +1,5 @@
 import Foundation
+import MainternanceDomain
 import Observation
 
 /// The source of truth for the weekly scan schedule that `SettingsViewState` edits. It is a preview: nothing runs
