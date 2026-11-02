@@ -13,6 +13,7 @@ struct Composition {
     let settings: SettingsViewState
     /// The weekly scheduler and the scan notifications, already connected to Settings and the Scanner.
     let automation: ScanAutomation
+    let startup: StartupViewState
 }
 
 @MainActor
@@ -45,9 +46,16 @@ enum CompositionRoot {
         let automation = ScanAutomation(
             scanner: scannerModel, settings: settings, preferences: preferences, notifications: notifications
         )
+        // The review baseline sits in the same folder: <Application Support>/Mainternance/startup-review.json.
+        let startupServices = StartupServices(directory: services.paths.supportDirectory)
+        let startup = StartupViewState(
+            lister: startupServices.lister, controller: startupServices.controller,
+            reviewer: startupServices.reviewer,
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) }
+        )
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
-            settings: settings, automation: automation
+            settings: settings, automation: automation, startup: startup
         )
     }
 

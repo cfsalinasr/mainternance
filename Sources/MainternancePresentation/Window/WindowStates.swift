@@ -8,11 +8,11 @@ public final class WindowStates {
     let uninstaller: UninstallerViewState
     let settings: SettingsViewState
 
-    public init(scanner: ScannerViewModel, settings: SettingsViewState) {
+    public init(scanner: ScannerViewModel, settings: SettingsViewState, startup: StartupViewState) {
         files = FilesViewState()
         self.scanner = scanner
         cleanup = CleanupViewState()
-        startup = StartupViewState()
+        self.startup = startup
         uninstaller = UninstallerViewState()
         self.settings = settings
     }
