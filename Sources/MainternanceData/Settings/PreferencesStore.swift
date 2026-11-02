@@ -7,7 +7,8 @@ import Synchronization
 ///
 /// A file that cannot be decoded is never overwritten: it is moved aside as `preferences.json.damaged` (replacing
 /// an older aside copy) before anything new is written, and loading gives the defaults. If it cannot be moved aside,
-/// saving is skipped so the owner's file stays as it was. A schedule out of range is clamped on load.
+/// saving is skipped so the owner's file stays as it was. A schedule out of range is clamped on load; a missing
+/// field takes its default (so a field added later never resets the owner's other choices).
 /// Reads and writes happen inside one lock, so concurrent saves are serialised and the file is always whole.
 public final class PreferencesStore: PreferencesStoring, Sendable {
     private let file: URL

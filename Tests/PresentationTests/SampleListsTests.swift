@@ -202,67 +202,14 @@ struct UninstallerViewStateTests {
 }
 
 @MainActor
-struct SettingsViewStateTests {
-    @Test func scheduleInputsClamp() {
-        #expect(ScheduleInput.weekday(0) == 1)
-        #expect(ScheduleInput.weekday(8) == 7)
-        #expect(ScheduleInput.weekday(4) == 4)
-        #expect(ScheduleInput.hour(-1) == 0)
-        #expect(ScheduleInput.hour(24) == 23)
-        #expect(ScheduleInput.minute(-5) == 0)
-        #expect(ScheduleInput.minute(60) == 59)
-        #expect(ScheduleInput.minute(30) == 30)
-    }
-
-    @Test func settersClamp() {
-        let state = SettingsViewState()
-        state.setWeekday(99)
-        state.setTime(hour: -3, minute: 75)
-        #expect(state.weekday == 7)
-        #expect(state.hour == 0)
-        #expect(state.minute == 59)
-    }
-
-    @Test func timeFromDateRoundTrips() {
-        let state = SettingsViewState()
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
-        let date = calendar.date(from: DateComponents(year: 2026, month: 1, day: 5, hour: 17, minute: 45)) ?? Date()
-        state.setTime(from: date, calendar: calendar)
-        #expect(state.hour == 17)
-        #expect(state.minute == 45)
-        let back = calendar.dateComponents([.hour, .minute], from: state.timeDate(calendar: calendar))
-        #expect(back.hour == 17 && back.minute == 45)
-    }
-
-    @Test func summaryFollowsLocale() throws {
-        let utc = try #require(TimeZone(identifier: "UTC"))
-        let state = SettingsViewState()
-        state.setWeekday(2)
-        state.setTime(hour: 14, minute: 5)
-        #expect(state.scheduleSummary(locale: Locale(identifier: "en_GB"), timeZone: utc) == "Weekly, Monday 14:05")
-        let usSummary = state.scheduleSummary(locale: Locale(identifier: "en_US"), timeZone: utc)
-        #expect(usSummary.hasPrefix("Weekly, Monday 2:05"))
-        #expect(usSummary.contains("PM"))
-    }
-
-    @Test func defaults() {
-        let state = SettingsViewState()
-        #expect(!state.launchAtLogin)
-        #expect(state.problemAlerts)
-        #expect(state.weeklyDigest)
-    }
-}
-
-@MainActor
 struct WindowStatesTests {
     @Test func constructsAllStates() {
-        let states = WindowStates(scanner: ScannerRig().model)
+        let states = WindowStates(scanner: ScannerRig().model, settings: SettingsRig().state)
         #expect(!states.files.files.isEmpty)
         #expect(states.scanner.findings.isEmpty) // The real Scanner starts with nothing listed, never sample data.
         #expect(!states.cleanup.categories.isEmpty)
         #expect(!states.startup.items.isEmpty)
         #expect(!states.uninstaller.apps.isEmpty)
-        #expect(states.settings.weekday == 1)
+        #expect(states.settings.current == .defaults)
     }
 }

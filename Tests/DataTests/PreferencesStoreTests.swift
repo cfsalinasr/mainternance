@@ -103,6 +103,29 @@ struct PreferencesStoreTests {
         #expect(!FileManager.default.fileExists(atPath: asideURL(temp).path))
     }
 
+    @Test("a file missing a field keeps every other saved choice and is not treated as damaged")
+    func missingFieldKeepsTheRest() async throws {
+        let temp = try TempDirectory()
+        try writeRaw("""
+        {"launchAtLogin":true,"problemAlerts":false,"schedule":{"hour":21,"minute":45,"weekday":5},\
+        "weeklyScanEnabled":true}
+        """, temp)
+        let loaded = await store(temp).load()
+        var expected = sample
+        expected.weeklyDigest = AppPreferences.defaults.weeklyDigest
+        expected.lastScheduledRun = nil
+        #expect(loaded == expected)
+        #expect(!FileManager.default.fileExists(atPath: asideURL(temp).path))
+    }
+
+    @Test("a field of the wrong type still counts as damaged")
+    func wrongTypeIsDamaged() async throws {
+        let temp = try TempDirectory()
+        try writeRaw(#"{"weeklyScanEnabled":"yes"}"#, temp)
+        #expect(await store(temp).load() == .defaults)
+        #expect(FileManager.default.fileExists(atPath: asideURL(temp).path))
+    }
+
     @Test("the file is private (0600) and replaced atomically, leaving no temp files behind")
     func permissionsAndAtomicity() async throws {
         let temp = try TempDirectory()

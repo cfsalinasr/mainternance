@@ -7,7 +7,6 @@ enum SampleDataCopy {
     static let badgeAccessibilityLabel = "Sample data, not your real files"
     static let sidebarMarker = "Sample"
     static let sidebarAccessibilitySuffix = "sample data"
-    static let settingsNote = "Not connected yet: these settings are not applied."
 
     /// Screens whose engines do not exist yet: exactly the ones `AppDestination.isAvailable` does not list.
     static func isSample(_ destination: AppDestination) -> Bool {

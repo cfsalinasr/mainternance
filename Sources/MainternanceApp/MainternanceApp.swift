@@ -20,7 +20,9 @@ struct MainternanceApp: App {
         let model = composition.overview
         model.start()
         viewModel = model
-        states = WindowStates(scanner: composition.scannerModel)
+        let settings = composition.settings
+        states = WindowStates(scanner: composition.scannerModel, settings: settings)
+        Task { await settings.load() }
         visibility = VisibilityCoordinator(viewModel: model)
     }
 

@@ -10,6 +10,7 @@ struct Composition {
     let scannerModel: ScannerViewModel
     /// Kept so the quit hook can stop a running scan or install.
     let scannerServices: ScannerServices
+    let settings: SettingsViewState
 }
 
 @MainActor
@@ -32,8 +33,15 @@ enum CompositionRoot {
             protectedFolders: services.ownFolders,
             openURL: { NSWorkspace.shared.open($0) }
         )
+        // Settings live next to the scanner's files: <Application Support>/Mainternance/preferences.json.
+        let settings = SettingsViewState(
+            preferences: PreferencesStore(directory: services.paths.supportDirectory),
+            loginItem: LoginItemService(),
+            notifications: UserNotificationService()
+        )
         return Composition(
-            overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services
+            overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
+            settings: settings
         )
     }
 

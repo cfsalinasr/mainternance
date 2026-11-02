@@ -13,6 +13,19 @@ public struct ScanSchedule: Equatable, Codable, Sendable {
         self.minute = minute
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case weekday, hour, minute
+    }
+
+    /// A missing field takes its default; a field of the wrong type still fails.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = ScanSchedule()
+        weekday = try values.decodeIfPresent(Int.self, forKey: .weekday) ?? fallback.weekday
+        hour = try values.decodeIfPresent(Int.self, forKey: .hour) ?? fallback.hour
+        minute = try values.decodeIfPresent(Int.self, forKey: .minute) ?? fallback.minute
+    }
+
     /// The same schedule with every field pulled into range (a hand-edited file may hold anything).
     public func clamped() -> ScanSchedule {
         ScanSchedule(weekday: min(max(weekday, 1), 7), hour: min(max(hour, 0), 23), minute: min(max(minute, 0), 59))
@@ -110,4 +123,22 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         launchAtLogin: false, weeklyScanEnabled: false, schedule: ScanSchedule(), problemAlerts: true,
         weeklyDigest: true, lastScheduledRun: nil
     )
+
+    private enum CodingKeys: String, CodingKey {
+        case launchAtLogin, weeklyScanEnabled, schedule, problemAlerts, weeklyDigest, lastScheduledRun
+    }
+
+    /// A missing field takes its default, so a file written before a field existed keeps every other choice. A
+    /// field of the wrong type, or text that is not a JSON object, still fails (the file is damaged).
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = Self.defaults
+        launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? fallback.launchAtLogin
+        weeklyScanEnabled = try values.decodeIfPresent(Bool.self, forKey: .weeklyScanEnabled)
+            ?? fallback.weeklyScanEnabled
+        schedule = try values.decodeIfPresent(ScanSchedule.self, forKey: .schedule) ?? fallback.schedule
+        problemAlerts = try values.decodeIfPresent(Bool.self, forKey: .problemAlerts) ?? fallback.problemAlerts
+        weeklyDigest = try values.decodeIfPresent(Bool.self, forKey: .weeklyDigest) ?? fallback.weeklyDigest
+        lastScheduledRun = try values.decodeIfPresent(Date.self, forKey: .lastScheduledRun)
+    }
 }

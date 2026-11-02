@@ -169,4 +169,35 @@ struct AppPreferencesTests {
         let data = try encoder.encode(AppPreferences.defaults)
         #expect(try decoder.decode(AppPreferences.self, from: data) == .defaults)
     }
+
+    /// A file written before a field existed must keep the owner's other choices: each missing field takes its
+    /// default instead of failing the whole file.
+    @Test func missingFieldsTakeTheirDefaults() throws {
+        let (_, decoder) = coder()
+        #expect(try decoder.decode(AppPreferences.self, from: Data("{}".utf8)) == .defaults)
+        let partial = """
+        {"weeklyScanEnabled":true,"problemAlerts":false,"schedule":{"hour":9}}
+        """
+        let decoded = try decoder.decode(AppPreferences.self, from: Data(partial.utf8))
+        var expected = AppPreferences.defaults
+        expected.weeklyScanEnabled = true
+        expected.problemAlerts = false
+        expected.schedule = ScanSchedule(weekday: 1, hour: 9, minute: 0)
+        #expect(decoded == expected)
+        let nullRun = #"{"lastScheduledRun":null,"launchAtLogin":true}"#
+        #expect(try decoder.decode(AppPreferences.self, from: Data(nullRun.utf8)).launchAtLogin)
+    }
+
+    @Test func invalidJSONStillFails() {
+        let (_, decoder) = coder()
+        let damaged = [
+            "{ not json", "[1,2]", "\"text\"", #"{"launchAtLogin":"yes"}"#, #"{"schedule":[]}"#,
+            #"{"schedule":{"hour":"nine"}}"#
+        ]
+        for text in damaged {
+            #expect(throws: (any Error).self, "\(text)") {
+                try decoder.decode(AppPreferences.self, from: Data(text.utf8))
+            }
+        }
+    }
 }
