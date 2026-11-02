@@ -67,12 +67,32 @@ public struct ScanSchedule: Equatable, Codable, Sendable {
     }
 
     /// True when the slot containing `now` has started and has not run yet. A missing `lastRun` counts as not run.
-    /// A `lastRun` in the future (the clock moved back) keeps the slot as done.
+    /// A `lastRun` up to a week in the future (the clock moved back) keeps the slot as done; one further ahead
+    /// cannot be real and counts as not run (see `validLastRun`).
     public func isDue(now: Date, lastRun: Date?, calendar: Calendar) -> Bool {
         let start = slotStart(containing: now, calendar: calendar)
         guard now >= start else { return false }
-        guard let lastRun else { return true }
+        guard let lastRun = Self.validLastRun(lastRun, now: now) else { return true }
         return lastRun < start
+    }
+
+    /// How far ahead of `now` a recorded run may be and still count: one week.
+    public static let futureRunLimit: TimeInterval = 7 * 24 * 60 * 60
+
+    /// `run`, or nil when it is more than `futureRunLimit` after `now` (a clock set far ahead, a hand-edited file):
+    /// such a value would otherwise block the weekly scan for as long as it stays in the future.
+    public static func validLastRun(_ run: Date?, now: Date) -> Date? {
+        guard let run, run.timeIntervalSince(now) <= futureRunLimit else { return nil }
+        return run
+    }
+
+    /// The later of two recorded runs, ignoring any that `validLastRun` rejects.
+    public static func laterRun(_ first: Date?, _ second: Date?, now: Date) -> Date? {
+        switch (validLastRun(first, now: now), validLastRun(second, now: now)) {
+        case let (first?, second?): max(first, second)
+        case let (first?, nil): first
+        case let (nil, second): second
+        }
     }
 
     /// The calendar's name for a weekday (1 = Sunday); empty when out of range.
@@ -126,6 +146,16 @@ public struct AppPreferences: Equatable, Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case launchAtLogin, weeklyScanEnabled, schedule, problemAlerts, weeklyDigest, lastScheduledRun
+    }
+
+    /// The read-modify-write rule every preferences store follows: applies `change` to these values, then keeps the
+    /// later valid `lastScheduledRun` of before and after, so no change can move a recorded run back (which could
+    /// run the weekly scan twice in one week).
+    public func updated(now: Date, _ change: (inout AppPreferences) -> Void) -> AppPreferences {
+        var next = self
+        change(&next)
+        next.lastScheduledRun = ScanSchedule.laterRun(lastScheduledRun, next.lastScheduledRun, now: now)
+        return next
     }
 
     /// A missing field takes its default, so a file written before a field existed keeps every other choice. A

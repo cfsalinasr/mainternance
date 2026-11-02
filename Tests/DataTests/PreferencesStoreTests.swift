@@ -10,12 +10,19 @@ struct PreferencesStoreTests {
         temp.url.appendingPathComponent("prefs/preferences.json")
     }
 
+    /// The damaged copy made at `PreferencesStoreTests.now` (unix seconds 1_800_000_000).
     private func asideURL(_ temp: TempDirectory) -> URL {
-        temp.url.appendingPathComponent("prefs/preferences.json.damaged")
+        temp.url.appendingPathComponent("prefs/preferences.json.damaged-1800000000")
     }
 
+    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
+
     private func store(_ temp: TempDirectory) -> PreferencesStore {
-        PreferencesStore(directory: temp.url.appendingPathComponent("prefs", isDirectory: true))
+        PreferencesStore(directory: temp.url.appendingPathComponent("prefs", isDirectory: true), now: { Self.now })
+    }
+
+    private func names(_ temp: TempDirectory) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: fileURL(temp).deletingLastPathComponent().path).sorted()
     }
 
     private func writeRaw(_ text: String, _ temp: TempDirectory) throws {
@@ -161,5 +168,121 @@ struct PreferencesStoreTests {
         let loaded = await store(temp).load()
         #expect((0 ..< 40).contains(loaded.schedule.minute))
         #expect(!FileManager.default.fileExists(atPath: asideURL(temp).path))
+    }
+
+    // MARK: Damaged copies are kept, never deleted
+
+    @Test("each damaged file gets its own timestamped copy; an earlier copy is never replaced or deleted")
+    func damagedCopiesAreKept() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        try writeRaw("first", temp)
+        _ = await prefs.load()
+        try writeRaw("second", temp)
+        _ = await prefs.load() // same second: a distinct name, not the first copy's
+        #expect(try names(temp) == ["preferences.json.damaged-1800000000", "preferences.json.damaged-1800000000-2"])
+        #expect(try String(contentsOf: asideURL(temp), encoding: .utf8) == "first")
+        let second = asideURL(temp).deletingLastPathComponent()
+            .appendingPathComponent("preferences.json.damaged-1800000000-2")
+        #expect(try String(contentsOf: second, encoding: .utf8) == "second")
+    }
+
+    @Test("once the bounded number of damaged copies exists, a new damaged file stays in place and is not overwritten")
+    func damagedCopiesAreBounded() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        for index in 0 ..< PreferencesStore.maxDamagedCopies {
+            try writeRaw("damaged \(index)", temp)
+            _ = await prefs.load()
+        }
+        try writeRaw("one too many", temp)
+        #expect(await prefs.load() == .defaults)
+        await prefs.save(sample)
+        #expect(try String(contentsOf: fileURL(temp), encoding: .utf8) == "one too many")
+        #expect(try names(temp).count == PreferencesStore.maxDamagedCopies + 1)
+    }
+
+    // MARK: Read-modify-write
+
+    @Test("update applies the change to the saved values and writes the result")
+    func updateChangesOnlyWhatItTouches() async throws {
+        let temp = try TempDirectory()
+        await store(temp).save(sample)
+        let result = await store(temp).update { $0.weeklyDigest = false }
+        var expected = sample
+        expected.weeklyDigest = false
+        #expect(result == expected)
+        #expect(await store(temp).load() == expected)
+    }
+
+    @Test("update on a missing file starts from the defaults")
+    func updateWithoutAFile() async throws {
+        let temp = try TempDirectory()
+        let result = await store(temp).update { $0.weeklyScanEnabled = true }
+        var expected = AppPreferences.defaults
+        expected.weeklyScanEnabled = true
+        #expect(result == expected)
+        #expect(await store(temp).load() == expected)
+    }
+
+    @Test("update never moves the last scheduled run back, and drops one more than a week ahead")
+    func updateKeepsTheLaterRun() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        _ = await prefs.update { $0.lastScheduledRun = Self.now }
+        let back = await prefs.update { $0.lastScheduledRun = Self.now.addingTimeInterval(-86400) }
+        #expect(back.lastScheduledRun == Self.now)
+        try writeRaw(#"{"lastScheduledRun":1802592000}"#, temp) // 30 days after `now`
+        let fixed = await prefs.update { $0.lastScheduledRun = Self.now }
+        #expect(fixed.lastScheduledRun == Self.now)
+    }
+
+    @Test("a slow update holds the lock: a concurrent update waits and both changes survive")
+    func updatesAreSerialised() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        let entered = AsyncStream.makeStream(of: Void.self)
+        prefs.afterRead = {
+            prefs.afterRead = nil
+            entered.continuation.yield()
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let slow = Task.detached { await prefs.update { $0.lastScheduledRun = Self.now } }
+        var waiting = entered.stream.makeAsyncIterator()
+        _ = await waiting.next()
+        let fast = Task.detached { await prefs.update { $0.problemAlerts = false } }
+        _ = await slow.value
+        let final = await fast.value
+        #expect(final.lastScheduledRun == Self.now)
+        #expect(!final.problemAlerts)
+        #expect(await store(temp).load() == final)
+    }
+
+    @Test("concurrent updates of different fields all survive")
+    func concurrentUpdates() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { _ = await prefs.update { $0.lastScheduledRun = Self.now } }
+            group.addTask { _ = await prefs.update { $0.weeklyDigest = false } }
+            group.addTask { _ = await prefs.update { $0.schedule.weekday = 4 } }
+            group.addTask { _ = await prefs.update { $0.launchAtLogin = true } }
+        }
+        let loaded = await store(temp).load()
+        #expect(loaded.lastScheduledRun == Self.now)
+        #expect(!loaded.weeklyDigest)
+        #expect(loaded.schedule.weekday == 4)
+        #expect(loaded.launchAtLogin)
+    }
+
+    @Test("update over a damaged file that cannot be moved aside writes nothing")
+    func updateOverUnmovableDamaged() async throws {
+        let temp = try TempDirectory()
+        try writeRaw("garbage", temp)
+        let prefs = store(temp)
+        prefs.failMovingAside = true
+        let result = await prefs.update { $0.weeklyDigest = false }
+        #expect(!result.weeklyDigest)
+        #expect(try String(contentsOf: fileURL(temp), encoding: .utf8) == "garbage")
     }
 }

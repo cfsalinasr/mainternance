@@ -2,7 +2,9 @@ import Foundation
 import MainternanceDomain
 import Synchronization
 
-/// In-memory preferences. `holdNextSave` makes the next `save` wait until `releaseSave()`.
+/// In-memory preferences. `holdNextSave` makes the next `save` or `update` wait until `releaseSave()`; a held
+/// `update` waits BEFORE its read-modify-write, which then runs as one step (like the real store's lock), so a test
+/// can choose which of two writers goes first. `saves` records every value written, by either call.
 final class FakePreferencesStore: PreferencesStoring {
     struct State {
         var stored: AppPreferences = .defaults
@@ -18,9 +20,16 @@ final class FakePreferencesStore: PreferencesStoring {
     private let gate: AsyncStream<Void>
     private let gateSource: AsyncStream<Void>.Continuation
 
-    init(_ stored: AppPreferences = .defaults, log: CallLog? = nil) {
+    /// Judges a recorded run that lies far ahead; the default accepts any date.
+    private let now: @Sendable () -> Date
+
+    init(
+        _ stored: AppPreferences = .defaults, log: CallLog? = nil,
+        now: @escaping @Sendable () -> Date = { .distantFuture }
+    ) {
         state = Mutex(State(stored: stored))
         self.log = log
+        self.now = now
         (saveCalls, saveCallSource) = AsyncStream.makeStream(of: Void.self)
         (gate, gateSource) = AsyncStream.makeStream(of: Void.self)
     }
@@ -38,6 +47,28 @@ final class FakePreferencesStore: PreferencesStoring {
     }
 
     func save(_ preferences: AppPreferences) async {
+        await waitIfHeld()
+        state.withLock {
+            $0.stored = preferences
+            $0.saves.append(preferences)
+        }
+        log?.add("save")
+    }
+
+    func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> AppPreferences {
+        await waitIfHeld()
+        let moment = now()
+        let next = state.withLock { current in
+            let next = current.stored.updated(now: moment, change)
+            current.stored = next
+            current.saves.append(next)
+            return next
+        }
+        log?.add("save")
+        return next
+    }
+
+    private func waitIfHeld() async {
         let hold = state.withLock { current -> Bool in
             defer { current.holdNextSave = false }
             return current.holdNextSave
@@ -48,11 +79,6 @@ final class FakePreferencesStore: PreferencesStoring {
                 break
             }
         }
-        state.withLock {
-            $0.stored = preferences
-            $0.saves.append(preferences)
-        }
-        log?.add("save")
     }
 
     var stored: AppPreferences {

@@ -84,6 +84,51 @@ struct ScanScheduleTests {
         #expect(!dueAfterRun.isEmpty)
     }
 
+    /// On the spring-forward Sunday the slot for 02:30 starts at 03:00 EDT, and a run recorded for the week before
+    /// leaves it due right after.
+    @Test func springForwardSlotStartsAtThreeAndIsDueAfterLastWeeksRun() throws {
+        let newYork = try calendar("America/New_York")
+        let schedule = ScanSchedule(weekday: 1, hour: 2, minute: 30)
+        let threeOOne = try date(newYork, "2026-03-08 03:01")
+        let three = Date(timeIntervalSince1970: 1_772_953_200) // 2026-03-08 07:00 UTC = 03:00 EDT
+        #expect(newYork.timeZone.isDaylightSavingTime(for: three))
+        #expect(newYork.component(.hour, from: three) == 3 && newYork.component(.minute, from: three) == 0)
+        #expect(schedule.slotStart(containing: threeOOne, calendar: newYork) == three)
+        let lastWeek = try date(newYork, "2026-03-01 02:30")
+        #expect(schedule.isDue(now: threeOOne, lastRun: lastWeek, calendar: newYork))
+    }
+
+    /// A recorded run more than a week ahead cannot be real (a clock set far ahead, a hand-edited file); it must
+    /// not block the weekly scan forever. Up to a week ahead still counts as done (the clock moved back a little).
+    @Test func aLastRunMoreThanAWeekAheadIsIgnored() throws {
+        let utc = try calendar("UTC")
+        let now = try date(utc, "2026-11-04 10:00")
+        #expect(sunday.isDue(now: now, lastRun: now.addingTimeInterval(8 * 86400), calendar: utc))
+        #expect(!sunday.isDue(now: now, lastRun: now.addingTimeInterval(6 * 86400), calendar: utc))
+        #expect(!sunday.isDue(now: now, lastRun: now.addingTimeInterval(7 * 86400), calendar: utc))
+    }
+
+    @Test func validLastRunDropsOnlyFarFutureValues() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        #expect(ScanSchedule.validLastRun(nil, now: now) == nil)
+        #expect(ScanSchedule.validLastRun(now.addingTimeInterval(-1e7), now: now) == now.addingTimeInterval(-1e7))
+        #expect(ScanSchedule.validLastRun(now.addingTimeInterval(7 * 86400), now: now) != nil)
+        #expect(ScanSchedule.validLastRun(now.addingTimeInterval(7 * 86400 + 1), now: now) == nil)
+    }
+
+    @Test func laterRunKeepsTheLaterValidValue() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let early = now.addingTimeInterval(-3600)
+        let farAhead = now.addingTimeInterval(30 * 86400)
+        #expect(ScanSchedule.laterRun(early, now, now: now) == now)
+        #expect(ScanSchedule.laterRun(now, early, now: now) == now)
+        #expect(ScanSchedule.laterRun(nil, early, now: now) == early)
+        #expect(ScanSchedule.laterRun(early, nil, now: now) == early)
+        #expect(ScanSchedule.laterRun(nil, nil, now: now) == nil)
+        #expect(ScanSchedule.laterRun(farAhead, early, now: now) == early)
+        #expect(ScanSchedule.laterRun(farAhead, nil, now: now) == nil)
+    }
+
     /// 2026-11-01 01:30 happens twice in New York (clocks fall back from 02:00 to 01:00). One run per slot.
     @Test func fallBackRunsExactlyOnce() throws {
         let newYork = try calendar("America/New_York")
@@ -186,6 +231,26 @@ struct AppPreferencesTests {
         #expect(decoded == expected)
         let nullRun = #"{"lastScheduledRun":null,"launchAtLogin":true}"#
         #expect(try decoder.decode(AppPreferences.self, from: Data(nullRun.utf8)).launchAtLogin)
+    }
+
+    /// The read-modify-write rule every preferences store follows: the change applies, and a recorded run is never
+    /// moved back (the later valid one is kept).
+    @Test func updatedAppliesTheChangeAndKeepsTheLaterRun() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var stored = AppPreferences.defaults
+        stored.lastScheduledRun = now
+        let changed = stored.updated(now: now) {
+            $0.problemAlerts = false
+            $0.lastScheduledRun = now.addingTimeInterval(-86400)
+        }
+        #expect(!changed.problemAlerts)
+        #expect(changed.lastScheduledRun == now)
+        let later = stored.updated(now: now) { $0.lastScheduledRun = now.addingTimeInterval(60) }
+        #expect(later.lastScheduledRun == now.addingTimeInterval(60))
+        var invalid = AppPreferences.defaults
+        invalid.lastScheduledRun = now.addingTimeInterval(30 * 86400)
+        #expect(invalid.updated(now: now) { $0.lastScheduledRun = now }.lastScheduledRun == now)
+        #expect(invalid.updated(now: now) { _ in }.lastScheduledRun == nil)
     }
 
     @Test func invalidJSONStillFails() {
