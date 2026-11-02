@@ -9,12 +9,9 @@ enum SampleDataCopy {
     static let sidebarAccessibilitySuffix = "sample data"
     static let settingsNote = "Not connected yet: these settings are not applied."
 
-    /// Screens whose engines do not exist yet.
+    /// Screens whose engines do not exist yet: exactly the ones `AppDestination.isAvailable` does not list.
     static func isSample(_ destination: AppDestination) -> Bool {
-        switch destination {
-        case .files, .scanner, .cleanup, .startup, .uninstaller: true
-        case .home, .settings: false
-        }
+        !destination.isAvailable
     }
 
     static func sidebarAccessibilityLabel(title: String, destination: AppDestination) -> String {

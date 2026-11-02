@@ -257,9 +257,9 @@ struct SettingsViewStateTests {
 @MainActor
 struct WindowStatesTests {
     @Test func constructsAllStates() {
-        let states = WindowStates()
+        let states = WindowStates(scanner: ScannerRig().model)
         #expect(!states.files.files.isEmpty)
-        #expect(!states.scanner.findings.isEmpty)
+        #expect(states.scanner.findings.isEmpty) // The real Scanner starts with nothing listed, never sample data.
         #expect(!states.cleanup.categories.isEmpty)
         #expect(!states.startup.items.isEmpty)
         #expect(!states.uninstaller.apps.isEmpty)

@@ -101,6 +101,34 @@ struct HomeModelTests {
         #expect(model.tiles[2].caption == "No throttling")
     }
 
+    @Test func aScanThatDidNotFinishIsNeverDescribedAsAFinishedScan() {
+        let unfinished = HomeModel(
+            overview: overview(scan: ScanStatus(
+                lastScan: now.addingTimeInterval(-86400), nextScan: nil, unresolvedFindings: 0,
+                lastScanDidNotFinish: true
+            )),
+            now: now, locale: locale
+        )
+        #expect(unfinished.scan.last == "Last scan did not finish")
+        let withFindings = HomeModel(
+            overview: overview(scan: ScanStatus(
+                lastScan: nil, nextScan: nil, unresolvedFindings: 2, lastScanDidNotFinish: true
+            )),
+            now: now, locale: locale
+        )
+        #expect(withFindings.scan.last == "Last scan did not finish, 2 findings")
+    }
+
+    @Test func unreadableSavedResultsAreNeitherNeverScannedNorClean() {
+        let model = HomeModel(
+            overview: overview(scan: ScanStatus(
+                lastScan: nil, nextScan: nil, unresolvedFindings: 0, savedResultsUnreadable: true
+            )),
+            now: now, locale: locale
+        )
+        #expect(model.scan.last == "The scanner's saved results could not be read.")
+    }
+
     @Test func scanSummaryWords() {
         let model = HomeModel(
             overview: overview(scan: ScanStatus(
@@ -109,7 +137,7 @@ struct HomeModelTests {
             )),
             now: now, locale: locale
         )
-        #expect(model.scan.last == "Last scan 3 days ago, clean")
+        #expect(model.scan.last == "Last scan 3 days ago, no unresolved findings")
         #expect(model.scan.next?.hasPrefix("Next: ") == true)
     }
 
@@ -254,6 +282,30 @@ extension HomeModelTests {
             snapshot: makeSnapshot(), scan: nil, report: HealthReport(checks: []), actions: [action]
         ))
         #expect(full.suggestionsEmptyText == nil)
+    }
+
+    @Test func comingNextLineIsPinned() {
+        #expect(HomeModel.comingNextText
+            == "Coming next: file explorer, cleanup, startup items, uninstaller.")
+    }
+
+    @Test func linksToUnavailableDestinationsAreNotInteractive() {
+        let model = HomeModel(
+            overview: overview(checks: [
+                check(.diskSpace, .needsAttention, "Disk 91% full", .cleanup),
+                check(.memoryPressure, .needsAttention, "Memory amber", .settings),
+                check(.thermal, .good, "No throttling", .home)
+            ]),
+            now: now, locale: locale
+        )
+        let reasons = model.banner.reasons
+        #expect(reasons.map(\.isLink) == [false, true])
+        #expect(model.tiles.first { $0.title == "Disk free" }?.isLink == false)
+        #expect(model.tiles.first { $0.title == "Memory" }?.isLink == true)
+        let hidden = SuggestedAction(id: "a", title: "t", detail: "d", symbol: "s", destination: .files)
+        let shown = SuggestedAction(id: "b", title: "t", detail: "d", symbol: "s", destination: .settings)
+        #expect(!hidden.isLink)
+        #expect(shown.isLink)
     }
 
     @Test func goodBannerSaysAvailableWhenSomeChecksAreMissing() {

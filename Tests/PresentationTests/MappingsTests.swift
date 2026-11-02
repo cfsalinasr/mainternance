@@ -48,35 +48,6 @@ struct MappingsTests {
         #expect(FilesSegment.large.id == "large")
     }
 
-    @Test func scannerEngineTexts() {
-        let ready = ScannerEngineState.ready(definitionsAge: .seconds(2 * 86400))
-        #expect(ready.detail == "Definitions updated \(ScannerEngineState.ageText(.seconds(2 * 86400))) ago.")
-        #expect(ScannerEngineState.ageText(.seconds(60)) == "less than an hour")
-        #expect(ScannerEngineState.ageText(.seconds(-5)) == "less than an hour")
-        #expect(ScannerEngineState.notInstalled.detail.contains("ClamAV"))
-        #expect(ScannerEngineState.installing(progress: 0.1).detail == "Setting up the scanning engine.")
-        #expect(ScannerEngineState.downloadingDefinitions(progress: 0.1).detail.contains("definitions"))
-        #expect(ScannerEngineState.updateNeeded.detail.contains("Update"))
-        #expect(ScannerEngineState.notInstalled.symbol == "shield.slash")
-        #expect(ScannerEngineState.installing(progress: 0).symbol == "arrow.down.circle")
-        #expect(ScannerEngineState.downloadingDefinitions(progress: 0).symbol == "arrow.down.circle")
-        #expect(ready.symbol == "checkmark.shield")
-        #expect(ScannerEngineState.updateNeeded.symbol == "exclamationmark.triangle")
-    }
-
-    @Test func scanRunTextsAndSeverities() {
-        #expect(ScanRunState.idle.title == "No scan running")
-        #expect(ScanRunState.idle.detail == "Start a quick or full scan.")
-        #expect(ScanRunState.running(scanned: -4, current: "/").detail.hasPrefix("0 "))
-        #expect(ScanRunState.finished(findings: 0).detail == "Your Mac looks clean.")
-        #expect(ScanRunState.finished(findings: 1).detail == "1 item need your attention.")
-        #expect(ScanRunState.finished(findings: 3).detail == "3 items need your attention.")
-        #expect(ScanRunState.finished(findings: 3).title == "Scan finished")
-        #expect([FindingSeverity.low, .medium, .high].map(\.title) == ["Low", "Medium", "High"])
-        #expect([FindingSeverity.low, .medium, .high].map(\.symbol)
-            == ["info.circle", "exclamationmark.triangle", "exclamationmark.octagon"])
-    }
-
     @Test func startupKindTitles() {
         #expect(StartupKind.allCases.map(\.title) == ["Login items", "Launch agents", "Launch daemons"])
         #expect(StartupKind.loginItem.id == .loginItem)
@@ -101,9 +72,9 @@ struct MappingsTests {
     @Test func navigationOpensAndIgnoresRepeats() {
         let navigation = Navigation()
         #expect(navigation.selection == .home)
-        navigation.open(.files)
-        navigation.open(.files)
-        #expect(navigation.selection == .files)
+        navigation.open(.settings)
+        navigation.open(.settings)
+        #expect(navigation.selection == .settings)
     }
 
     @Test func coordinatorCombinesSourcesBeforeTellingTheModel() async {

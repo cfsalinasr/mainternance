@@ -1,36 +1,29 @@
+import MainternanceDomain
 import SwiftUI
 
 struct FindingsList: View {
-    let state: ScannerViewState
+    let model: ScannerViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Findings (sample)").font(.headline)
-            ForEach(state.findings) { finding in
-                row(finding)
+        if !model.findings.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(ScannerText.findingsHeading(model.findings.count)).font(.headline)
+                ForEach(model.findings) { finding in
+                    row(finding)
+                }
             }
         }
     }
 
-    private func severityColor(_ severity: FindingSeverity) -> Color {
-        switch severity {
-        case .low: .secondary
-        case .medium: .orange
-        case .high: .red
-        }
-    }
-
     private func row(_ finding: ScanFinding) -> some View {
-        let isQuarantined = state.isQuarantined(finding.id)
-        return HStack(alignment: .top, spacing: 12) {
-            // Severity is shown by icon and text, never color alone.
-            Label(finding.severity.title, systemImage: finding.severity.symbol)
+        HStack(alignment: .top, spacing: 12) {
+            // Shown by icon and text, never color alone.
+            Label(ScannerText.detectedBadge, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(severityColor(finding.severity))
+                .foregroundStyle(.orange)
                 .frame(width: 90, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(finding.name).font(.system(size: 13, weight: .medium))
-                Text(finding.reason).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(finding.signature).font(.system(size: 13, weight: .medium))
                 Text(finding.path)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -39,18 +32,10 @@ struct FindingsList: View {
                     .help(finding.path)
             }
             Spacer()
-            if isQuarantined {
-                Label("Marked quarantined (sample)", systemImage: "lock.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Button("Restore") { state.restore(finding.id) }
-                    .accessibilityLabel("Restore \(finding.name)")
-                    .accessibilityHint("Clears the sample quarantine mark; no file is touched")
-            } else {
-                Button("Quarantine") { state.requestQuarantine(finding.id) }
-                    .accessibilityLabel("Quarantine \(finding.name)")
-                    .accessibilityHint("Asks for confirmation first")
-            }
+            Button(ScannerText.quarantineButton) { model.requestQuarantine(finding.id) }
+                .disabled(model.isBusy)
+                .accessibilityLabel(ScannerText.quarantineLabel((finding.path as NSString).lastPathComponent))
+                .accessibilityHint(ScannerText.quarantineHint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .solidCard()
@@ -65,27 +50,96 @@ struct QuarantineConfirmation: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Quarantine this file?").font(.title3.bold())
+            Text(ScannerText.quarantineTitle).font(.title3.bold())
             VStack(alignment: .leading, spacing: 2) {
-                Text(finding.name).font(.system(size: 13, weight: .medium))
+                Text((finding.path as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
+                Text(ScannerText.detectionLine(finding.signature)).font(.system(size: 12)).foregroundStyle(.secondary)
                 Text(finding.path).font(.system(size: 12)).foregroundStyle(.secondary)
                     .lineLimit(2).truncationMode(.middle)
             }
-            Text(
-                [
-                    "Sample only: once the scanner engine is connected, this file would be moved to quarantine",
-                    "and could be restored. For now nothing is moved or deleted."
-                ].joined(separator: " ")
-            )
-            .font(.system(size: 13))
-            .foregroundStyle(.secondary)
+            Text(ScannerText.quarantineExplanation)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
-                Button("Quarantine", action: confirm).keyboardShortcut(.defaultAction)
+                Button(ScannerText.cancelButton, action: cancel).keyboardShortcut(.cancelAction)
+                Button(ScannerText.confirmButton, action: confirm).keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(width: 420)
+    }
+}
+
+struct QuarantineSection: View {
+    let model: ScannerViewModel
+
+    var body: some View {
+        if !model.quarantined.isEmpty || !model.notMoved.isEmpty || model.unclaimedCount > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(ScannerText.quarantineHeading).font(.headline)
+                ForEach(model.quarantined) { record in
+                    contained(record)
+                }
+                ForEach(model.notMoved) { record in
+                    stuck(record)
+                }
+                if model.unclaimedCount > 0 {
+                    Text(ScannerText.unclaimed(model.unclaimedCount))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func contained(_ record: QuarantineRecord) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Label(ScannerText.quarantinedBadge, systemImage: "lock.fill")
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 110, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((record.originalPath as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
+                Text(record.signature).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(record.originalPath)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(record.originalPath)
+            }
+            Spacer()
+            Button(ScannerText.restoreButton) { Task { await model.restore(record.id) } }
+                .disabled(model.isBusy)
+                .accessibilityLabel(ScannerText.restoreLabel((record.originalPath as NSString).lastPathComponent))
+                .accessibilityHint(ScannerText.restoreHint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .solidCard()
+        .accessibilityElement(children: .contain)
+    }
+
+    private func stuck(_ record: QuarantineRecord) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Label(ScannerText.notMovedBadge, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.orange)
+                .frame(width: 110, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((record.originalPath as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
+                Text("\(record.signature): \(ScannerText.notMovedNote)")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(record.originalPath)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(record.originalPath)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .solidCard()
+        .accessibilityElement(children: .combine)
     }
 }

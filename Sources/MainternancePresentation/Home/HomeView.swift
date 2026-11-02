@@ -30,6 +30,10 @@ public struct HomeView: View {
                     actions: model.actions, emptyText: model.suggestionsEmptyText, open: navigation.open
                 )
                 ScanSummaryCard(summary: model.scan)
+                Text(HomeModel.comingNextText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 DetailsDisclosure(
                     state: DetailsState(history: viewModel.history),
                     series: HistorySeries(history: viewModel.history),

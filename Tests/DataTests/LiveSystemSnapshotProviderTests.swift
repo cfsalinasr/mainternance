@@ -119,7 +119,7 @@ struct LiveSystemSnapshotProviderTests {
 
     @Test func endToEndReportHasOnlyTheChecksThatCanBeMade() async {
         let load = LoadOverview(
-            snapshots: Readers().provider, scans: NoScannerStatusProvider(), actions: NoSuggestedActionsProvider()
+            snapshots: Readers().provider, scans: noScanner(), actions: NoSuggestedActionsProvider()
         )
         let overview = await load()
         #expect(overview.scan == nil)
@@ -133,7 +133,7 @@ struct LiveSystemSnapshotProviderTests {
         readers.memory = MemoryPressureReader(read: { nil })
         readers.battery = BatteryReader(read: { nil })
         let load = LoadOverview(
-            snapshots: readers.provider, scans: NoScannerStatusProvider(), actions: NoSuggestedActionsProvider()
+            snapshots: readers.provider, scans: noScanner(), actions: NoSuggestedActionsProvider()
         )
         let overview = await load()
         #expect(overview.report.checks.map(\.id) == [.diskSpace, .thermal])
@@ -141,7 +141,7 @@ struct LiveSystemSnapshotProviderTests {
     }
 
     @Test func emptyProvidersReturnNothing() async {
-        #expect(await NoScannerStatusProvider().currentStatus() == nil)
+        #expect(await noScanner().currentStatus() == nil)
         #expect(await NoSuggestedActionsProvider().suggestedActions().isEmpty)
     }
 
@@ -150,4 +150,10 @@ struct LiveSystemSnapshotProviderTests {
         #expect(snapshot.diskTotalBytes > 0)
         #expect(snapshot.diskFreeBytes <= snapshot.diskTotalBytes)
     }
+}
+
+/// The provider Home gets while no scanning engine is installed: it reads nothing and returns nil.
+private func noScanner() -> StoredScanStatusProvider {
+    let unused = FileManager.default.temporaryDirectory.appendingPathComponent("mainternance-unused-\(UUID()).json")
+    return StoredScanStatusProvider(store: ScanStatusStore(file: unused), isEngineInstalled: { false })
 }

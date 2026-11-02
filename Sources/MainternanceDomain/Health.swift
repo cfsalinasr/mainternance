@@ -12,8 +12,17 @@ public enum CheckID: String, Sendable, CaseIterable {
     case diskSpace, memoryPressure, thermal, batteryHealth, startupItems, lastScan, osUpdate, scannerFindings
 }
 
-public enum AppDestination: String, Sendable {
+public enum AppDestination: String, Sendable, CaseIterable {
     case home, cleanup, files, scanner, startup, uninstaller, settings
+
+    /// Whether the screen is backed by a working engine. Screens that still run on invented sample data are
+    /// hidden from the sidebar and unreachable by links; their code stays in the repo and comes back one by one.
+    public var isAvailable: Bool {
+        switch self {
+        case .home, .settings, .scanner: true
+        case .files, .cleanup, .startup, .uninstaller: false
+        }
+    }
 }
 
 public struct HealthCheck: Sendable, Identifiable, Equatable {
@@ -69,7 +78,8 @@ public struct HealthEvaluator: Sendable {
         if let updateAvailable = snapshot.osUpdateAvailable {
             checks.append(osUpdate(updateAvailable))
         }
-        if let scan {
+        // Unreadable saved results with no findings listed: "no findings" would be a claim nobody can back.
+        if let scan, !(scan.savedResultsUnreadable && scan.unresolvedFindings == 0) {
             checks.append(findings(scan))
         }
         return HealthReport(checks: checks)
@@ -167,26 +177,52 @@ public struct HealthEvaluator: Sendable {
     }
 
     private func lastScan(_ scan: ScanStatus, now: Date) -> HealthCheck {
+        if scan.savedResultsUnreadable {
+            return HealthCheck(
+                id: .lastScan, state: .needsAttention, title: "Last scan",
+                reason: "The scanner's saved results could not be read.", destination: .scanner
+            )
+        }
+        if scan.lastScanDidNotFinish {
+            // A scan that was started and never ended: what it would have found is unknown, never "good".
+            let aged = scan.lastScan.map { Self.ageState(days: Self.days(since: $0, now: now)) } ?? .needsAttention
+            return HealthCheck(
+                id: .lastScan, state: max(aged, .needsAttention), title: "Last scan",
+                reason: "Last scan did not finish", destination: .scanner
+            )
+        }
         guard let last = scan.lastScan else {
             return HealthCheck(
                 id: .lastScan, state: .needsAttention, title: "Last scan",
                 reason: "Never scanned", destination: .scanner
             )
         }
-        let days = max(0, Int((now.timeIntervalSince(last) / 86400).rounded(.down)))
-        let state: HealthState = if days > 30 {
-            .problem
-        } else if days > 10 {
-            .needsAttention
-        } else {
-            .good
-        }
+        let days = Self.days(since: last, now: now)
+        let state = Self.ageState(days: days)
         let reason = switch days {
         case 0: "Today"
         case 1: "1 day ago"
         default: "\(days) days ago"
         }
         return HealthCheck(id: .lastScan, state: state, title: "Last scan", reason: reason, destination: .scanner)
+    }
+
+    /// Whole days since `date`, 0 for a date in the future. Clamped before the conversion: a damaged saved date can
+    /// be far outside the `Int` range, and converting that would stop the app.
+    private static func days(since date: Date, now: Date) -> Int {
+        let days = (now.timeIntervalSince(date) / 86400).rounded(.down)
+        guard days.isFinite, days > 0 else { return 0 }
+        return days >= Double(Int.max) ? Int.max : Int(days)
+    }
+
+    private static func ageState(days: Int) -> HealthState {
+        if days > 30 {
+            .problem
+        } else if days > 10 {
+            .needsAttention
+        } else {
+            .good
+        }
     }
 
     private func osUpdate(_ available: Bool) -> HealthCheck {

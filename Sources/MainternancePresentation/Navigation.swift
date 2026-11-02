@@ -5,13 +5,20 @@ import Observation
 @MainActor
 @Observable
 public final class Navigation {
-    public var selection: AppDestination = .home
+    /// Only `init(selection:)` and `open(_:)` write it, so a hidden screen can never be selected.
+    /// Popover rows and metrics carry no destinations (only Home links do), so they need no such rule.
+    public private(set) var selection: AppDestination = .home
 
-    public init() {}
+    /// A hidden initial destination (for example a restored one) becomes Home.
+    public init(selection: AppDestination = .home) {
+        self.selection = selection.isAvailable ? selection : .home
+    }
 
+    /// A destination without a working engine is never selected: opening one routes to Home.
     public func open(_ destination: AppDestination) {
-        guard destination != selection else { return }
-        selection = destination
+        let target = destination.isAvailable ? destination : .home
+        guard target != selection else { return }
+        selection = target
     }
 }
 
@@ -34,6 +41,11 @@ public struct SidebarItem: Equatable, Sendable, Identifiable {
         SidebarItem(destination: .uninstaller, title: "Uninstaller", symbol: "trash"),
         SidebarItem(destination: .settings, title: "Settings", symbol: "gearshape")
     ]
+
+    /// The items the sidebar shows: only destinations that are available, in sidebar order.
+    public static var visible: [SidebarItem] {
+        all.filter(\.destination.isAvailable)
+    }
 
     public static func item(for destination: AppDestination) -> SidebarItem {
         all.first { $0.destination == destination } ?? all[0]

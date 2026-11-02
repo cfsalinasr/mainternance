@@ -41,7 +41,17 @@ reviews:
       instructions: >
         Data layer implements Domain protocols. Every deletion must go through the
         protected-paths guard and move items to the Trash; permanent deletion
-        (removeItem, unlink, rm) is forbidden. Flag any file operation that bypasses the
+        (removeItem, unlink, rm) is forbidden. One documented exemption: the quarantine
+        store's single removal helper, Sources/MainternanceData/Scanner/QuarantineRemoval.swift.
+        It may unlink (a) the original file after its hash-verified copy was moved into the
+        quarantine folder across volumes (that is a move, not a deletion of user data), and
+        (b) the quarantine's own bookkeeping: sidecars and partial copies in the quarantine
+        folder, the app's copy in the quarantine folder once the file verifiably exists
+        elsewhere, and the restore partial QuarantineRemoval.Target.restorePartial(folder:id:),
+        a half-written ".<uuid>.partial" the restore itself created beside its destination
+        (not in the quarantine folder). Flag any
+        removeItem/unlink/rm outside that helper, any new case added to it that is not one of
+        these, and any caller that bypasses it. Flag any file operation that bypasses the
         guard, any path built from unvalidated input, and any shell invocation that
         interpolates user-controlled strings.
 

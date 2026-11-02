@@ -41,7 +41,7 @@ public struct MainWindowView: View {
         case .files:
             FilesView(navigation: navigation, state: states.files)
         case .scanner:
-            ScannerView(state: states.scanner)
+            ScannerView(model: states.scanner)
         case .cleanup:
             CleanupView(state: states.cleanup)
         case .startup:

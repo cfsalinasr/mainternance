@@ -6,17 +6,24 @@ public struct PopoverView: View {
     private let openWindow: () -> Void
     private let onVisibilityChange: @MainActor (Bool) -> Void
     private let dismisser: WindowDismisser
+    private let quit: () -> Void
+
+    /// The menu-bar app has no app menu (it runs without a Dock icon), so this is the only way to quit it.
+    static let quitTitle = "Quit Mainternance"
+    static let quitHint = "Quits the app and stops any scan that is running"
 
     /// `openWindow` opens the main window; the popover then dismisses itself through `dismisser`.
     public init(
         viewModel: OverviewViewModel,
         openWindow: @escaping () -> Void,
         dismisser: WindowDismisser,
+        quit: @escaping () -> Void,
         onVisibilityChange: @escaping @MainActor (Bool) -> Void
     ) {
         self.viewModel = viewModel
         self.openWindow = openWindow
         self.dismisser = dismisser
+        self.quit = quit
         self.onVisibilityChange = onVisibilityChange
     }
 
@@ -28,6 +35,17 @@ public struct PopoverView: View {
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 120)
                 }
+                Button(action: quit) {
+                    HStack {
+                        Text(Self.quitTitle)
+                        Spacer()
+                        Image(systemName: "power").foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13))
+                .accessibilityHint(Self.quitHint)
             }
             .padding(16)
         }
@@ -51,7 +69,7 @@ public struct PopoverView: View {
             }
         }
         Divider()
-        actionButton("Scan now", symbol: "arrow.clockwise", disabledHint: ScannerHelp.engineNotConnected)
+        actionButton("Scan now", symbol: "arrow.clockwise", disabledHint: ScannerHelp.scanFromScanner)
         actionButton("Open Mainternance", symbol: "chevron.right") {
             openWindow()
             dismisser.dismiss()

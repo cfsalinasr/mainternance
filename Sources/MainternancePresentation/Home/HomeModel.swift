@@ -7,6 +7,11 @@ public struct HomeModel: Equatable, Sendable {
         public var id: CheckID
         public var text: String
         public var destination: AppDestination
+
+        /// False when the destination has no working screen: the reason is then plain text.
+        public var isLink: Bool {
+            destination.isAvailable
+        }
     }
 
     public struct Banner: Equatable, Sendable {
@@ -29,6 +34,11 @@ public struct HomeModel: Equatable, Sendable {
         public var caption: String?
         public var state: HealthState
         public var destination: AppDestination
+
+        /// False when the destination has no working screen: the tile is then not a button.
+        public var isLink: Bool {
+            destination.isAvailable
+        }
     }
 
     public struct ScanSummary: Equatable, Sendable {
@@ -38,6 +48,10 @@ public struct HomeModel: Equatable, Sendable {
         /// Nil when there is no scanner, so only one line is shown.
         public var next: String?
     }
+
+    /// Honest roadmap line on Home; the screens listed here are hidden until their engines work.
+    public static let comingNextText =
+        "Coming next: file explorer, cleanup, startup items, uninstaller."
 
     /// Shown in the Suggested card when there is nothing to suggest.
     public static let noSuggestionsText = "Nothing to suggest yet"
@@ -139,16 +153,23 @@ public struct HomeModel: Equatable, Sendable {
         let scanState = max(check(.lastScan)?.state ?? .good, check(.scannerFindings)?.state ?? .good)
         let findings = scan.unresolvedFindings
         let outcome = switch findings {
-        case ...0: "clean"
+        case ...0: "no unresolved findings"
         case 1: "1 finding"
         default: "\(findings) findings"
+        }
+        let last: String = if scan.savedResultsUnreadable {
+            "The scanner's saved results could not be read."
+        } else if scan.lastScanDidNotFinish {
+            findings > 0 ? "Last scan did not finish, \(outcome)" : "Last scan did not finish"
+        } else {
+            scan.lastScan.map {
+                "Last scan \(PopoverModel.relative($0, now: now, locale: locale)), \(outcome)"
+            } ?? "Never scanned"
         }
         return ScanSummary(
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,
-            last: scan.lastScan.map {
-                "Last scan \(PopoverModel.relative($0, now: now, locale: locale)), \(outcome)"
-            } ?? "Never scanned",
+            last: last,
             next: scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
         )
     }
@@ -157,6 +178,13 @@ public struct HomeModel: Equatable, Sendable {
     static func nextText(_ date: Date, locale: Locale, timeZone: TimeZone = .current) -> String {
         let style = Date.FormatStyle(locale: locale, timeZone: timeZone).weekday(.abbreviated).hour().minute()
         return "Next: \(date.formatted(style))"
+    }
+}
+
+public extension SuggestedAction {
+    /// False when the destination has no working screen: the suggestion is then plain text.
+    var isLink: Bool {
+        destination.isAvailable
     }
 }
 

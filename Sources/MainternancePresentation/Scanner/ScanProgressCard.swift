@@ -1,53 +1,38 @@
 import SwiftUI
 
+/// Shown only while a scan runs: how many files were scanned and which folder the engine is in.
 struct ScanProgressCard: View {
-    let run: ScanRunState
+    let model: ScannerViewModel
 
     var body: some View {
-        switch run {
-        case .idle:
-            EmptyView()
-        case let .running(scanned, current):
+        if case let .scanning(scanned, current) = model.run {
             HStack(alignment: .top, spacing: 12) {
                 ProgressView().controlSize(.small).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(run.title).font(.headline)
-                    Text(run.detail).font(.system(size: 13)).foregroundStyle(.secondary)
-                    Text(current)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(current)
+                    Text(ScannerText.scanning).font(.headline)
+                    Text("\(ScannerText.files(scanned)) scanned").font(.system(size: 13)).foregroundStyle(.secondary)
+                    if !current.isEmpty {
+                        Text(current)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(current)
+                    }
                 }
                 Spacer()
-                Button("Cancel") {
-                    // Inert: the scanner engine arrives in a later plan. The button is disabled.
-                }
-                .disabled(true)
-                .help(ScannerHelp.engineNotConnected)
-                .accessibilityLabel("Cancel scan")
-                .accessibilityHint(ScannerHelp.engineNotConnected)
+                Button(ScannerText.cancelButton) { Task { await model.cancel() } }
+                    .accessibilityLabel(ScannerText.cancelScanLabel)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .solidCard()
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Scanning, \(max(scanned, 0)) files scanned, in \(current)")
-        case let .finished(findings):
-            HStack(spacing: 12) {
-                Image(systemName: findings == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(findings == 0 ? Color.green : Color.orange)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(run.title).font(.headline)
-                    Text(run.detail).font(.system(size: 13)).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .solidCard()
-            .accessibilityElement(children: .combine)
+            .accessibilityLabel(spokenLabel(scanned: scanned, current: current))
         }
+    }
+
+    private func spokenLabel(scanned: Int, current: String) -> String {
+        let place = current.isEmpty ? "" : ", in \(current)"
+        return "Scanning, \(ScannerText.files(scanned)) scanned\(place)"
     }
 }

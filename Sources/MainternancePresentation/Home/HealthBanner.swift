@@ -16,13 +16,9 @@ struct HealthBanner: View {
                 reasons
             }
             Spacer()
-            Button("Scan now") {
-                // Inert: the scanner engine arrives in a later plan; the button is disabled.
-            }
-            .buttonStyle(.glass)
-            .disabled(true)
-            .help(ScannerHelp.engineNotConnected)
-            .accessibilityHint(ScannerHelp.engineNotConnected)
+            Button("Open Scanner") { open(.scanner) }
+                .buttonStyle(.glass)
+                .accessibilityHint("Opens the Scanner screen, where you can start a scan")
         }
         .padding(16)
         .glassEffect(
@@ -43,10 +39,14 @@ struct HealthBanner: View {
                         if index > 0 {
                             Text("·").foregroundStyle(.secondary)
                         }
-                        Button(reason.text) { open(reason.destination) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                            .accessibilityHint("Opens the related section")
+                        if reason.isLink {
+                            Button(reason.text) { open(reason.destination) }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHint("Opens the related section")
+                        } else {
+                            Text(reason.text).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

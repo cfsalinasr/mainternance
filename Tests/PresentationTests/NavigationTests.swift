@@ -10,15 +10,59 @@ struct NavigationTests {
 
     @Test func openSetsSelection() {
         let navigation = Navigation()
-        navigation.open(.files)
-        #expect(navigation.selection == .files)
+        navigation.open(.settings)
+        #expect(navigation.selection == .settings)
     }
 
     @Test func openingCurrentDestinationIsNoOp() {
         let navigation = Navigation()
-        navigation.open(.files)
-        navigation.open(.files)
-        #expect(navigation.selection == .files)
+        navigation.open(.settings)
+        navigation.open(.settings)
+        #expect(navigation.selection == .settings)
+    }
+
+    @Test func availabilityRule() {
+        #expect(AppDestination.home.isAvailable)
+        #expect(AppDestination.settings.isAvailable)
+        #expect(AppDestination.scanner.isAvailable)
+        for hidden: AppDestination in [.files, .cleanup, .startup, .uninstaller] {
+            #expect(!hidden.isAvailable)
+        }
+        #expect(AppDestination.allCases.count == 7)
+    }
+
+    @Test func theScannerCanBeOpened() {
+        let navigation = Navigation()
+        navigation.open(.scanner)
+        #expect(navigation.selection == .scanner)
+    }
+
+    @Test func openingAHiddenDestinationRoutesToHome() {
+        for hidden in AppDestination.allCases where !hidden.isAvailable {
+            let fromHome = Navigation()
+            fromHome.open(hidden)
+            #expect(fromHome.selection == .home)
+
+            let fromSettings = Navigation()
+            fromSettings.open(.settings)
+            fromSettings.open(hidden)
+            #expect(fromSettings.selection == .home)
+            #expect(fromSettings.selection.isAvailable)
+        }
+    }
+
+    @Test func constructingWithAHiddenDestinationYieldsAVisibleSelection() {
+        for destination in AppDestination.allCases {
+            let navigation = Navigation(selection: destination)
+            #expect(navigation.selection.isAvailable)
+            #expect(navigation.selection == (destination.isAvailable ? destination : .home))
+        }
+    }
+
+    @Test func sidebarListsOnlyAvailableDestinationsInOrder() {
+        #expect(SidebarItem.visible.map(\.destination) == [.home, .scanner, .settings])
+        #expect(!SidebarItem.visible.contains { !$0.destination.isAvailable })
+        #expect(SidebarItem.visible.map(\.title) == ["Home", "Scanner", "Settings"])
     }
 
     @Test func sidebarOrderAndSymbols() {

@@ -170,6 +170,18 @@ struct HealthEvaluatorTests {
         #expect(check(.lastScan, scan: scan(daysAgo: -1))?.state == .good)
     }
 
+    @Test func extremeLastScanDatesDoNotCrash() {
+        let ancient = ScanStatus(lastScan: Date(timeIntervalSince1970: -1e300), nextScan: nil, unresolvedFindings: 0)
+        #expect(check(.lastScan, scan: ancient)?.state == .problem)
+        let future = ScanStatus(lastScan: Date(timeIntervalSince1970: 1e300), nextScan: nil, unresolvedFindings: 0)
+        #expect(check(.lastScan, scan: future)?.reason == "Today")
+        let unfinished = ScanStatus(
+            lastScan: Date(timeIntervalSince1970: -1e300), nextScan: nil, unresolvedFindings: 0,
+            lastScanDidNotFinish: true
+        )
+        #expect(check(.lastScan, scan: unfinished)?.state == .problem)
+    }
+
     @Test func osUpdate() {
         #expect(check(.osUpdate, snapshot: makeSnapshot(osUpdate: false))?.reason == "Up to date")
         #expect(check(.osUpdate, snapshot: makeSnapshot(osUpdate: true))?.state == .needsAttention)
@@ -205,5 +217,49 @@ struct HealthEvaluatorTests {
         let report = HealthEvaluator().evaluate(snapshot: snapshot, scan: nil, now: now)
         #expect(report.checks.map(\.id) == [.diskSpace, .thermal])
         #expect(report.overall == .good)
+    }
+}
+
+struct ScanDidNotFinishTests {
+    @Test func aScanThatDidNotFinishIsAmberAndSaysSo() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = SystemSnapshot(
+            diskTotalBytes: 100, diskFreeBytes: 90, memoryPressure: nil, thermal: .nominal, cpuUsage: nil,
+            gpuUsage: nil, temperatureCelsius: nil, battery: nil, newStartupItemCount: nil, osUpdateAvailable: nil
+        )
+        let scan = ScanStatus(lastScan: now, nextScan: nil, unresolvedFindings: 0, lastScanDidNotFinish: true)
+        let report = HealthEvaluator().evaluate(snapshot: snapshot, scan: scan, now: now)
+        let check = report.checks.first { $0.id == .lastScan }
+        #expect(check?.state == .needsAttention)
+        #expect(check?.reason == "Last scan did not finish")
+        #expect(check?.destination == .scanner)
+        let finished = ScanStatus(lastScan: now, nextScan: nil, unresolvedFindings: 0)
+        #expect(HealthEvaluator().evaluate(snapshot: snapshot, scan: finished, now: now)
+            .checks.first { $0.id == .lastScan }?.reason == "Today")
+    }
+
+    @Test func theRuleKeepsTheFlag() {
+        #expect(ScanSummaryRules.scanStatus(from: nil, unresolvedFindings: 0, lastScanDidNotFinish: true)
+            .lastScanDidNotFinish)
+        #expect(!ScanSummaryRules.scanStatus(from: nil, unresolvedFindings: 0).lastScanDidNotFinish)
+    }
+}
+
+struct SavedResultsUnreadableTests {
+    @Test func unreadableSavedResultsAreAmberAndClaimNothing() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = SystemSnapshot(
+            diskTotalBytes: 100, diskFreeBytes: 90, memoryPressure: nil, thermal: .nominal, cpuUsage: nil,
+            gpuUsage: nil, temperatureCelsius: nil, battery: nil, newStartupItemCount: nil, osUpdateAvailable: nil
+        )
+        let unknown = ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 0, savedResultsUnreadable: true)
+        let report = HealthEvaluator().evaluate(snapshot: snapshot, scan: unknown, now: now)
+        let check = report.checks.first { $0.id == .lastScan }
+        #expect(check?.state == .needsAttention)
+        #expect(check?.reason == "The scanner's saved results could not be read.")
+        #expect(!report.checks.contains { $0.id == .scannerFindings })
+        let withFindings = ScanStatus(lastScan: nil, nextScan: nil, unresolvedFindings: 2, savedResultsUnreadable: true)
+        let red = HealthEvaluator().evaluate(snapshot: snapshot, scan: withFindings, now: now)
+        #expect(red.checks.first { $0.id == .scannerFindings }?.state == .problem)
     }
 }
