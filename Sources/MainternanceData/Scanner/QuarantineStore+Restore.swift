@@ -25,6 +25,17 @@ extension QuarantineStore {
         let identity: stat
     }
 
+    /// One try at putting the file back under `name`; `createdPartial` tells whether it wrote a `.<uuid>.partial`.
+    private struct Attempt {
+        let id: UUID
+        let source: QuarantineFiles.OpenFile
+        let name: String
+        let original: URL
+        /// The recorded SHA-256 of the quarantined content.
+        let expected: String
+        var createdPartial = false
+    }
+
     /// Restores the file and returns the path it really went to (`a (restored).txt` when something is in the way).
     /// A failed permission reset after the move does not fail the restore: the file is back, and keeps the
     /// quarantine's `0o600` until the permissions are fixed by hand. Special bits (setuid, sticky) are never restored.
@@ -40,7 +51,7 @@ extension QuarantineStore {
         let original = URL(fileURLWithPath: record.originalPath)
         let folder = try openDestination(of: original)
         defer { folder.close() }
-        let placed = try moveOut(id: id, to: original, in: folder)
+        let placed = try moveOut(id: id, to: original, expected: record.sha256, in: folder)
         entries.remove(at: index)
         try? write(entries)
         removeSidecar(id)
@@ -81,7 +92,7 @@ extension QuarantineStore {
 
     /// Moves the quarantined item into `folder` next to `original`, never overwriting. Returns the name it got and
     /// the identity of the restored file.
-    private func moveOut(id: UUID, to original: URL, in folder: RestoreFolder) throws -> Placed {
+    private func moveOut(id: UUID, to original: URL, expected: String, in folder: RestoreFolder) throws -> Placed {
         let source: QuarantineFiles.OpenFile
         do { source = try QuarantineFiles.openRegular(vaultPath(id)) } catch QuarantineError.notRegularFile {
             throw QuarantineError.ioFailure("The quarantined item is not a regular file, so nothing was restored.")
@@ -92,42 +103,53 @@ extension QuarantineStore {
             guard !ProtectedPaths.isProtected(folder.path + "/" + name, including: [directory]) else {
                 throw QuarantineError.protectedPath
             }
+            var attempt = Attempt(id: id, source: source, name: name, original: original, expected: expected)
             do {
-                let identity = try moveOutOnce(id: id, source: source, name: name, original: original, folder: folder)
+                let identity = try moveOutOnce(&attempt, folder: folder)
                 return Placed(name: name, identity: identity)
             } catch QuarantineFiles.MoveFailure.destinationExists {
                 // Something appeared at this name meanwhile: drop our half-written copy (the next try creates it
                 // again with O_EXCL) and pick the next free name.
-                QuarantineRemoval.discard(.restorePartial(folder: folder.path, id: id))
+                discardPartial(of: attempt, in: folder)
                 continue
             } catch {
-                QuarantineRemoval.discard(.restorePartial(folder: folder.path, id: id))
+                discardPartial(of: attempt, in: folder)
                 throw Self.wrap(error)
             }
         }
         throw QuarantineError.ioFailure("No free name was found to restore the file.")
     }
 
-    private func moveOutOnce(
-        id: UUID,
-        source: QuarantineFiles.OpenFile,
-        name: String,
-        original: URL,
-        folder: RestoreFolder
-    ) throws -> stat {
+    /// Only a partial this very attempt created is ours to remove; the plain move never creates one.
+    private func discardPartial(of attempt: Attempt, in folder: RestoreFolder) {
+        if attempt.createdPartial {
+            QuarantineRemoval.discard(.restorePartial(folder: folder.path, id: attempt.id))
+        }
+    }
+
+    private func moveOutOnce(_ attempt: inout Attempt, folder: RestoreFolder) throws -> stat {
+        let id = attempt.id
         if !hooks.forceCopy {
             do {
-                try folder.moveIn(fromPath: vaultPath(id), as: name)
-                return source.info
+                try folder.moveIn(fromPath: vaultPath(id), as: attempt.name)
+                return attempt.source.info
             } catch QuarantineFiles.MoveFailure.crossDevice {
                 // fall through to the copy path
             }
         }
         let partial = ".\(id.uuidString).partial"
-        let copied = try QuarantineFiles.copy(source, into: folder.descriptor, name: partial)
-        guard copied.size == source.info.st_size else { throw QuarantineError.changedSinceScan }
-        hooks.beforeRestoreRename?(original.deletingLastPathComponent().appendingPathComponent(name).path)
-        try folder.rename(partial, to: name)
+        // A restore that crashed earlier can have left our partial behind; clear it so O_EXCL can create it again.
+        QuarantineRemoval.discard(.restorePartial(folder: folder.path, id: id))
+        let copied = try QuarantineFiles.copy(attempt.source, into: folder.descriptor, name: partial) {
+            attempt.createdPartial = true
+        }
+        // The vault copy is the last copy of the content: the restored bytes must be exactly the recorded ones.
+        guard copied.hex == attempt.expected, copied.size == attempt.source.info.st_size else {
+            throw QuarantineError.changedSinceScan
+        }
+        let target = attempt.original.deletingLastPathComponent().appendingPathComponent(attempt.name)
+        hooks.beforeRestoreRename?(target.path)
+        try folder.rename(partial, to: attempt.name)
         // The restored copy is in place and verified; failing to remove our own quarantined copy loses nothing.
         QuarantineRemoval.discard(.vaultCopy(vault: directory, id: id))
         return copied.info

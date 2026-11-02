@@ -134,14 +134,17 @@ enum QuarantineFiles {
     }
 
     /// Like `copy(_:toNewFile:)`, creating `name` relative to the open folder `folder` (`openat`). Also returns the
-    /// identity (`fstat`) of the file it created.
+    /// identity (`fstat`) of the file it created. `created` runs as soon as the new file exists, so a caller knows
+    /// the file is its own to clean up even when the copy fails later.
     static func copy(
         _ source: OpenFile,
         into folder: Int32,
-        name: String
+        name: String,
+        created: () -> Void = {}
     ) throws -> CopyResult {
         let target = openat(folder, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard target >= 0 else { throw QuarantineError.ioFailure(message(errno)) }
+        created()
         defer { _ = close(target) }
         var info = stat()
         guard fstat(target, &info) == 0 else { throw QuarantineError.ioFailure(message(errno)) }
