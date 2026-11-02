@@ -1,6 +1,7 @@
 import Foundation
 @testable import MainternanceData
 import MainternanceDomain
+import Synchronization
 import Testing
 
 /// Damaged and unreadable files: what is kept, what is moved, and when writing is skipped.
@@ -77,6 +78,58 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
         #expect(try damagedContents(temp) == Set((0 ..< limit).map { "damaged \($0)" }))
         #expect(refusing.trashed.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: trashFolder(temp).path))
+    }
+
+    @Test("a file that only looks like a damaged copy is never counted, rotated or sent to the Trash")
+    func strayLookalikesAreIgnored() async throws {
+        let temp = try TempDirectory()
+        let trash = FakeTrash(folder: trashFolder(temp))
+        let strays = [
+            "preferences.json.damaged-backup", "preferences.json.damaged-+5", "preferences.json.damaged-1-2-3",
+            "preferences.json.damaged-12-1", "preferences.json.damaged-12-x", "preferences.json.damaged-"
+        ]
+        for stray in strays {
+            try writeBeside(stray, "keep \(stray)", temp)
+        }
+        let prefs = store(temp, trash: trash)
+        let limit = PreferencesStore.maxDamagedCopies
+        for index in 0 ..< limit {
+            try writeRaw("damaged \(index)", temp)
+            _ = await prefs.load()
+        }
+        #expect(trash.trashed.isEmpty) // the look-alikes did not count towards the limit
+        try writeRaw("one too many", temp)
+        _ = await prefs.load()
+        #expect(trash.trashed.map(\.lastPathComponent) == ["preferences.json.damaged-1800000000"])
+        let folder = fileURL(temp).deletingLastPathComponent()
+        for stray in strays {
+            let contents = try String(contentsOf: folder.appendingPathComponent(stray), encoding: .utf8)
+            #expect(contents == "keep \(stray)")
+        }
+    }
+
+    @Test("a protected path is never sent to the Trash: the damaged file stays and nothing is written")
+    func protectedOldestCopyStaysPut() async throws {
+        let temp = try TempDirectory()
+        let trash = FakeTrash(folder: trashFolder(temp))
+        let limit = PreferencesStore.maxDamagedCopies
+        for index in 0 ..< limit {
+            try writeRaw("damaged \(index)", temp)
+            _ = await store(temp, trash: trash).load()
+        }
+        let asked = Mutex<[String]>([])
+        let prefs = store(temp, trash: trash) { path in
+            asked.withLock { $0.append(path) }
+            return true
+        }
+        let before = try names(temp)
+        try writeRaw("one too many", temp)
+        #expect(await prefs.load() == .defaults)
+        await prefs.save(sample)
+        #expect(asked.withLock { $0 }.first == asideURL(temp).path) // the whole path of the oldest copy
+        #expect(trash.trashed.isEmpty)
+        #expect(try String(contentsOf: fileURL(temp), encoding: .utf8) == "one too many")
+        #expect(try names(temp) == (before + ["preferences.json"]).sorted())
     }
 
     // MARK: A file that exists but cannot be read is not damaged

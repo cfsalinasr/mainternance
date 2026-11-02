@@ -9,8 +9,10 @@ import Synchronization
 /// `preferences.json.damaged-<unix seconds>` (with `-2`, `-3`, ... when that name is taken) before anything new is
 /// written, and loading gives the defaults. At most `maxDamagedCopies` such copies are kept beside the file: once that
 /// many exist, the oldest copy is moved to the Trash (never permanently deleted) and the newest damaged file takes a
-/// fresh name, so saving keeps working. If the oldest copy cannot be moved to the Trash, or moving aside fails, the
-/// damaged file stays where it is and saving is skipped.
+/// fresh name, so saving keeps working. Only names the store itself makes count as copies: any other file (say
+/// `preferences.json.damaged-backup`) is never counted, rotated or moved to the Trash. If the oldest copy's path is
+/// protected (`ProtectedPaths`), or it cannot be moved to the Trash, or moving aside fails, the damaged file stays
+/// where it is and saving is skipped.
 /// A file that exists but cannot be READ (no permission, a directory in its place, an I/O error) is not damaged: it is
 /// left alone, loading gives the defaults, and nothing is saved until a later load reads the file (or finds it gone),
 /// so defaults shown after a passing read error are never written over the owner's choices.
@@ -27,6 +29,7 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
     private let file: URL
     private let now: @Sendable () -> Date
     private let trash: @Sendable (URL) throws -> Void
+    private let isProtected: @Sendable (String) -> Bool
     /// True from a read that failed until a load reads the file (or finds it missing or damaged): writes are skipped.
     private let lock = Mutex(false)
     private let moveAsideFails = Mutex(false)
@@ -45,16 +48,19 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
     }
 
     /// `now` names damaged copies and judges a recorded run that lies too far ahead. `trash` moves the oldest damaged
-    /// copy to the Trash (tests pass a fake so they never touch the real Trash).
+    /// copy to the Trash (tests pass a fake so they never touch the real Trash). `isProtected` is asked about the
+    /// copy's whole path first; a protected path is never moved.
     public init(
         directory: URL,
         now: @escaping @Sendable () -> Date = Date.init,
-        trash: @escaping @Sendable (URL) throws -> Void = PreferencesStore.moveToTrash
+        trash: @escaping @Sendable (URL) throws -> Void = PreferencesStore.moveToTrash,
+        isProtected: @escaping @Sendable (String) -> Bool = { ProtectedPaths.isProtected($0) }
     ) {
         self.directory = directory
         file = directory.appendingPathComponent("preferences.json")
         self.now = now
         self.trash = trash
+        self.isProtected = isProtected
     }
 
     /// The real Trash: the item can be put back from Finder.
@@ -141,7 +147,7 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
 
     /// Returns false when the damaged file is still in place. Nothing is permanently deleted: a new copy gets a name
     /// not yet taken (`moveItem` refuses an existing destination), and once `maxDamagedCopies` exist the oldest copy
-    /// is first moved to the Trash; if that fails, the damaged file stays where it is.
+    /// is first moved to the Trash; if its path is protected or that fails, the damaged file stays where it is.
     private func moveAside() -> Bool {
         guard !failMovingAside else { return false }
         let manager = FileManager.default
@@ -152,7 +158,8 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         let counter = (copies.filter { $0.stamp == stamp }.map(\.counter).max() ?? 0) + 1
         let fresh = directory.appendingPathComponent(DamagedCopy.name(stamp: stamp, counter: counter))
         if copies.count >= Self.maxDamagedCopies, let oldest = copies.first {
-            guard (try? trash(directory.appendingPathComponent(oldest.name))) != nil else { return false }
+            let target = directory.appendingPathComponent(oldest.name)
+            guard !isProtected(target.path), (try? trash(target)) != nil else { return false }
         }
         return (try? manager.moveItem(at: file, to: fresh)) != nil
     }
@@ -163,20 +170,25 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         let stamp: Int
         let counter: Int
 
-        /// Nil for a name that is not a damaged copy; a copy with an unexpected suffix sorts as the oldest.
+        /// Nil for any name the store would not make: exactly `<prefix><digits>` or `<prefix><digits>-<digits>` with
+        /// a counter of 2 or more, ASCII digits only and no leading zeros.
         init?(name: String) {
             guard name.hasPrefix(PreferencesStore.damagedPrefix) else { return nil }
+            let parts = name.dropFirst(PreferencesStore.damagedPrefix.count)
+                .split(separator: "-", omittingEmptySubsequences: false)
+            guard parts.count == 1 || parts.count == 2, let first = Self.number(parts[0]) else { return nil }
+            let second = parts.count == 2 ? Self.number(parts[1]) : 1
+            guard let second, parts.count == 1 || second >= 2 else { return nil }
             self.name = name
-            let parts = name.dropFirst(PreferencesStore.damagedPrefix.count).split(separator: "-")
-            let first = parts.first.flatMap { Int($0) }
-            let second = parts.count == 2 ? Int(parts[1]) : 1
-            if parts.count <= 2, let first, let second {
-                stamp = first
-                counter = second
-            } else {
-                stamp = Int.min
-                counter = 0
-            }
+            stamp = first
+            counter = second
+        }
+
+        /// The value of a run of ASCII digits with no leading zero (as the store writes it); nil for anything else.
+        private static func number(_ text: Substring) -> Int? {
+            guard !text.isEmpty, text.allSatisfy({ ("0" ... "9").contains($0) }),
+                  text == "0" || text.first != "0" else { return nil }
+            return Int(text)
         }
 
         static func name(stamp: Int, counter: Int) -> String {

@@ -49,13 +49,24 @@ extension PreferencesStoreFixture {
         Date(timeIntervalSince1970: 1_800_000_000)
     }
 
-    /// Never the real Trash: by default a trashed item moves into `<temp>/trash`.
-    func store(_ temp: TempDirectory, trash: FakeTrash? = nil) -> PreferencesStore {
+    /// Never the real Trash: by default a trashed item moves into `<temp>/trash`. `isProtected` stands in for the
+    /// protected-path guard (by default the real one, which never protects a temp folder).
+    func store(
+        _ temp: TempDirectory, trash: FakeTrash? = nil,
+        isProtected: @escaping @Sendable (String) -> Bool = { ProtectedPaths.isProtected($0) }
+    ) -> PreferencesStore {
         let fake = trash ?? FakeTrash(folder: trashFolder(temp))
         return PreferencesStore(
             directory: temp.url.appendingPathComponent("prefs", isDirectory: true), now: { Self.now },
-            trash: { try fake.trash($0) }
+            trash: { try fake.trash($0) }, isProtected: isProtected
         )
+    }
+
+    /// Creates `name` beside the preferences file with `text` inside.
+    func writeBeside(_ name: String, _ text: String, _ temp: TempDirectory) throws {
+        let folder = fileURL(temp).deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: folder.appendingPathComponent(name))
     }
 
     func trashFolder(_ temp: TempDirectory) -> URL {
