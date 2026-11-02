@@ -85,10 +85,17 @@ struct ScannerIncompleteScanTests {
     }
 
     @Test func theMessageIsPluralAwareAndPinned() {
-        #expect(ScannerText.unattributedIncomplete(1) == [
-            "1 detection from a scan that did not finish could not be attributed to a file (unusual file names).",
-            "It stays counted until a scan finishes."
-        ].joined(separator: " "))
-        #expect(ScannerText.unattributedIncomplete(3).hasPrefix("3 detections from a scan that did not finish"))
+        let lead = "1 detection from a scan that did not finish could not be attributed to a file (unusual file names)."
+        #expect(ScannerText.unattributedIncomplete(1, scope: .quick) == lead
+            + " It stays counted until a full scan, or another quick scan, finishes without such detections.")
+        #expect(ScannerText.unattributedIncomplete(1, scope: .full) == lead
+            + " It stays counted until a full scan finishes without such detections.")
+        #expect(ScannerText.unattributedIncomplete(1, scope: nil) == lead
+            + " It stays counted until a full scan finishes without such detections.")
+        let folder = ScanScope.custom(URL(fileURLWithPath: "/Users/someone/Documents"))
+        #expect(ScannerText.unattributedIncomplete(1, scope: folder) == lead
+            + " It stays counted until a full scan, or another scan of /Users/someone/Documents, finishes without "
+            + "such detections.")
+        #expect(ScannerText.unattributedIncomplete(3, scope: .quick).hasPrefix("3 detections from a scan that did not"))
     }
 }

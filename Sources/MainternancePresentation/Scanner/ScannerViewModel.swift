@@ -124,11 +124,6 @@ public final class ScannerViewModel {
         permissionDeniedCount > 0
     }
 
-    /// The quit hook's counterpart in the screen: writes any save that is still waiting.
-    public func flushPendingSaves() async {
-        await statusStore.flush()
-    }
-
     public func openFullDiskAccessSettings() {
         if let url = URL(string: ScannerText.fullDiskAccessURL) {
             openURL(url)

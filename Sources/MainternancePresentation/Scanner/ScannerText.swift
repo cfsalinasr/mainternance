@@ -86,12 +86,18 @@ enum ScannerText {
     }
 
     /// Plural-aware ("1 detection", "3 detections"); shown when a cancelled or failed scan could not attribute
-    /// detections to a file. They stay counted until a completed scan replaces them.
-    static func unattributedIncomplete(_ count: Int) -> String {
+    /// detections to a file. Names exactly what clears the count: a completed full scan, or a completed scan of the
+    /// same scope, with no unattributed detections of its own. Mixed scopes are stored as full.
+    static func unattributedIncomplete(_ count: Int, scope: ScanScope?) -> String {
         let value = max(0, count)
         let noun = value == 1 ? "detection" : "detections"
+        let clearedBy = switch scope {
+        case .quick: "a full scan, or another quick scan,"
+        case let .custom(url): "a full scan, or another scan of \(url.path),"
+        case .full, nil: "a full scan"
+        }
         return "\(value) \(noun) from a scan that did not finish could not be attributed to a file "
-            + "(unusual file names). It stays counted until a scan finishes."
+            + "(unusual file names). It stays counted until \(clearedBy) finishes without such detections."
     }
 
     static func permissionExplanation(_ count: Int, locale: Locale = .current) -> String {

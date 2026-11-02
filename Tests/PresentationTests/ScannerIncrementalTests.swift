@@ -141,12 +141,6 @@ struct ScannerManyDetectionsTests {
         #expect(rig.store.recorded.count == 1)
         #expect(rig.store.lastMemory?.findings.count == 5000)
     }
-
-    @Test func theQuitHookPathFlushesThroughThePort() async {
-        let rig = await ScannerRig.ready()
-        await rig.model.flushPendingSaves()
-        #expect(rig.store.state.withLock { $0.flushCount } == 1)
-    }
 }
 
 @MainActor

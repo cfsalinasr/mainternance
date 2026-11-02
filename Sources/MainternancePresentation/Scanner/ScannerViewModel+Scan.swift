@@ -108,8 +108,13 @@ extension ScannerViewModel {
     /// A COMPLETED scan is the only thing that can resolve an older finding. It drops one only when it covered the
     /// path (roots, exclusions, real paths), did not detect it again, AND either read everything (nothing unreadable,
     /// no permission errors, nothing unattributed) or the file is gone. In a folder it could not read, an existing
-    /// file stays unresolved. It also resets the unattributed count of unfinished scans, but only one of its own
-    /// scope or a full scan, and only when it had no unattributed detections itself.
+    /// file stays unresolved.
+    ///
+    /// It also resets the unattributed count of unfinished scans when it is a full scan or one of the count's own
+    /// scope, and had no unattributed detections itself. Unreadable folders do not block this, otherwise the count
+    /// could never clear on a Mac without Full Disk Access (which always has some); the unfinished scan could read
+    /// the file it detected, so the next covering scan normally reads and counts it again. Mixed scopes are stored
+    /// as full, so only a full scan resets them.
     private func resolve(_ summary: ScanSummary, _ coverage: ScanCoverage, refound: Set<String>) {
         let readEverything = summary.unreadable == 0 && summary.permissionDenied == 0
             && summary.unattributedDetections == 0
@@ -118,7 +123,7 @@ extension ScannerViewModel {
             return !readEverything && fileExists(finding.path)
         }
         let coversTheCount = summary.scope == .full || summary.scope == unattributedScope
-        if readEverything, unattributedFromIncompleteScan > 0, coversTheCount {
+        if summary.unattributedDetections == 0, unattributedFromIncompleteScan > 0, coversTheCount {
             unattributedFromIncompleteScan = 0
             unattributedScope = nil
         }

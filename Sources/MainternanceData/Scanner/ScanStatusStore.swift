@@ -22,11 +22,14 @@ import Synchronization
 /// A file that exists but cannot be read is never overwritten: the next save moves it aside as
 /// `<name>.corrupt-<uuid>.json` first (like the quarantine store does with its manifest).
 ///
-/// Writing: the logical state lives in memory (the file is decoded once, on first use). Every save happens inside
-/// one lock, so saves are serialised and an older snapshot can never land after a newer one. `remember` and
+/// Writing: the logical state lives in memory (the file is decoded once, on first use). Every write to disk happens
+/// inside one lock, so writes are serialised and the file always holds the latest logical state; that ordering is
+/// guaranteed only for the writes to disk, not for snapshots that callers hand in concurrently. `remember` and
 /// `recordScan` write at once. `rememberProgress` (one call per detection) writes the first call at once and then at
 /// most once a second: a pending state is written by a one-second timer, by the next immediate write, by `flush()`
-/// and by `flushNow()`, which the app's quit hook calls synchronously so no detection waits in memory at exit.
+/// and by `flushNow()`, which the app's quit hook calls synchronously so no detection waits in memory at exit. After
+/// `flushNow()` every later update writes at once (a timer may never fire during quit). A write that fails stays
+/// pending, so the timer, the next write or a flush retries it.
 public final class ScanStatusStore: ScanStatusRecording, Sendable {
     private static let currentVersion = 1
     private static let writeInterval: TimeInterval = 1
@@ -44,6 +47,8 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
         var unreadableOnDisk = false
         var dirty = false
         var timerArmed = false
+        /// Set by `flushNow()` (quit): from then on every update writes at once, a timer may never fire.
+        var writeImmediately = false
         var lastWrite: Date?
         var writes = 0
         var reads = 0
@@ -139,7 +144,7 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
     // MARK: Writing
 
     public func recordScan(_ summary: ScanSummary, memory: ScanMemory) async {
-        state.withLock { current in
+        let timer = state.withLock { current -> Bool in
             ensureLoaded(&current)
             let previous = current.logical
             let earlier = previous?.earlierUnreadable == true || current.unreadableOnDisk
@@ -151,27 +156,34 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
                 memory: memory
             )
             writeNow(&current)
+            return needsTimer(&current)
+        }
+        if timer {
+            armTimer()
         }
     }
 
     public func remember(_ memory: ScanMemory) async {
-        state.withLock { current in
+        let timer = state.withLock { current -> Bool in
             apply(memory, &current)
             writeNow(&current)
+            return needsTimer(&current)
+        }
+        if timer {
+            armTimer()
         }
     }
 
     public func rememberProgress(_ memory: ScanMemory) async {
         let timer = state.withLock { current -> Bool in
             apply(memory, &current)
-            if let last = current.lastWrite, now().timeIntervalSince(last) < Self.writeInterval {
+            let recent = current.lastWrite.map { now().timeIntervalSince($0) < Self.writeInterval } ?? false
+            if recent, !current.writeImmediately {
                 current.dirty = true
-                guard !current.timerArmed else { return false }
-                current.timerArmed = true
-                return true
+            } else {
+                writeNow(&current)
             }
-            writeNow(&current)
-            return false
+            return needsTimer(&current)
         }
         if timer {
             armTimer()
@@ -185,6 +197,7 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
     /// Synchronous: writes what is still waiting. The app's quit hook calls it before the process exits.
     public func flushNow() {
         state.withLock { current in
+            current.writeImmediately = true
             if current.dirty {
                 writeNow(&current)
             }
@@ -200,6 +213,14 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
         )
     }
 
+    /// Something is still pending (coalesced, or a write that failed) and no timer will write it: arm one. Not
+    /// after the quit flush, when updates write at once and a timer may never fire.
+    private func needsTimer(_ current: inout State) -> Bool {
+        guard current.dirty, !current.timerArmed, !current.writeImmediately else { return false }
+        current.timerArmed = true
+        return true
+    }
+
     private func armTimer() {
         Task { [self] in
             try? await sleep(.seconds(Self.writeInterval))
@@ -212,9 +233,11 @@ public final class ScanStatusStore: ScanStatusRecording, Sendable {
         }
     }
 
-    /// Writes the logical state (inside the lock, so writes are serialised); clears what was pending.
+    /// Writes the logical state (inside the lock, so writes are serialised); clears what was pending only when the
+    /// write succeeded, so a failed write stays pending for the timer, the next write or a flush.
     private func writeNow(_ current: inout State) {
         guard let logical = current.logical else { return }
+        current.dirty = true
         let memory = logical.memory
         let status = StatusFile(
             version: Self.currentVersion,

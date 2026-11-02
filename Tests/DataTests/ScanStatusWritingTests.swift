@@ -169,6 +169,35 @@ struct ScanStatusWritingTests {
         services.terminateNow()
         #expect(await ScanStatusStore(file: ScanStatusStore.defaultFile(paths: paths)).load()?.findings.count == 4)
     }
+
+    @Test("after the quit flush, a late detection is written at once instead of waiting for a timer")
+    func afterQuitFlushWritesAreImmediate() async throws {
+        let temp = try TempDirectory()
+        let sut = store(temp) // its timer never fires by itself, like a timer after quit
+        await sut.rememberProgress(memory(1))
+        sut.flushNow()
+        await sut.rememberProgress(memory(2))
+        await sut.rememberProgress(memory(3))
+        #expect(sut.writeCount == 3)
+        #expect(await ScanStatusStore(file: file(temp)).load()?.findings.count == 3)
+    }
+
+    @Test("a write that failed stays pending and the next flush writes it")
+    func failedWriteStaysPending() async throws {
+        let temp = try TempDirectory()
+        let blocker = temp.url.appendingPathComponent("support")
+        try Data("not a folder".utf8).write(to: blocker) // the store's folder cannot be created: writes fail
+        let target = blocker.appendingPathComponent("scan-status.json")
+        let sut = ScanStatusStore(file: target, now: TestClock().reading, sleep: { _ in
+            try await Task.sleep(for: .seconds(3600))
+        })
+        await sut.remember(memory(2))
+        #expect(sut.writeCount == 0)
+        try FileManager.default.removeItem(at: blocker)
+        sut.flushNow()
+        #expect(sut.writeCount == 1)
+        #expect(await ScanStatusStore(file: target).load()?.findings.count == 2)
+    }
 }
 
 /// Lets a test hold the store's one-second timer and fire it by hand.

@@ -73,7 +73,9 @@ public struct ScannerView: View {
         }
         if model.unattributedFromIncompleteScan > 0 {
             Label(
-                ScannerText.unattributedIncomplete(model.unattributedFromIncompleteScan),
+                ScannerText.unattributedIncomplete(
+                    model.unattributedFromIncompleteScan, scope: model.unattributedScope
+                ),
                 systemImage: "exclamationmark.triangle.fill"
             )
             .font(.system(size: 13))

@@ -122,10 +122,11 @@ struct ScannerUnattributedScopeTests {
         #expect(rig.model.unattributedFromIncompleteScan == 2)
     }
 
-    @Test func aFullScanThatCouldNotReadEverythingDoesNotResetTheCount() async {
-        let rig = await ScannerRig.ready()
-        await incomplete(rig, .full, count: 2)
-        for (unreadable, denied) in [(3, 0), (3, 3), (1, 1)] {
+    /// A Mac without Full Disk Access always has unreadable files: the count must still be able to clear.
+    @Test func aFullScanThatCouldNotReadEverythingStillResetsTheCount() async {
+        for (unreadable, denied) in [(3, 0), (3, 3), (0, 1)] {
+            let rig = await ScannerRig.ready()
+            await incomplete(rig, .full, count: 2)
             rig.engine.configure {
                 $0.scanEvents = [
                     .started(scope: .full),
@@ -133,9 +134,45 @@ struct ScannerUnattributedScopeTests {
                 ]
             }
             await rig.model.startScan(.full)
-            #expect(rig.model.unattributedFromIncompleteScan == 2, "unreadable \(unreadable) denied \(denied)")
+            #expect(rig.model.unattributedFromIncompleteScan == 0, "unreadable \(unreadable) denied \(denied)")
+            #expect(rig.model.unattributedScope == nil)
+            #expect(rig.store.lastMemory?.unattributedFromIncompleteScan == 0)
         }
-        await completed(rig, .full)
+    }
+
+    @Test func aSameScopeScanThatCouldNotReadEverythingStillResetsTheCount() async {
+        let rig = await ScannerRig.ready()
+        await incomplete(rig, .quick, count: 2)
+        rig.engine.configure {
+            $0.scanEvents = [.started(scope: .quick), .finished(makeSummary(scope: .quick, unreadable: 4, denied: 4))]
+        }
+        await rig.model.startScan(.quick)
+        #expect(rig.model.unattributedFromIncompleteScan == 0)
+    }
+
+    @Test func aSameScopeScanWithUnattributedDetectionsOfItsOwnKeepsTheCount() async {
+        let rig = await ScannerRig.ready()
+        await incomplete(rig, .quick, count: 2)
+        await completed(rig, .quick, unattributed: 1)
+        #expect(rig.model.unattributedFromIncompleteScan == 2)
+        #expect(rig.model.unattributedScope == .quick)
+    }
+
+    @Test func mixedScopesStillNeedAFullScanEvenWhenOtherScansCouldNotReadEverything() async {
+        let rig = await ScannerRig.ready()
+        await incomplete(rig, .quick, count: 1)
+        let documents = ScanScope.custom(URL(fileURLWithPath: "/Users/someone/Documents"))
+        rig.engine.configure { $0.roots[documents] = ["/Users/someone/Documents"] }
+        await incomplete(rig, documents, count: 1)
+        rig.engine.configure {
+            $0.scanEvents = [.started(scope: .quick), .finished(makeSummary(scope: .quick, unreadable: 2))]
+        }
+        await rig.model.startScan(.quick)
+        #expect(rig.model.unattributedFromIncompleteScan == 2)
+        rig.engine.configure {
+            $0.scanEvents = [.started(scope: .full), .finished(makeSummary(scope: .full, unreadable: 2))]
+        }
+        await rig.model.startScan(.full)
         #expect(rig.model.unattributedFromIncompleteScan == 0)
     }
 
