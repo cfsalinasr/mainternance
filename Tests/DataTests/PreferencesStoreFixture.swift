@@ -1,6 +1,35 @@
 import Foundation
 @testable import MainternanceData
 import MainternanceDomain
+import Synchronization
+
+/// Stands in for the Trash: records each URL it is given and moves the item into `folder` (a temp folder), or
+/// throws when `fails` is set, leaving the item where it is.
+final class FakeTrash: Sendable {
+    struct Refused: Error {}
+
+    let folder: URL
+    private let state = Mutex<(trashed: [URL], fails: Bool)>(([], false))
+
+    init(folder: URL, fails: Bool = false) {
+        self.folder = folder
+        state.withLock { $0.fails = fails }
+    }
+
+    var trashed: [URL] {
+        state.withLock { $0.trashed }
+    }
+
+    func trash(_ url: URL) throws {
+        try state.withLock { current in
+            guard !current.fails else { throw Refused() }
+            let manager = FileManager.default
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+            try manager.moveItem(at: url, to: folder.appendingPathComponent(url.lastPathComponent))
+            current.trashed.append(url)
+        }
+    }
+}
 
 /// Shared helpers for the preferences store suites. Every test works in its own temp directory, never the real
 /// Application Support.
@@ -20,8 +49,17 @@ extension PreferencesStoreFixture {
         Date(timeIntervalSince1970: 1_800_000_000)
     }
 
-    func store(_ temp: TempDirectory) -> PreferencesStore {
-        PreferencesStore(directory: temp.url.appendingPathComponent("prefs", isDirectory: true), now: { Self.now })
+    /// Never the real Trash: by default a trashed item moves into `<temp>/trash`.
+    func store(_ temp: TempDirectory, trash: FakeTrash? = nil) -> PreferencesStore {
+        let fake = trash ?? FakeTrash(folder: trashFolder(temp))
+        return PreferencesStore(
+            directory: temp.url.appendingPathComponent("prefs", isDirectory: true), now: { Self.now },
+            trash: { try fake.trash($0) }
+        )
+    }
+
+    func trashFolder(_ temp: TempDirectory) -> URL {
+        temp.url.appendingPathComponent("trash", isDirectory: true)
     }
 
     func names(_ temp: TempDirectory) throws -> [String] {

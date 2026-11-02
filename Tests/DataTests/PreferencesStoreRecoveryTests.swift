@@ -23,10 +23,11 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
         #expect(try String(contentsOf: second, encoding: .utf8) == "second")
     }
 
-    @Test("once the bounded number of damaged copies exists, the newest damaged file replaces the oldest copy")
+    @Test("once the bounded number of damaged copies exists, the oldest copy goes to the Trash, never deleted")
     func damagedCopiesRotate() async throws {
         let temp = try TempDirectory()
-        let prefs = store(temp)
+        let trash = FakeTrash(folder: trashFolder(temp))
+        let prefs = store(temp, trash: trash)
         let limit = PreferencesStore.maxDamagedCopies
         for index in 0 ..< limit {
             try writeRaw("damaged \(index)", temp)
@@ -38,6 +39,9 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
         var expected = Set((1 ..< limit).map { "damaged \($0)" })
         expected.insert("one too many")
         #expect(try damagedContents(temp) == expected) // only the oldest copy ("damaged 0") gave way
+        #expect(trash.trashed.map(\.lastPathComponent) == ["preferences.json.damaged-1800000000"])
+        let trashedCopy = trashFolder(temp).appendingPathComponent("preferences.json.damaged-1800000000")
+        #expect(try String(contentsOf: trashedCopy, encoding: .utf8) == "damaged 0") // in the Trash, not gone
         // Saving works again instead of being skipped forever.
         await prefs.save(sample)
         #expect(await store(temp).load() == sample)
@@ -48,6 +52,31 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
         expected.insert("and another")
         #expect(try damagedContents(temp) == expected)
         #expect(try names(temp).count(where: { $0.hasPrefix("preferences.json.damaged-") }) == limit)
+        #expect(trash.trashed.map(\.lastPathComponent)
+            == ["preferences.json.damaged-1800000000", "preferences.json.damaged-1800000000-2"])
+    }
+
+    @Test("when the oldest copy cannot go to the Trash, the damaged file stays in place and nothing is written")
+    func trashFailureKeepsDamagedFile() async throws {
+        let temp = try TempDirectory()
+        let trash = FakeTrash(folder: trashFolder(temp))
+        let limit = PreferencesStore.maxDamagedCopies
+        for index in 0 ..< limit {
+            try writeRaw("damaged \(index)", temp)
+            _ = await store(temp, trash: trash).load()
+        }
+        let refusing = FakeTrash(folder: trashFolder(temp), fails: true)
+        let prefs = store(temp, trash: refusing)
+        let before = try names(temp)
+        try writeRaw("one too many", temp)
+        #expect(await prefs.load() == .defaults)
+        await prefs.save(sample)
+        _ = await prefs.update { $0.launchAtLogin = true }
+        #expect(try String(contentsOf: fileURL(temp), encoding: .utf8) == "one too many")
+        #expect(try names(temp) == (before + ["preferences.json"]).sorted())
+        #expect(try damagedContents(temp) == Set((0 ..< limit).map { "damaged \($0)" }))
+        #expect(refusing.trashed.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: trashFolder(temp).path))
     }
 
     // MARK: A file that exists but cannot be read is not damaged
