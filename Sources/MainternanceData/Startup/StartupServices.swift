@@ -31,12 +31,17 @@ struct StartupLister: StartupListing {
         var snapshot = StartupSnapshot(unreadableFolders: found.unreadableFolders)
         switch review.baseline(establishing: readsState ? items : nil) {
         case let .reviewed(seen):
-            for index in items.indices where !items[index].isReviewed(in: seen) {
-                items[index].isNew = true
+            // A review that cannot be saved could never be cleared, so it marks nothing (Home's count included);
+            // the baseline was read, so the count is a known zero, not unknown.
+            let readOnly = !review.canWrite()
+            if !readOnly {
+                for index in items.indices where !items[index].isReviewed(in: seen) {
+                    items[index].isNew = true
+                }
             }
             snapshot.baselineEstablished = true
             snapshot.newCount = items.count(where: \.isNew)
-            snapshot.reviewReadOnly = readsState && !review.canWrite()
+            snapshot.reviewReadOnly = readsState && readOnly
         case let .missing(saved):
             snapshot.reviewReadOnly = readsState && !saved
         case .unreadable:
@@ -88,22 +93,19 @@ public struct StartupServices: Sendable {
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
         self.init(
-            runner: runner, directory: directory, uid: uid, sources: LaunchItemReader.standardSources(home: home),
-            now: Date.init, clock: Date.init, trash: PreferencesStore.moveToTrash,
-            isProtected: { ProtectedPaths.isProtected($0) }
+            runner: runner, uid: uid, sources: LaunchItemReader.standardSources(home: home), clock: Date.init,
+            review: StartupReviewStore(directory: directory)
         )
     }
 
-    /// Tests pass temp folders, a fake runner, a fake Trash, a fixed `now` (for the saved review) and a `clock`
-    /// (for the age of Home's cached count).
+    /// Tests pass temp folders, a fake runner, a `clock` (for the age of Home's cached count) and a review store
+    /// built over a temp folder with a fake Trash and a fixed `now` (for the saved review).
     init(
-        runner: any ProcessRunning, directory: URL, uid: uid_t, sources: [LaunchItemSource],
-        now: @escaping @Sendable () -> Date, clock: @escaping @Sendable () -> Date,
-        trash: @escaping @Sendable (URL) throws -> Void, isProtected: @escaping @Sendable (String) -> Bool
+        runner: any ProcessRunning, uid: uid_t, sources: [LaunchItemSource],
+        clock: @escaping @Sendable () -> Date, review: StartupReviewStore
     ) {
         let reader = LaunchItemReader(sources: sources)
         let states = LaunchctlStateReader(runner: runner, uid: uid)
-        let review = StartupReviewStore(directory: directory, now: now, trash: trash, isProtected: isProtected)
         let counter = CachedStartupListing(
             base: StartupLister(reader: reader, states: states, review: review, readsState: false),
             minimumAge: Self.counterMinimumAge, now: clock

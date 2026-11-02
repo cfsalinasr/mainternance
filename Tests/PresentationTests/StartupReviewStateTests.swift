@@ -84,4 +84,24 @@ struct StartupReviewStateTests {
         gate.release(StartupRig.sample)
         await second.value
     }
+
+    @Test("readings that finish out of order: the newest reading's result stays on screen")
+    func outOfOrderReadings() async {
+        let gate = GatedListing()
+        let fake = FakeStartup()
+        let state = StartupViewState(lister: gate, controller: fake, reviewer: fake, reveal: { _ in })
+        let older = StartupSnapshot(items: [StartupRig.item("com.example.older")], baselineEstablished: true)
+        let newer = StartupSnapshot(items: [StartupRig.item("com.example.newer")], baselineEstablished: true)
+        let first = Task { await state.refresh() }
+        await gate.waitForCall(1)
+        let second = Task { await state.refresh() }
+        await gate.waitForCall(2)
+        gate.release(newer, at: 1)
+        await second.value
+        #expect(state.snapshot == newer)
+        gate.release(older, at: 0)
+        await first.value
+        #expect(state.snapshot == newer)
+        #expect(!state.isLoading)
+    }
 }

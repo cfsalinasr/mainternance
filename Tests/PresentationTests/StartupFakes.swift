@@ -118,7 +118,7 @@ struct StartupRig {
     }
 }
 
-/// A lister whose readings wait until the test releases them, one at a time.
+/// A lister whose readings wait until the test releases them, in call order or by position.
 final class GatedListing: StartupListing {
     private let waiting = Mutex<[CheckedContinuation<StartupSnapshot, Never>]>([])
 
@@ -128,15 +128,16 @@ final class GatedListing: StartupListing {
         }
     }
 
-    /// Returns once a reading is waiting.
-    func waitForCall() async {
-        while waiting.withLock({ $0.isEmpty }) {
+    /// Returns once at least `count` readings are waiting.
+    func waitForCall(_ count: Int = 1) async {
+        while waiting.withLock({ $0.count < count }) {
             await Task.yield()
         }
     }
 
-    func release(_ snapshot: StartupSnapshot) {
-        let next = waiting.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+    /// Finishes the waiting reading at `index` (0 is the oldest still waiting) with `snapshot`.
+    func release(_ snapshot: StartupSnapshot, at index: Int = 0) {
+        let next = waiting.withLock { $0.indices.contains(index) ? $0.remove(at: index) : nil }
         next?.resume(returning: snapshot)
     }
 }

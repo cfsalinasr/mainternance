@@ -108,11 +108,11 @@ struct StartupFixture {
         clock: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_800_000_000) }
     ) -> StartupServices {
         let fake = trash
-        return StartupServices(
-            runner: launchctl.runner, directory: reviewFolder, uid: 501, sources: sources,
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }, clock: clock, trash: { try fake.trash($0) },
-            isProtected: isProtected
+        let review = StartupReviewStore(
+            directory: reviewFolder, now: { Date(timeIntervalSince1970: 1_800_000_000) },
+            trash: { try fake.trash($0) }, isProtected: isProtected
         )
+        return StartupServices(runner: launchctl.runner, uid: 501, sources: sources, clock: clock, review: review)
     }
 
     /// Writes a launchd property list (XML unless `binary`) and returns its path.

@@ -203,6 +203,32 @@ struct StartupReviewStoreTests {
         #expect(later.reviewReadOnly)
     }
 
+    @Test("a read-only review marks nothing as new, but the count stays a known zero (not unknown)")
+    func readOnlyReviewMarksNothing() async throws {
+        let fixture = try StartupFixture()
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        let services = fixture.services()
+        _ = await services.lister.list()
+        try fixture.job("com.example.added", in: fixture.userFolder)
+        let manager = FileManager.default
+        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.reviewFolder.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.reviewFolder.path) }
+        let later = await services.lister.list()
+        #expect(later.baselineEstablished)
+        #expect(later.reviewReadOnly)
+        #expect(!later.reviewUnreadable)
+        #expect(later.newCount == 0)
+        #expect(later.items.count == 2)
+        #expect(later.items.allSatisfy { !$0.isNew })
+        let counted = await services.newItemCounter.list()
+        #expect(counted.newCount == 0)
+        #expect(counted.items.allSatisfy { !$0.isNew })
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.reviewFolder.path)
+        let writable = await services.lister.list()
+        #expect(writable.newCount == 1) // once savable again, the added item is new as before
+        #expect(writable.items.first { $0.label == "com.example.added" }?.isNew == true)
+    }
+
     @Test("when launchctl fails, the state is unknown for that domain only")
     func failedStatesAreUnknown() async throws {
         let fixture = try StartupFixture()
