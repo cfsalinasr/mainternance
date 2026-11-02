@@ -238,7 +238,21 @@ struct SettingsViewStateTests {
         await rig.state.setProblemAlerts(true)
         #expect(rig.store.stored.lastScheduledRun == recorded)
         #expect(rig.state.current.lastScheduledRun == recorded)
-        #expect(rig.changed.last?.lastScheduledRun == recorded)
+    }
+
+    /// The scheduler also writes this file: it must hold the new values before the save runs, or a scheduled run
+    /// recorded meanwhile could write the old values back.
+    @Test func changesAreReportedBeforeTheyAreSaved() async {
+        let rig = SettingsRig()
+        rig.store.configure { $0.holdNextSave = true }
+        var calls = rig.store.saveCalls.makeAsyncIterator()
+        let change = Task { await rig.state.setWeekday(6) }
+        _ = await calls.next()
+        #expect(rig.changed.last?.schedule.weekday == 6)
+        #expect(rig.store.saves.isEmpty)
+        rig.store.releaseSave()
+        await change.value
+        #expect(rig.changed.count == 1)
     }
 
     /// Turning the weekly scan on must not start a scan at once for a time that already passed this week: the

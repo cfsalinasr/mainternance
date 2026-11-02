@@ -4,11 +4,13 @@ import MainternanceDomain
 extension ScannerViewModel {
     // MARK: - Scanning
 
-    public func startScan(_ scope: ScanScope) async {
-        guard canStartScan else { return }
+    /// Returns the summary this scan ended with, or nil when it did not start or ended without one.
+    @discardableResult
+    public func startScan(_ scope: ScanScope) async -> ScanSummary? {
+        guard canStartScan else { return nil }
         if case let .custom(url) = scope, isProtected(url) {
             errorMessage = ScannerText.protectedFolder
-            return
+            return nil
         }
         errorMessage = nil
         notice = nil
@@ -41,6 +43,7 @@ extension ScannerViewModel {
             }
         }
         await finish(scope, coverage, outcome)
+        return outcome.summary
     }
 
     /// What one scan reported, collected while its events stream in.

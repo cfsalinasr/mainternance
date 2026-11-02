@@ -68,7 +68,8 @@ public final class SettingsViewState {
     public private(set) var notificationAuthorization: NotificationAuthorization = .notDetermined
     /// The result of the last action when it needs words (an error, or where to approve something).
     public private(set) var message: String?
-    /// Called with the new values after each load and change (the scheduler and the notifier listen).
+    /// Called with the new values after each load and at each change, before it is saved (the scheduler and the
+    /// notifier listen).
     @ObservationIgnored public var onChange: (@MainActor (AppPreferences) -> Void)?
 
     @ObservationIgnored private let preferences: any PreferencesStoring
@@ -226,8 +227,10 @@ public final class SettingsViewState {
         notificationAuthorization = await notifications.requestAuthorization()
     }
 
-    /// Saves `current` after every earlier save finished, keeping the newer `lastScheduledRun`, then reports.
+    /// Reports the change at once (the scheduler must hold the new values before anything is written), then saves
+    /// `current` after every earlier save finished, keeping the newer `lastScheduledRun`.
     private func commit() async {
+        onChange?(current)
         let snapshot = current
         let previous = pendingSave
         let store = preferences
@@ -241,7 +244,6 @@ public final class SettingsViewState {
         pendingSave = save
         let lastRun = await save.value
         current.lastScheduledRun = Self.later(current.lastScheduledRun, lastRun)
-        onChange?(current)
     }
 
     private nonisolated static func later(_ first: Date?, _ second: Date?) -> Date? {
