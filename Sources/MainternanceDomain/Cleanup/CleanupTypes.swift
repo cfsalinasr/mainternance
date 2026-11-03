@@ -149,9 +149,9 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
     }
 }
 
-enum CleanupMath {
+public enum CleanupMath {
     /// Adds non-negative byte counts, stopping at `Int64.max` instead of overflowing.
-    static func sum(_ values: [Int64]) -> Int64 {
+    public static func sum(_ values: [Int64]) -> Int64 {
         values.reduce(0) { total, value in
             let added = total.addingReportingOverflow(max(value, 0))
             return added.overflow ? .max : added.partialValue

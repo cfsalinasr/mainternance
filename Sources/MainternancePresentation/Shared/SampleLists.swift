@@ -1,13 +1,5 @@
 import Foundation
 
-struct CleanupCategory: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let detail: String
-    let symbol: String
-    let bytes: Int64
-}
-
 struct Leftover: Identifiable, Equatable {
     let id: String
     let path: String
@@ -29,49 +21,9 @@ struct SampleApp: Identifiable, Equatable {
     }
 }
 
-/// Sample rows for the Cleanup and Uninstaller screens. Replaced by real engines in later plans.
+/// Sample rows for the Uninstaller screen. Replaced by real engines in later plans.
 enum SampleLists {
-    private static let gigabyte: Int64 = 1_000_000_000
     private static let megabyte: Int64 = 1_000_000
-
-    /// Totals 12 GB, matching the Home suggested action.
-    static let cleanupCategories: [CleanupCategory] = [
-        CleanupCategory(
-            id: "caches",
-            name: "Caches",
-            detail: "App and browser caches",
-            symbol: "internaldrive",
-            bytes: 4 * gigabyte + 200 * megabyte
-        ),
-        CleanupCategory(
-            id: "logs",
-            name: "Logs",
-            detail: "Diagnostic and crash logs",
-            symbol: "doc.text",
-            bytes: 900 * megabyte
-        ),
-        CleanupCategory(
-            id: "temp",
-            name: "Temp files",
-            detail: "Leftover temporary files",
-            symbol: "clock.arrow.circlepath",
-            bytes: 1 * gigabyte + 300 * megabyte
-        ),
-        CleanupCategory(
-            id: "installers",
-            name: "Old installers",
-            detail: "Disk images and packages in Downloads",
-            symbol: "shippingbox",
-            bytes: 3 * gigabyte + 100 * megabyte
-        ),
-        CleanupCategory(
-            id: "xcode",
-            name: "Xcode and developer caches",
-            detail: "Derived data and simulator caches",
-            symbol: "hammer",
-            bytes: 2 * gigabyte + 500 * megabyte
-        )
-    ]
 
     static let apps: [SampleApp] = [
         SampleApp(id: "photo-studio", name: "Photo Studio", leftovers: [
@@ -90,9 +42,5 @@ enum SampleLists {
 
     static func sum(_ values: [Int64]) -> Int64 {
         values.reduce(0) { $0 + max($1, 0) }
-    }
-
-    static var cleanupTotalBytes: Int64 {
-        sum(cleanupCategories.map(\.bytes))
     }
 }

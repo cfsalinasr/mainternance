@@ -14,6 +14,7 @@ struct Composition {
     /// The weekly scheduler and the scan notifications, already connected to Settings and the Scanner.
     let automation: ScanAutomation
     let startup: StartupViewState
+    let cleanup: CleanupViewState
 }
 
 @MainActor
@@ -54,9 +55,13 @@ enum CompositionRoot {
             reviewer: startupServices.reviewer,
             reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) }
         )
+        // Cleanup measures the owner's own Caches, Logs, Downloads and DerivedData when its screen appears, and
+        // moves what the owner confirmed to the real Trash.
+        let cleanupServices = CleanupServices()
+        let cleanup = CleanupViewState(scanner: cleanupServices.scanner, mover: cleanupServices.mover)
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
-            settings: settings, automation: automation, startup: startup
+            settings: settings, automation: automation, startup: startup, cleanup: cleanup
         )
     }
 
