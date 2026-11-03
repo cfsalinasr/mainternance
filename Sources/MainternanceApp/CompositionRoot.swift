@@ -15,6 +15,8 @@ struct Composition {
     let automation: ScanAutomation
     let startup: StartupViewState
     let cleanup: CleanupViewState
+    /// Tells Home's Cleanup suggestion whether Home is on screen (it measures again in the background only then).
+    let homeVisibility: @MainActor (Bool) -> Void
 }
 
 @MainActor
@@ -63,7 +65,8 @@ enum CompositionRoot {
         cleanup.onMeasurement = { estimate.record($0) }
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
-            settings: settings, automation: automation, startup: startup, cleanup: cleanup
+            settings: settings, automation: automation, startup: startup, cleanup: cleanup,
+            homeVisibility: { estimate.setHomeVisible($0) }
         )
     }
 

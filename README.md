@@ -90,21 +90,26 @@ otherwise; both intervals are doubled in Low Power Mode.
 
 - Measures four fixed places in your home folder, and nothing else: **Caches** (each item in `~/Library/Caches`),
   **Logs** (each item in `~/Library/Logs`), **Old installers** (`.dmg`, `.pkg` and `.iso` files directly in
-  `~/Downloads` not changed for more than 30 days) and **Developer build caches** (each item in Xcode's
+  `~/Downloads` not changed or added for more than 30 days: the newest of the modified, created and "date added"
+  dates counts) and **Developer build caches** (each item in Xcode's
   `~/Library/Developer/Xcode/DerivedData`, shown only when that folder exists). No system files, no documents, no
   browser profiles, and it never empties the Trash.
 - Measuring starts when you open the screen (never at launch) and only reads. Sizes are the space the items take on
   disk, shown as "about"; "at least" when part of an item could not be read. Links are never followed: a link
   counts, and moves, as the link itself.
-- Everything starts ticked, but nothing moves until you choose Review, check the list (you can untick single
-  items) and click Move to Trash. Items **move to the Trash, never a permanent delete**: Finder's Put Back
+- Caches, logs and developer build caches start ticked; old installers are never selected until you tick them.
+  Nothing moves until you choose Review, check the list (you can tick or untick single items) and click Move to
+  Trash. A list older than 5 minutes is not cleaned: the screen asks you to measure again first. Leaving the
+  screen while it measures drops that measuring; the previous list stays. Items **move to the Trash, never a permanent delete**: Finder's Put Back
   restores them, and the space comes back only when you empty the Trash yourself.
-- Each item is checked again just before it moves: it must still be directly inside its folder, not in a protected
-  place, and unchanged since it was measured. An item that cannot move (for example a cache an open app is using)
+- Each item is checked again just before it moves: it must still be directly inside its folder (the same folder on
+  disk as when the move started), not in a protected place (a link to a protected place is left alone too), and
+  the very item that was measured, of the same kind. An item that cannot move (for example a cache an open app is using)
   is listed with the reason and the rest continue; only what really moved is counted. Quit apps before cleaning
   their caches.
 - Home suggests "Free about N GB in Cleanup" once the Cleanup screen has measured (nothing before) and the total
-  is at least 500 MB. Afterwards it measures again in the background at most every 10 minutes, and updates at once
+  is at least 500 MB. Afterwards it measures again in the background at most every 10 minutes, only while Home is on
+  screen in the window and never in Low Power Mode (at low priority; leaving Home stops it), and updates at once
   whenever the Cleanup screen measures or moves items.
 
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple

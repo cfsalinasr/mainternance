@@ -5,12 +5,17 @@ import Observation
 /// The real Cleanup screen: measures the fixed Cleanup folders through `CleanupScanning`, lets the owner choose
 /// entries, and after a review and an explicit confirm moves them to the Trash through `CleanupMoving`.
 ///
-/// Every entry is selected after a measuring. Only entries that really moved leave the list and count as freed; one
-/// that could not be moved stays listed with its reason. Only the newest measuring is shown, whatever order
-/// measurings finish in; nothing is measured while moving, and nothing moves while measuring.
+/// After a measuring every entry is selected except old installers, which move only once the owner ticks them. Only
+/// entries that really moved leave the list and count as freed; one that could not be moved stays listed with its
+/// reason. Only the newest measuring is shown, whatever order measurings finish in, and a measuring cancelled (the
+/// screen was left) is dropped: the previous list stays and Home is not told. Nothing is measured while moving or
+/// while the review is open, nothing moves while measuring, and a list older than `maximumAge` is not cleaned.
 @MainActor
 @Observable
 public final class CleanupViewState {
+    /// A list older than this is out of date for cleaning: measure again first.
+    static let maximumAge: TimeInterval = 300
+
     /// Nil until the first measuring finished.
     public private(set) var measurement: CleanupMeasurement?
     public private(set) var isMoving = false
@@ -29,11 +34,17 @@ public final class CleanupViewState {
     @ObservationIgnored public var onMeasurement: (@MainActor (CleanupMeasurement) -> Void)?
     @ObservationIgnored private let scanner: any CleanupScanning
     @ObservationIgnored private let mover: any CleanupMoving
+    @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var generation = 0
+    /// When the list on screen was measured (by this clock).
+    @ObservationIgnored private var measuredAt = Date.distantPast
 
-    public init(scanner: any CleanupScanning, mover: any CleanupMoving) {
+    public init(
+        scanner: any CleanupScanning, mover: any CleanupMoving, now: @escaping @Sendable () -> Date = Date.init
+    ) {
         self.scanner = scanner
         self.mover = mover
+        self.now = now
     }
 
     // MARK: - Derived state
@@ -97,9 +108,9 @@ public final class CleanupViewState {
         categories.filter { !$0.entries.isEmpty }
     }
 
-    /// Measure again is offered while nothing is measuring or moving.
+    /// Measure again is offered while nothing is measuring or moving and the review is closed.
     var canMeasure: Bool {
-        !isMeasuring && !isMoving
+        !isMeasuring && !isMoving && !isReviewing
     }
 
     /// A category's size, or that nothing was found in it.
@@ -141,24 +152,27 @@ public final class CleanupViewState {
 
     // MARK: - Actions
 
-    /// The screen appeared: measures, unless a measuring or a move is already running.
+    /// The screen appeared: measures, unless a measuring or a move is already running or the review is open.
     public func appear() async {
         guard canMeasure else { return }
         await measure()
     }
 
-    /// Measures again; ignored while moving. Every entry is selected afterwards.
+    /// Measures again; ignored while moving or reviewing (a new list must never re-tick what the owner unticked in
+    /// the review). Afterwards every entry is selected except old installers. A measuring whose task was cancelled
+    /// (the screen was left) only has lower-bound sizes: it is dropped and the previous list stays.
     public func measure() async {
-        guard !isMoving else { return }
+        guard !isMoving, !isReviewing else { return }
         message = nil
         generation += 1
         let mine = generation
         measuresInFlight += 1
         defer { measuresInFlight -= 1 }
         let read = await scanner.measure()
-        guard mine == generation else { return }
+        guard mine == generation, !Task.isCancelled else { return }
         measurement = read
-        selected = Set(read.categories.flatMap(\.entries).map(\.id))
+        measuredAt = now()
+        selected = Set(read.categories.filter(\.kind.isSelectedByDefault).flatMap(\.entries).map(\.id))
         failures = [:]
         onMeasurement?(read)
     }
@@ -193,11 +207,17 @@ public final class CleanupViewState {
         isReviewing = false
     }
 
-    /// Moves the selected entries to the Trash; only from an open review with something selected.
+    /// Moves the selected entries to the Trash; only from an open review with something selected, and only while the
+    /// list is at most `maximumAge` old (a clock that went backwards counts as out of date).
     func confirm() async {
         let chosen = selectedEntries
         guard isReviewing, !isMoving, !isMeasuring, !chosen.isEmpty else { return }
         isReviewing = false
+        let age = now().timeIntervalSince(measuredAt)
+        guard age >= 0, age <= Self.maximumAge else {
+            message = CleanupText.outOfDate
+            return
+        }
         isMoving = true
         message = nil
         defer { isMoving = false }

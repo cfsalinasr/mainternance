@@ -31,7 +31,7 @@ struct MainternanceApp: App {
         // the defaults (weekly scan off) until then, so starting it first cannot run a scan the owner turned off.
         Task { await settings.load() }
         automation.start()
-        visibility = VisibilityCoordinator(viewModel: model)
+        visibility = VisibilityCoordinator(viewModel: model, onHomeVisibilityChange: composition.homeVisibility)
     }
 
     var body: some Scene {
@@ -47,7 +47,8 @@ struct MainternanceApp: App {
                 navigation: navigation,
                 overview: viewModel,
                 states: states,
-                onVisibilityChange: { visibility.report(.window, visible: $0) }
+                onVisibilityChange: { visibility.report(.window, visible: $0) },
+                onSelectionChange: { visibility.select($0) }
             )
         }
         .defaultLaunchBehavior(.suppressed) // A menu bar app starts with the window closed.

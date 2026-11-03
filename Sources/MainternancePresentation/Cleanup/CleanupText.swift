@@ -21,6 +21,7 @@ enum CleanupText {
     static let nothingFound = "Nothing to clean was found in these folders."
     static let emptyCategory = "Nothing here."
     static let nothingMoved = "Nothing was moved. The reasons are listed below."
+    static let outOfDate = "The list is out of date: measure again before cleaning."
     static let trashNote = "Space comes back when you empty the Trash."
     static let quitAppsNote = "Quit apps before cleaning their caches: a cache in use may not move."
 
@@ -37,7 +38,9 @@ enum CleanupText {
         switch kind {
         case .caches: "Files apps keep to start faster; they are made again when needed."
         case .logs: "Diagnostic records apps and macOS wrote."
-        case .installers: "Disk images and packages in Downloads not changed for more than 30 days."
+        case .installers:
+            "Disk images and packages in Downloads not changed or added for more than 30 days. "
+                + "Never selected until you tick them."
         case .developer: "Xcode's DerivedData; Xcode builds it again when needed."
         }
     }
@@ -103,9 +106,11 @@ enum CleanupText {
         count == 1 ? "1 item" : "\(count) items"
     }
 
-    /// "Moved N items, about X, to the Trash." plus how many could not be moved; only moved bytes count.
+    /// "Moved N items, about X, to the Trash." plus how many could not be moved; only moved bytes count. "At least"
+    /// when any moved item was only partly measured.
     static func result(_ outcome: CleanupOutcome) -> String {
-        let moved = "Moved \(items(outcome.moved.count)), about \(formatBytes(outcome.movedBytes)), to the Trash."
+        let size = size(outcome.movedBytes, lowerBound: outcome.moved.contains(where: \.isLowerBound))
+        let moved = "Moved \(items(outcome.moved.count)), \(size), to the Trash."
         return outcome.failed.isEmpty ? moved : "\(moved) \(outcome.failed.count) could not be moved."
     }
 

@@ -1,8 +1,8 @@
 import MainternanceDomain
 import SwiftUI
 
-/// The review step: every selected category's entries with their folder and size; single entries can be unticked.
-/// Return triggers Cancel; Move to Trash needs an explicit click.
+/// The review step: every category that has entries, with all of its entries (ticked or not), their folder and
+/// size; single entries can be ticked or unticked here. Return triggers Cancel; Move to Trash needs an explicit click.
 struct CleanupReviewSheet: View {
     let state: CleanupViewState
 

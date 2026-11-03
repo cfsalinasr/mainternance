@@ -108,17 +108,32 @@ final class GatedMover: CleanupMoving {
     }
 }
 
-/// A Cleanup screen state over a `FakeCleanup`, recording every measurement it reports.
+/// A clock the test moves by hand.
+final class CleanupClock: Sendable {
+    private let time = Mutex(Date(timeIntervalSince1970: 1_800_000_000))
+
+    func now() -> Date {
+        time.withLock { $0 }
+    }
+
+    func advance(_ seconds: TimeInterval) {
+        time.withLock { $0 = $0.addingTimeInterval(seconds) }
+    }
+}
+
+/// A Cleanup screen state over a `FakeCleanup` and a hand-moved clock, recording every measurement it reports.
 @MainActor
 struct CleanupRig {
     let fake: FakeCleanup
+    let clock = CleanupClock()
     let reported = Recorded<CleanupMeasurement>()
     let state: CleanupViewState
 
     init(_ measurement: CleanupMeasurement = CleanupRig.sample, scanner: (any CleanupScanning)? = nil) {
         let fake = FakeCleanup(measurement)
         self.fake = fake
-        state = CleanupViewState(scanner: scanner ?? fake, mover: fake)
+        let clock = clock
+        state = CleanupViewState(scanner: scanner ?? fake, mover: fake, now: { clock.now() })
         let reported = reported
         state.onMeasurement = { reported.add($0) }
     }
@@ -136,6 +151,17 @@ struct CleanupRig {
 
     nonisolated static func path(_ name: String, folder: String = "/Users/me/Library/Caches") -> String {
         "\(folder)/\(name)"
+    }
+
+    nonisolated static let downloads = "/Users/me/Downloads"
+
+    /// The sample plus one old installer of 700 MB.
+    nonisolated static var withInstaller: CleanupMeasurement {
+        var measurement = sample
+        measurement.categories.append(
+            CleanupCategory(kind: .installers, entries: [entry("Old.dmg", 700, folder: downloads)])
+        )
+        return measurement
     }
 
     /// Caches 3.2 GB in two entries, logs 50 MB in one.
