@@ -116,6 +116,37 @@ struct AppListerTests {
         #expect(apps.allSatisfy { $0.bundleID == nil })
     }
 
+    @Test("a raw com.apple identifier is never listed, even when validation would reject it")
+    func rawAppleIdentifier() async throws {
+        let fixture = try UninstallerFixture()
+        let ids = ["com.apple.Safari", "com.apple.bad id", "com.apple.x/y", "COM.APPLE.Foo", " com.apple.Foo"]
+        for (index, id) in ids.enumerated() {
+            try fixture.app("Apple\(index).app", plist: ["CFBundleIdentifier": id, "CFBundleName": "Apple\(index)"])
+        }
+        try fixture.app("Keep.app", plist: ["CFBundleIdentifier": "com.applesauce.keep"])
+        #expect(await list(fixture).map(\.name) == ["Keep"])
+        #expect(AppLister.isAppleIdentifier("com.apple.x/y"))
+        #expect(!AppLister.isAppleIdentifier("com.applesauce.keep"))
+        #expect(!AppLister.isAppleIdentifier(nil))
+    }
+
+    @Test("a very long name falls back to the folder name")
+    func longName() async throws {
+        let fixture = try UninstallerFixture()
+        try fixture.app("Short.app", plist: ["CFBundleName": String(repeating: "n", count: 5000)])
+        #expect(await list(fixture).map(\.name) == ["Short"])
+    }
+
+    @Test("an Info.plist that is a FIFO is not opened and does not hang")
+    func fifoPlist() async throws {
+        let fixture = try UninstallerFixture()
+        let url = try fixture.app("Fifo.app", plist: nil)
+        #expect(mkfifo(url.appendingPathComponent("Contents/Info.plist").path, 0o600) == 0)
+        let apps = await list(fixture)
+        #expect(apps.map(\.name) == ["Fifo"])
+        #expect(apps[0].bundleID == nil)
+    }
+
     @Test("identifier validation")
     func validIdentifier() {
         #expect(AppLister.validIdentifier("com.example.App-1_x") == "com.example.App-1_x")

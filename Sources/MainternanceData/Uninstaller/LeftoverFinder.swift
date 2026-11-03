@@ -72,14 +72,17 @@ struct LeftoverFinder: LeftoverFinding {
     private func candidates(for app: InstalledApp) -> [Candidate] {
         let library = home.appendingPathComponent("Library", isDirectory: true)
         guard Self.isRealFolder(library.path) else { return [] }
-        let name = app.name.count >= Self.minimumNameLength ? app.name.lowercased() : nil
+        // `InstalledApp` accepts any text, so the identifier is validated again here.
+        let id = AppLister.validIdentifier(app.bundleID)
+        let shown = DisplayText.clean(app.name)
+        let name = shown.count >= Self.minimumNameLength ? shown.lowercased() : nil
         var found: [Candidate] = []
         for (folder, rule) in Self.identifierRules {
             let path = library.appendingPathComponent(folder, isDirectory: true).path
             guard Self.isRealFolder(path),
                   let children = try? FileManager.default.contentsOfDirectory(atPath: path) else { continue }
             for child in children.sorted() {
-                guard let match = Self.match(child, folder: folder, rule: rule, id: app.bundleID, name: name)
+                guard let match = Self.match(child, folder: folder, rule: rule, id: id, name: name)
                 else { continue }
                 found.append(Candidate(
                     path: (path as NSString).appendingPathComponent(child), location: folder, match: match
@@ -95,11 +98,13 @@ struct LeftoverFinder: LeftoverFinding {
         guard !child.isEmpty, child != ".", child != "..", !child.contains("/") else { return nil }
         if let id {
             switch rule {
-            case .exact where child == id, .teamPrefixed where child == id || child.hasSuffix("." + id):
+            case .exact where child == id:
+                return .identifier
+            case .teamPrefixed where isTeamPrefixed(child, id: id):
                 return .identifier
             case let .suffixed(ending) where child == id + ending:
                 return .identifier
-            case .launchAgent where child == id + ".plist" || child.hasPrefix(id + "."):
+            case .launchAgent where isLaunchAgent(child, id: id):
                 return .launchAgent
             default:
                 break
@@ -109,6 +114,31 @@ struct LeftoverFinder: LeftoverFinding {
             return .nameOnly
         }
         return nil
+    }
+
+    /// An identifier with at least two non-empty dot-separated parts (`com.example`), so a bare word such as `app`
+    /// never turns a suffix or prefix rule into "anything ending in .app". Items that only fail this rule are
+    /// dropped (not offered), the simplest safe choice.
+    private static func isDotted(_ id: String) -> Bool {
+        id.split(separator: ".", omittingEmptySubsequences: false).filter { !$0.isEmpty }.count >= 2
+            && !id.hasPrefix(".") && !id.hasSuffix(".") && !id.contains("..")
+    }
+
+    /// Group Containers: exactly `<TEAMID>.<id>`, TEAMID one segment of capital letters and digits (not an
+    /// identifier alone: a group container is named by a team or by the identifier-like group id, never a bare
+    /// word).
+    private static func isTeamPrefixed(_ child: String, id: String) -> Bool {
+        if child == id {
+            return isDotted(id)
+        }
+        guard isDotted(id), child.hasSuffix("." + id) else { return false }
+        let team = child.dropLast(id.count + 1)
+        return (1 ... 20).contains(team.count)
+            && team.unicodeScalars.allSatisfy { ("A" ... "Z").contains($0) || ("0" ... "9").contains($0) }
+    }
+
+    private static func isLaunchAgent(_ child: String, id: String) -> Bool {
+        isDotted(id) && (child == id + ".plist" || child.hasPrefix(id + "."))
     }
 
     private static func isRealFolder(_ path: String) -> Bool {

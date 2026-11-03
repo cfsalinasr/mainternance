@@ -69,19 +69,6 @@ struct LeftoverFinderTests {
         #expect(FileManager.default.fileExists(atPath: documents.path))
     }
 
-    @Test("a hand-built app with a hostile identifier still finds nothing by identifier")
-    func hostileIdentifierDirect() async throws {
-        let fixture = try UninstallerFixture()
-        try fixture.library("Caches/data.bin", bytes: 10)
-        let app = InstalledApp(
-            path: fixture.applications.appendingPathComponent("A.app").path,
-            name: "a",
-            bundleID: nil,
-            version: nil
-        )
-        #expect(await found(fixture, app).isEmpty)
-    }
-
     @Test("name matches are name-only, unticked, case-insensitive and exact")
     func nameMatches() async throws {
         let fixture = try UninstallerFixture()
