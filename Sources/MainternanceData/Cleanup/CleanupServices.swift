@@ -5,6 +5,8 @@ import MainternanceDomain
 public struct CleanupServices: Sendable {
     public let scanner: any CleanupScanning
     public let mover: any CleanupMoving
+    /// Home's suggestion from the last measurement; the Cleanup screen reports each one through `record`.
+    public let estimate: CleanupEstimate
 
     /// `home` is the owner's home folder; tests pass a temp folder, a fixed `now` and a `trash` that moves items
     /// into a temp folder, so no test touches the real `~/Library`, `~/Downloads` or Trash.
@@ -14,7 +16,9 @@ public struct CleanupServices: Sendable {
         trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash
     ) {
         let rules = CleanupRules(roots: CleanupRoots.standard(home: home), now: now)
-        scanner = CleanupMeasurer(rules: rules)
+        let measurer = CleanupMeasurer(rules: rules)
+        scanner = measurer
+        estimate = CleanupEstimate(scanner: measurer, now: now)
         mover = CleanupMover(rules: rules, trash: trash, isProtected: { ProtectedPaths.isProtected($0) })
     }
 

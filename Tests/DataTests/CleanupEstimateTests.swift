@@ -1,0 +1,189 @@
+import Foundation
+@testable import MainternanceData
+import MainternanceDomain
+import Synchronization
+import Testing
+
+/// Counts measurings and returns whatever the test set; never touches the disk.
+final class CountingCleanupScanner: CleanupScanning {
+    private let state: Mutex<(count: Int, next: CleanupMeasurement)>
+
+    init(_ next: CleanupMeasurement) {
+        state = Mutex((0, next))
+    }
+
+    func measure() async -> CleanupMeasurement {
+        state.withLock { current in
+            current.count += 1
+            return current.next
+        }
+    }
+
+    func setNext(_ measurement: CleanupMeasurement) {
+        state.withLock { $0.next = measurement }
+    }
+
+    var count: Int {
+        state.withLock { $0.count }
+    }
+}
+
+/// A clock the test moves by hand.
+final class ManualClock: Sendable {
+    private let time = Mutex(Date(timeIntervalSince1970: 1_800_000_000))
+
+    func now() -> Date {
+        time.withLock { $0 }
+    }
+
+    func advance(_ seconds: TimeInterval) {
+        time.withLock { $0 = $0.addingTimeInterval(seconds) }
+    }
+}
+
+@Suite("Cleanup estimate on Home")
+struct CleanupEstimateTests {
+    private static func measurement(_ bytes: Int64, lowerBound: Bool = false) -> CleanupMeasurement {
+        let entry = CleanupEntry(
+            path: "/Users/me/Library/Caches/a", bytes: bytes, isLowerBound: lowerBound, type: .directory,
+            modified: nil
+        )
+        return CleanupMeasurement(
+            categories: [CleanupCategory(kind: .caches, entries: [entry])], measuredAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private struct Rig {
+        let estimate: CleanupEstimate
+        let scanner: CountingCleanupScanner
+        let clock: ManualClock
+    }
+
+    private func rig(_ next: CleanupMeasurement = measurement(0)) -> Rig {
+        let scanner = CountingCleanupScanner(next)
+        let clock = ManualClock()
+        return Rig(estimate: CleanupEstimate(scanner: scanner, now: { clock.now() }), scanner: scanner, clock: clock)
+    }
+
+    /// Waits until the estimate's background measuring (if any) has finished.
+    private func settle(_ estimate: CleanupEstimate) async {
+        while estimate.isRefreshing {
+            await Task.yield()
+        }
+    }
+
+    @Test("nothing is suggested, and nothing measured, until a first measurement exists")
+    func noneUntilMeasured() async {
+        let parts = rig(Self.measurement(9_000_000_000))
+        let (estimate, scanner, clock) = (parts.estimate, parts.scanner, parts.clock)
+        #expect(await estimate.suggestedActions().isEmpty)
+        clock.advance(3600)
+        #expect(await estimate.suggestedActions().isEmpty)
+        await settle(estimate)
+        #expect(scanner.count == 0) // Home never starts the first disk walk
+    }
+
+    @Test("a measurement of at least 500 MB becomes one suggestion that opens Cleanup")
+    func suggestsAtThreshold() async throws {
+        let estimate = rig().estimate
+        estimate.record(Self.measurement(12_000_000_000))
+        let action = try #require(await estimate.suggestedActions().first)
+        #expect(await estimate.suggestedActions().count == 1)
+        #expect(action.title == "Free about 12 GB in Cleanup")
+        #expect(action.destination == .cleanup)
+        #expect(action.id == "cleanup")
+        #expect(action.detail == "Caches, logs and old installers to review. They move to the Trash, never deleted.")
+        estimate.record(Self.measurement(500_000_000))
+        #expect(await estimate.suggestedActions().count == 1)
+        estimate.record(Self.measurement(499_999_999))
+        #expect(await estimate.suggestedActions().isEmpty)
+    }
+
+    @Test("a lower-bound total says at least")
+    func lowerBound() async throws {
+        let estimate = rig().estimate
+        estimate.record(Self.measurement(2_000_000_000, lowerBound: true))
+        let action = try #require(await estimate.suggestedActions().first)
+        #expect(action.title == "Free at least 2 GB in Cleanup")
+    }
+
+    @Test("the estimate is measured again at most every 10 minutes, in the background")
+    func refreshesAtMostEveryTenMinutes() async {
+        let parts = rig(Self.measurement(3_000_000_000))
+        let (estimate, scanner, clock) = (parts.estimate, parts.scanner, parts.clock)
+        estimate.record(Self.measurement(1_000_000_000))
+        clock.advance(599)
+        #expect(await estimate.suggestedActions().first?.title == "Free about 1 GB in Cleanup")
+        await settle(estimate)
+        #expect(scanner.count == 0)
+        clock.advance(1)
+        // The stale answer is returned at once; the new one arrives once the background measuring finished.
+        #expect(await estimate.suggestedActions().first?.title == "Free about 1 GB in Cleanup")
+        await settle(estimate)
+        #expect(scanner.count == 1)
+        #expect(await estimate.suggestedActions().first?.title == "Free about 3 GB in Cleanup")
+        clock.advance(300)
+        _ = await estimate.suggestedActions()
+        await settle(estimate)
+        #expect(scanner.count == 1)
+    }
+
+    @Test("a measurement from the Cleanup screen replaces the estimate at once")
+    func recordUpdatesImmediately() async {
+        let parts = rig()
+        let (estimate, scanner) = (parts.estimate, parts.scanner)
+        estimate.record(Self.measurement(5_000_000_000))
+        #expect(await estimate.suggestedActions().first?.title == "Free about 5 GB in Cleanup")
+        estimate.record(Self.measurement(100_000_000)) // after a move: below the threshold
+        #expect(await estimate.suggestedActions().isEmpty)
+        #expect(scanner.count == 0)
+    }
+
+    @Test("a clock that went backwards counts as stale")
+    func clockBackwards() async {
+        let parts = rig(Self.measurement(3_000_000_000))
+        let (estimate, scanner, clock) = (parts.estimate, parts.scanner, parts.clock)
+        estimate.record(Self.measurement(1_000_000_000))
+        clock.advance(-60)
+        _ = await estimate.suggestedActions()
+        await settle(estimate)
+        #expect(scanner.count == 1)
+    }
+
+    @Test("a background measuring that finishes after a newer screen measurement is dropped")
+    func olderBackgroundResultDropped() async {
+        let gate = GatedEstimateScanner()
+        let clock = ManualClock()
+        let estimate = CleanupEstimate(scanner: gate, now: { clock.now() })
+        estimate.record(Self.measurement(1_000_000_000))
+        clock.advance(601)
+        _ = await estimate.suggestedActions()
+        await gate.waitForCall()
+        estimate.record(Self.measurement(7_000_000_000))
+        gate.release(Self.measurement(2_000_000_000))
+        await settle(estimate)
+        #expect(await estimate.suggestedActions().first?.title == "Free about 7 GB in Cleanup")
+    }
+}
+
+/// A measurer whose single measuring waits until the test releases it.
+final class GatedEstimateScanner: CleanupScanning {
+    private let waiting = Mutex<[CheckedContinuation<CleanupMeasurement, Never>]>([])
+
+    func measure() async -> CleanupMeasurement {
+        await withCheckedContinuation { continuation in
+            waiting.withLock { $0.append(continuation) }
+        }
+    }
+
+    func waitForCall() async {
+        while waiting.withLock({ $0.isEmpty }) {
+            await Task.yield()
+        }
+    }
+
+    func release(_ measurement: CleanupMeasurement) {
+        let next = waiting.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+        next?.resume(returning: measurement)
+    }
+}

@@ -86,14 +86,34 @@ otherwise; both intervals are doubled in Low Power Mode.
   after the Startup screen lists or marks as reviewed. If the list cannot be saved, the screen says so and
   Mark all as reviewed is off.
 
+**Cleanup** (Cleanup screen, and its suggestion on Home):
+
+- Measures four fixed places in your home folder, and nothing else: **Caches** (each item in `~/Library/Caches`),
+  **Logs** (each item in `~/Library/Logs`), **Old installers** (`.dmg`, `.pkg` and `.iso` files directly in
+  `~/Downloads` not changed for more than 30 days) and **Developer build caches** (each item in Xcode's
+  `~/Library/Developer/Xcode/DerivedData`, shown only when that folder exists). No system files, no documents, no
+  browser profiles, and it never empties the Trash.
+- Measuring starts when you open the screen (never at launch) and only reads. Sizes are the space the items take on
+  disk, shown as "about"; "at least" when part of an item could not be read. Links are never followed: a link
+  counts, and moves, as the link itself.
+- Everything starts ticked, but nothing moves until you choose Review, check the list (you can untick single
+  items) and click Move to Trash. Items **move to the Trash, never a permanent delete**: Finder's Put Back
+  restores them, and the space comes back only when you empty the Trash yourself.
+- Each item is checked again just before it moves: it must still be directly inside its folder, not in a protected
+  place, and unchanged since it was measured. An item that cannot move (for example a cache an open app is using)
+  is listed with the reason and the rest continue; only what really moved is counted. Quit apps before cleaning
+  their caches.
+- Home suggests "Free about N GB in Cleanup" once the Cleanup screen has measured (nothing before) and the total
+  is at least 500 MB. Afterwards it measures again in the background at most every 10 minutes, and updates at once
+  whenever the Cleanup screen measures or moves items.
+
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
-silicon), macOS update status and suggestions.
+silicon) and macOS update status.
 
 **Planned, not available yet** (hidden in the app until each one works; Home lists them under
 "Coming next"):
 
 - File explorer
-- Cleanup
 - Uninstaller
 
 Later plans bring these back one by one.
@@ -101,8 +121,8 @@ Later plans bring these back one by one.
 ## Install
 
 Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar to see the
-popover with the live readings, then choose Open Mainternance to show the window, which has Home, Scanner,
-Startup and Settings (see What is live).
+popover with the live readings, then choose Open Mainternance to show the window, which has Home, Cleanup,
+Scanner, Startup and Settings (see What is live).
 
 - `scripts/build-app.sh` builds a release binary and assembles and signs
   `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).

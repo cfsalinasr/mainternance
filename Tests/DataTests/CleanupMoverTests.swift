@@ -33,6 +33,7 @@ struct CleanupMoverTests {
         let fixture = try CleanupFixture()
         try fixture.file("app/a.bin", in: fixture.caches)
         let services = fixture.services
+        #expect(await services.estimate.suggestedActions().isEmpty) // nothing until Cleanup measured once
         let entries = await services.scanner.measure().categories.flatMap(\.entries)
         #expect(entries.map(\.name) == ["app"])
         let outcome = await services.mover.moveToTrash(entries)
