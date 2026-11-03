@@ -138,6 +138,11 @@ public final class CleanupViewState {
         failures[id]
     }
 
+    /// True when there is something to say about the last action: a result, or a refusal such as 'out of date'.
+    var showsResultCard: Bool {
+        lastOutcome != nil || message != nil
+    }
+
     var resultText: String? {
         lastOutcome.map(CleanupText.result)
     }

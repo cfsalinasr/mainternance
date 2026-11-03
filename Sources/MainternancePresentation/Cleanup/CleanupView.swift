@@ -100,10 +100,12 @@ struct CleanupResultCard: View {
     let state: CleanupViewState
 
     var body: some View {
-        if let result = state.resultText {
+        if state.showsResultCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text(result).font(.system(size: 13, weight: .medium))
-                Text(CleanupText.trashNote).font(.system(size: 12)).foregroundStyle(.secondary)
+                if let result = state.resultText {
+                    Text(result).font(.system(size: 13, weight: .medium))
+                    Text(CleanupText.trashNote).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
                 if let message = state.message {
                     Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
                 }

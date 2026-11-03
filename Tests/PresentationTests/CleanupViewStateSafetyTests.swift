@@ -89,6 +89,8 @@ struct CleanupViewStateSafetyTests {
         #expect(rig.fake.moves.isEmpty)
         #expect(!rig.state.isReviewing)
         #expect(rig.state.message == "The list is out of date: measure again before cleaning.")
+        #expect(rig.state.lastOutcome == nil)
+        #expect(rig.state.showsResultCard) // The refusal must be visible even with no earlier result.
         await rig.state.measure()
         #expect(rig.state.message == nil)
         rig.state.review()
