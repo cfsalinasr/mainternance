@@ -14,13 +14,6 @@ struct SampleListsTests {
         #expect(formatBytes(SampleLists.cleanupTotalBytes) == "12 GB")
     }
 
-    @Test func startupSampleHasExactlyThreeNewItems() {
-        #expect(SampleLists.startupItems.count { $0.isNew } == 3)
-        for kind in StartupKind.allCases {
-            #expect(SampleLists.startupItems.contains { $0.kind == kind })
-        }
-    }
-
     @Test func everyAppHasLeftoversAndTotalIsTheirSum() {
         #expect(!SampleLists.apps.isEmpty)
         for app in SampleLists.apps {
@@ -142,37 +135,6 @@ struct CleanupViewStateTests {
 }
 
 @MainActor
-struct StartupViewStateTests {
-    @Test func toggleFlipsAndRestores() throws {
-        let state = StartupViewState()
-        let item = try #require(state.items.first)
-        state.toggle(item.id)
-        #expect(state.items.first { $0.id == item.id }?.isEnabled == !item.isEnabled)
-        state.toggle(item.id)
-        #expect(state.items.first { $0.id == item.id }?.isEnabled == item.isEnabled)
-    }
-
-    @Test func toggleUnknownIsNoOp() {
-        let state = StartupViewState()
-        let before = state.items
-        state.toggle("nope")
-        #expect(state.items == before)
-    }
-
-    @Test func groupsByKindAndCountsNew() {
-        let state = StartupViewState()
-        #expect(StartupKind.allCases.map { state.items(of: $0).count }.reduce(0, +) == state.items.count)
-        #expect(state.newCount == 3)
-    }
-
-    @Test func emptyListIsSafe() {
-        let state = StartupViewState(items: [])
-        #expect(state.newCount == 0)
-        #expect(state.items(of: .loginItem).isEmpty)
-    }
-}
-
-@MainActor
 struct UninstallerViewStateTests {
     @Test func selectsKnownApp() throws {
         let state = UninstallerViewState()
@@ -204,11 +166,13 @@ struct UninstallerViewStateTests {
 @MainActor
 struct WindowStatesTests {
     @Test func constructsAllStates() {
-        let states = WindowStates(scanner: ScannerRig().model, settings: SettingsRig().state)
+        let states = WindowStates(
+            scanner: ScannerRig().model, settings: SettingsRig().state, startup: StartupRig().state
+        )
         #expect(!states.files.files.isEmpty)
         #expect(states.scanner.findings.isEmpty) // The real Scanner starts with nothing listed, never sample data.
         #expect(!states.cleanup.categories.isEmpty)
-        #expect(!states.startup.items.isEmpty)
+        #expect(states.startup.snapshot == nil) // the real Startup screen lists nothing until it has read the Mac
         #expect(!states.uninstaller.apps.isEmpty)
         #expect(states.settings.current == .defaults)
     }

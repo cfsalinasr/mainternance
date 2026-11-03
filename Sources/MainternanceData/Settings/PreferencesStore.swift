@@ -23,7 +23,6 @@ import Synchronization
 public final class PreferencesStore: PreferencesStoring, Sendable {
     /// How many damaged copies may sit beside the file. Beyond that the oldest goes to the Trash.
     static let maxDamagedCopies = 5
-    private static let damagedPrefix = "preferences.json.damaged-"
 
     private let directory: URL
     private let file: URL
@@ -145,74 +144,16 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         return .readable(prefs)
     }
 
-    /// Returns false when the damaged file is still in place. Nothing is permanently deleted: a new copy gets a name
-    /// not yet taken (`moveItem` refuses an existing destination), and once `maxDamagedCopies` exist the oldest copy
-    /// is first moved to the Trash; if its path is protected or that fails, the damaged file stays where it is.
+    /// Returns false when the damaged file is still in place (see `DamagedFileMover`).
     private func moveAside() -> Bool {
         guard !failMovingAside else { return false }
-        let manager = FileManager.default
-        let copies = ((try? manager.contentsOfDirectory(atPath: directory.path)) ?? [])
-            .compactMap(DamagedCopy.init(name:))
-            .sorted()
-        let stamp = Int(now().timeIntervalSince1970)
-        let counter = (copies.filter { $0.stamp == stamp }.map(\.counter).max() ?? 0) + 1
-        let fresh = directory.appendingPathComponent(DamagedCopy.name(stamp: stamp, counter: counter))
-        if copies.count >= Self.maxDamagedCopies, let oldest = copies.first {
-            let target = directory.appendingPathComponent(oldest.name)
-            guard !isProtected(target.path), (try? trash(target)) != nil else { return false }
-        }
-        return (try? manager.moveItem(at: file, to: fresh)) != nil
-    }
-
-    /// A copy named `preferences.json.damaged-<stamp>` (counter 1) or `preferences.json.damaged-<stamp>-<counter>`.
-    private struct DamagedCopy: Comparable {
-        let name: String
-        let stamp: Int
-        let counter: Int
-
-        /// Nil for any name the store would not make: exactly `<prefix><digits>` or `<prefix><digits>-<digits>` with
-        /// a counter of 2 or more, ASCII digits only and no leading zeros.
-        init?(name: String) {
-            guard name.hasPrefix(PreferencesStore.damagedPrefix) else { return nil }
-            let parts = name.dropFirst(PreferencesStore.damagedPrefix.count)
-                .split(separator: "-", omittingEmptySubsequences: false)
-            guard parts.count == 1 || parts.count == 2, let first = Self.number(parts[0]) else { return nil }
-            let second = parts.count == 2 ? Self.number(parts[1]) : 1
-            guard let second, parts.count == 1 || second >= 2 else { return nil }
-            self.name = name
-            stamp = first
-            counter = second
-        }
-
-        /// The value of a run of ASCII digits with no leading zero (as the store writes it); nil for anything else.
-        private static func number(_ text: Substring) -> Int? {
-            guard !text.isEmpty, text.allSatisfy({ ("0" ... "9").contains($0) }),
-                  text == "0" || text.first != "0" else { return nil }
-            return Int(text)
-        }
-
-        static func name(stamp: Int, counter: Int) -> String {
-            counter == 1
-                ? "\(PreferencesStore.damagedPrefix)\(stamp)"
-                : "\(PreferencesStore.damagedPrefix)\(stamp)-\(counter)"
-        }
-
-        static func < (lhs: Self, rhs: Self) -> Bool {
-            (lhs.stamp, lhs.counter, lhs.name) < (rhs.stamp, rhs.counter, rhs.name)
-        }
+        return DamagedFileMover(
+            directory: directory, fileName: "preferences.json", maxCopies: Self.maxDamagedCopies,
+            now: now, trash: trash, isProtected: isProtected
+        ).moveAside()
     }
 
     private func write(_ preferences: AppPreferences) {
-        let manager = FileManager.default
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(preferences) else { return }
-        try? manager.createDirectory(
-            at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        guard (try? data.write(to: file, options: .atomic)) != nil else { return }
-        try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        PrivateJSONFile.write(preferences, to: file)
     }
 }

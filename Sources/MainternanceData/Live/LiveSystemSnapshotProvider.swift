@@ -10,14 +10,18 @@ public struct LiveSystemSnapshotProvider: SystemSnapshotProviding {
     private let battery: BatteryReader
     private let cpu: CPUReader
     private let gpu: GPUReader
+    private let startup: (any StartupListing)?
 
+    /// `startup` gives Home its count of new startup items (the app passes `StartupServices.newItemCounter`, which
+    /// never runs launchctl or writes); without it the count is unknown.
     public init(
         disk: DiskReader = .init(),
         memory: MemoryPressureReader = .init(),
         thermal: ThermalReader = .init(),
         battery: BatteryReader = .init(),
         cpu: CPUReader = .init(),
-        gpu: GPUReader = .init()
+        gpu: GPUReader = .init(),
+        startup: (any StartupListing)? = nil
     ) {
         self.disk = disk
         self.memory = memory
@@ -25,13 +29,19 @@ public struct LiveSystemSnapshotProvider: SystemSnapshotProviding {
         self.battery = battery
         self.cpu = cpu
         self.gpu = gpu
+        self.startup = startup
     }
 
     /// Unknown values stay nil. An unreadable disk gives total 0 and free 0 (the evaluator reports it as
-    /// "Disk size unavailable"). There is no public temperature source, the startup-item count and the OS
-    /// update state have no engine yet, so those three are always nil.
+    /// "Disk size unavailable"). There is no public temperature source and the OS update state has no engine yet,
+    /// so those two are always nil. The new startup item count is nil until a review baseline exists (and while it
+    /// cannot be read), so Home says nothing rather than "0".
     public func currentSnapshot() async -> SystemSnapshot {
         let volume = disk.read()
+        var startupCount: Int?
+        if let startup {
+            startupCount = await Self.newCount(startup)
+        }
         return SystemSnapshot(
             diskTotalBytes: volume?.total ?? 0,
             diskFreeBytes: volume?.free ?? 0,
@@ -41,8 +51,14 @@ public struct LiveSystemSnapshotProvider: SystemSnapshotProviding {
             gpuUsage: gpu.usage(),
             temperatureCelsius: nil,
             battery: battery.read(),
-            newStartupItemCount: nil,
+            newStartupItemCount: startupCount,
             osUpdateAvailable: nil
         )
+    }
+
+    private static func newCount(_ lister: any StartupListing) async -> Int? {
+        let snapshot = await lister.list()
+        guard snapshot.baselineEstablished, !snapshot.reviewUnreadable else { return nil }
+        return snapshot.newCount
     }
 }

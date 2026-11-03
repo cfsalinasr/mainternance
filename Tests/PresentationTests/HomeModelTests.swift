@@ -29,12 +29,12 @@ struct HomeModelTests {
             overview: overview(checks: [
                 check(.diskSpace, .needsAttention, "Disk 91% full", .cleanup),
                 check(.memoryPressure, .good, "Pressure normal", .home),
-                check(.startupItems, .needsAttention, "3 new login items", .startup)
+                check(.startupItems, .needsAttention, "3 new startup items", .startup)
             ]),
             now: now, locale: locale
         )
         #expect(model.banner.state == .needsAttention)
-        #expect(model.banner.reasons.map(\.text) == ["Disk 91% full", "3 new login items"])
+        #expect(model.banner.reasons.map(\.text) == ["Disk 91% full", "3 new startup items"])
         #expect(model.banner.reasons.map(\.destination) == [.cleanup, .startup])
     }
 
@@ -286,7 +286,7 @@ extension HomeModelTests {
 
     @Test func comingNextLineIsPinned() {
         #expect(HomeModel.comingNextText
-            == "Coming next: file explorer, cleanup, startup items, uninstaller.")
+            == "Coming next: file explorer, cleanup, uninstaller.")
     }
 
     @Test func linksToUnavailableDestinationsAreNotInteractive() {

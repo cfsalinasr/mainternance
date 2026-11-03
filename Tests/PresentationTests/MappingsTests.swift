@@ -48,11 +48,6 @@ struct MappingsTests {
         #expect(FilesSegment.large.id == "large")
     }
 
-    @Test func startupKindTitles() {
-        #expect(StartupKind.allCases.map(\.title) == ["Login items", "Launch agents", "Launch daemons"])
-        #expect(StartupKind.loginItem.id == .loginItem)
-    }
-
     @Test func healthStyleColorsTitlesAndNotes() {
         #expect(HealthState.good.color == .green)
         #expect(HealthState.needsAttention.color == .orange)

@@ -13,6 +13,7 @@ struct Composition {
     let settings: SettingsViewState
     /// The weekly scheduler and the scan notifications, already connected to Settings and the Scanner.
     let automation: ScanAutomation
+    let startup: StartupViewState
 }
 
 @MainActor
@@ -23,8 +24,11 @@ enum CompositionRoot {
     /// poll: the CPU reader keeps its baseline in it.
     static func make() -> Composition {
         let services = ScannerServices()
+        // The startup review baseline sits next to the scanner's files:
+        // <Application Support>/Mainternance/startup-review.json. Home counts new items with the read-only counter.
+        let startupServices = StartupServices(directory: services.paths.supportDirectory)
         let load = LoadOverview(
-            snapshots: LiveSystemSnapshotProvider(),
+            snapshots: LiveSystemSnapshotProvider(startup: startupServices.newItemCounter),
             scans: services.statusProvider,
             actions: NoSuggestedActionsProvider()
         )
@@ -45,9 +49,14 @@ enum CompositionRoot {
         let automation = ScanAutomation(
             scanner: scannerModel, settings: settings, preferences: preferences, notifications: notifications
         )
+        let startup = StartupViewState(
+            lister: startupServices.lister, controller: startupServices.controller,
+            reviewer: startupServices.reviewer,
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) }
+        )
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
-            settings: settings, automation: automation
+            settings: settings, automation: automation, startup: startup
         )
     }
 
