@@ -20,13 +20,13 @@ struct CleanupMeasurer: CleanupScanning {
                 continue
             case .unusable:
                 unreadable.append(root.kind)
-            case let .folder(given, _, device):
+            case let .folder(given, _, identity):
                 guard let names = try? FileManager.default.contentsOfDirectory(atPath: given) else {
                     unreadable.append(root.kind)
                     continue
                 }
                 let entries = names.compactMap { name in
-                    entry(name, in: given, root: root, context: (device, now))
+                    entry(name, in: given, root: root, context: (identity.device, now))
                 }
                 categories.append(CleanupCategory(kind: root.kind, entries: entries.sorted(by: Self.largestFirst)))
             }
@@ -44,7 +44,7 @@ struct CleanupMeasurer: CleanupScanning {
     ) -> CleanupEntry? {
         let path = (folder as NSString).appendingPathComponent(name)
         guard case let .found(info) = ItemStat.read(path),
-              rules.accepts(name: name, info, in: root, now: context.now) else { return nil }
+              rules.accepts(path: path, info, in: root, now: context.now) else { return nil }
         var bytes = info.allocated
         var complete = true
         if info.type == .directory {
@@ -52,7 +52,8 @@ struct CleanupMeasurer: CleanupScanning {
             (bytes, complete) = Self.size(of: path, device: context.device)
         }
         return CleanupEntry(
-            path: path, bytes: bytes, isLowerBound: !complete, type: info.type, modified: info.modified
+            path: path, bytes: bytes, isLowerBound: !complete, type: info.type, modified: info.modified,
+            identity: info.identity
         )
     }
 

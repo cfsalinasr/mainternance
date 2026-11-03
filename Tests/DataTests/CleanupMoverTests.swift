@@ -55,13 +55,13 @@ struct CleanupMoverTests {
         #expect(fixture.exists(fixture.caches.appendingPathComponent("keep")))
     }
 
-    @Test("a symlink to a system folder is refused by the real guard; the target is never touched")
+    @Test("a symlink to a system folder is refused by the real guard as a link to a protected place")
     func symlinkToSystem() async throws {
         let fixture = try CleanupFixture()
         try fixture.link("sys", in: fixture.caches, to: "/System")
         let outcome = await fixture.mover().moveToTrash(measured(fixture))
         #expect(outcome.moved.isEmpty)
-        #expect(outcome.failed.map(\.reason) == [CleanupRefusal.protected.text])
+        #expect(outcome.failed.map(\.reason) == [CleanupRefusal.protectedLink.text])
         #expect(fixture.trash.trashed.isEmpty)
     }
 
@@ -134,8 +134,8 @@ struct CleanupMoverTests {
         let reasons = Dictionary(uniqueKeysWithValues: outcome.failed.map { ($0.entry.name, $0.reason) })
         #expect(reasons["gone"] == CleanupRefusal.vanished.text)
         #expect(reasons["grown.log"] == CleanupRefusal.changed.text)
-        // The swapped-in link points at the home folder: refused (protected or changed), never followed.
-        #expect(reasons["swapped"] != nil)
+        // A folder replaced by a link (here to the home folder) is refused as changed, before anything follows it.
+        #expect(reasons["swapped"] == CleanupRefusal.changed.text)
         #expect(fixture.trash.trashed.isEmpty)
         #expect(fixture.exists(fixture.home))
     }
@@ -187,5 +187,60 @@ struct CleanupMoverTests {
         let outcome = await fixture.mover().moveToTrash(measured(fixture))
         #expect(Set(outcome.moved.map(\.name)) == Set(names))
         #expect(names.allSatisfy(fixture.trashed))
+    }
+
+    @Test("a file that became a link since measuring is refused as changed, and the Trash is never called")
+    func fileBecameLink() async throws {
+        let fixture = try CleanupFixture()
+        let log = try fixture.file("app.log", in: fixture.logs)
+        let other = try fixture.file("other.txt", in: fixture.temp.url)
+        let entries = await measured(fixture)
+        try FileManager.default.removeItem(at: log)
+        try fixture.link("app.log", in: fixture.logs, to: other.path)
+        let outcome = await fixture.mover().moveToTrash(entries)
+        #expect(outcome.moved.isEmpty)
+        #expect(outcome.failed.map(\.reason) == [CleanupRefusal.changed.text])
+        #expect(fixture.trash.trashed.isEmpty)
+        #expect(fixture.exists(other))
+    }
+
+    @Test("another item of the same kind put at the same path is refused as changed")
+    func replacedBySameKind() async throws {
+        let fixture = try CleanupFixture()
+        let app = try fixture.file("app/a", in: fixture.caches).deletingLastPathComponent()
+        let entries = await measured(fixture)
+        #expect(entries.first?.identity != nil)
+        try FileManager.default.removeItem(at: app)
+        try fixture.file("app/b", in: fixture.caches)
+        let outcome = await fixture.mover().moveToTrash(entries)
+        #expect(outcome.failed.map(\.reason) == [CleanupRefusal.changed.text])
+        #expect(fixture.exists(app))
+    }
+
+    @Test("a Cleanup folder replaced during the move stops the rest, even when the same items were put back in it")
+    func rootReplacedDuringMove() async throws {
+        let fixture = try CleanupFixture()
+        try fixture.file("a/f", in: fixture.caches)
+        try fixture.file("b/f", in: fixture.caches, bytes: 10)
+        let entries = await measured(fixture)
+        #expect(entries.map(\.name) == ["a", "b"])
+        let caches = fixture.caches
+        let old = fixture.home.appendingPathComponent("Library/Caches-old", isDirectory: true)
+        let swapped = Mutex(false)
+        let mover = fixture.mover(after: { _ in
+            guard !swapped.withLock({ $0 }) else { return }
+            swapped.withLock { $0 = true }
+            // The same item "b" (same device and inode) now sits in a different folder named Caches.
+            try FileManager.default.moveItem(at: caches, to: old)
+            try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: false)
+            try FileManager.default.moveItem(
+                at: old.appendingPathComponent("b"), to: caches.appendingPathComponent("b")
+            )
+        })
+        let outcome = await mover.moveToTrash(entries)
+        #expect(outcome.moved.map(\.name) == ["a"])
+        #expect(outcome.failed.map(\.entry.name) == ["b"])
+        #expect(outcome.failed.map(\.reason) == [CleanupRefusal.changed.text])
+        #expect(fixture.exists(caches.appendingPathComponent("b")))
     }
 }

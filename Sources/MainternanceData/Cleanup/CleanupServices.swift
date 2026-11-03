@@ -13,16 +13,19 @@ public struct CleanupServices: Sendable {
     public init(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         now: @escaping @Sendable () -> Date = Date.init,
-        trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash
+        trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash,
+        isLowPowerMode: @escaping @Sendable () -> Bool = { ProcessInfo.processInfo.isLowPowerModeEnabled }
     ) {
         let rules = CleanupRules(roots: CleanupRoots.standard(home: home), now: now)
         let measurer = CleanupMeasurer(rules: rules)
         scanner = measurer
-        estimate = CleanupEstimate(scanner: measurer, now: now)
+        estimate = CleanupEstimate(scanner: measurer, now: now, isLowPowerMode: isLowPowerMode)
         mover = CleanupMover(rules: rules, trash: trash, isProtected: { ProtectedPaths.isProtected($0) })
     }
 
-    /// The real move: to the owner's Trash, where Finder's Put Back can restore it. A link moves as the link.
+    /// The real move: to the owner's Trash, where Finder's Put Back can restore it. A link should move as the link
+    /// itself; no automated test runs this (tests use a fake Trash), so that rests on the manual check in
+    /// `docs/STATUS.md`.
     public static func moveToTrash(_ url: URL) throws {
         try FileManager.default.trashItem(at: url, resultingItemURL: nil)
     }

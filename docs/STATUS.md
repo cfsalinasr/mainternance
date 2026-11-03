@@ -30,6 +30,7 @@ All three tasks are implemented: a real Cleanup screen that measures caches, log
 - App CPU in Activity Monitor stays near 0% with the popover and window closed.
 - Launch at login from `/Applications`, including the approval step in System Settings > General > Login Items.
 - Cleanup: run it on a real Mac, move a few caches, then look in the Trash (they are there and Put Back restores them), and check Home's suggestion.
+- Cleanup and links: the real `FileManager.trashItem` is never run by the automated tests (they use a fake Trash), so its handling of links rests on this check only. Put a link in `~/Library/Caches` that points to a folder elsewhere, move it with Cleanup, and confirm the Trash holds the link while the folder it pointed to is untouched.
 - Startup: switching one of your own agents off, logging out and in, and checking it no longer starts (then switching it back on).
 - Notifications: the permission prompt, then a weekly scan set a few minutes ahead (see `docs/testing-the-scanner.md`).
 - First real scanner run with real ClamAV (not done yet): Install button, Update definitions, the harmless EICAR test file (see `docs/testing-the-scanner.md`).

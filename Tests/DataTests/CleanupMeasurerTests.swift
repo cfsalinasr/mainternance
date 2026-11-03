@@ -181,8 +181,55 @@ struct CleanupMeasurerTests {
         let measurement = await task.value
         #expect(Date().timeIntervalSince(started) < 5)
         let entries = measurement.categories.flatMap(\.entries)
+        #expect(entries.count == 20)
         let allLowerBounds = entries.allSatisfy(\.isLowerBound)
         #expect(allLowerBounds)
         #expect(entries.allSatisfy { $0.bytes < 2000 })
+    }
+
+    @Test("each entry carries the device and inode it was measured with")
+    func entryIdentity() async throws {
+        let fixture = try CleanupFixture()
+        let app = try fixture.file("app/a", in: fixture.caches).deletingLastPathComponent()
+        let entry = try #require(await fixture.measurer.measure().categories.first?.entries.first)
+        let attributes = try FileManager.default.attributesOfItem(atPath: app.path)
+        let inode = try #require(attributes[.systemFileNumber] as? NSNumber)
+        #expect(entry.identity?.inode == inode.uint64Value)
+    }
+
+    @Test("an installer counts as old only when its newest date is: modified, created or added to Downloads")
+    func installerNewestDate() async throws {
+        let fixture = try CleanupFixture()
+        let old = 40 * CleanupFixture.day
+        try fixture.file("Old.dmg", in: fixture.downloads, age: old)
+        let created = try fixture.file("Created.dmg", in: fixture.downloads, age: old)
+        try FileManager.default.setAttributes(
+            [.creationDate: CleanupFixture.now.addingTimeInterval(-CleanupFixture.day)], ofItemAtPath: created.path
+        )
+        let added = try fixture.file("Added.pkg", in: fixture.downloads, age: old)
+        let recent = CleanupFixture.now.addingTimeInterval(-2 * CleanupFixture.day)
+        let addedPath = added.path
+        let rules = fixture.rules(dateAdded: { $0 == addedPath ? recent : nil })
+        let installers = await CleanupMeasurer(rules: rules).measure().categories.first { $0.kind == .installers }
+        #expect(installers?.entries.map(\.name) == ["Old.dmg"])
+    }
+
+    @Test("the real date added is read from the file system: an installer just put in Downloads is not old")
+    func realDateAdded() throws {
+        let fixture = try CleanupFixture()
+        let image = try fixture.file("Fresh.dmg", in: fixture.downloads)
+        let longAgo = Date().addingTimeInterval(-90 * CleanupFixture.day)
+        try FileManager.default.setAttributes(
+            [.modificationDate: longAgo, .creationDate: longAgo], ofItemAtPath: image.path
+        )
+        let added = try #require(CleanupRules.readDateAdded(image.path))
+        #expect(abs(added.timeIntervalSinceNow) < 3600)
+        let rules = CleanupRules(roots: fixture.roots, now: { Date() })
+        let downloads = try #require(fixture.roots.first { $0.kind == .installers })
+        guard case let .found(info) = ItemStat.read(image.path) else {
+            Issue.record("the file could not be read")
+            return
+        }
+        #expect(!rules.accepts(path: image.path, info, in: downloads, now: Date()))
     }
 }

@@ -52,8 +52,14 @@ struct CleanupFixture {
         CleanupRoots.standard(home: home)
     }
 
+    /// The fixed clock; "date added" is not known (a freshly written file's real one is today, which the fixed clock
+    /// cannot place). Tests of the date-added rule pass their own.
     var rules: CleanupRules {
-        CleanupRules(roots: roots, now: { Self.now })
+        rules(dateAdded: { _ in nil })
+    }
+
+    func rules(dateAdded: @escaping @Sendable (String) -> Date?) -> CleanupRules {
+        CleanupRules(roots: roots, now: { Self.now }, dateAdded: dateAdded)
     }
 
     var measurer: CleanupMeasurer {
@@ -67,12 +73,22 @@ struct CleanupFixture {
         return CleanupMover(rules: rules, trash: { try fake.trash($0) }, isProtected: isProtected)
     }
 
+    /// A mover whose Trash first moves the item to the fake Trash, then runs `after` with the moved URL.
+    func mover(after: @escaping @Sendable (URL) throws -> Void) -> CleanupMover {
+        let fake = trash
+        return CleanupMover(rules: rules, trash: { url in
+            try fake.trash(url)
+            try after(url)
+        }, isProtected: { ProtectedPaths.isProtected($0) })
+    }
+
     var services: CleanupServices {
         let fake = trash
         return CleanupServices(home: home, now: { Self.now }, trash: { try fake.trash($0) })
     }
 
-    /// Writes `bytes` bytes (not all zero, so nothing is sparse) and returns the file's URL.
+    /// Writes `bytes` bytes (not all zero, so nothing is sparse) and returns the file's URL. With `age`, both the
+    /// modification and the creation date are set that far before `now`.
     @discardableResult
     func file(_ path: String, in folder: URL, bytes: Int = 1000, age: TimeInterval? = nil) throws -> URL {
         let url = folder.appendingPathComponent(path)
@@ -81,8 +97,9 @@ struct CleanupFixture {
         )
         try Data((0 ..< bytes).map { UInt8(truncatingIfNeeded: $0 % 251 + 1) }).write(to: url)
         if let age {
+            let date = Self.now.addingTimeInterval(-age)
             try FileManager.default.setAttributes(
-                [.modificationDate: Self.now.addingTimeInterval(-age)], ofItemAtPath: url.path
+                [.modificationDate: date, .creationDate: date], ofItemAtPath: url.path
             )
         }
         return url

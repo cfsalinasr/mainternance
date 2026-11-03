@@ -1,29 +1,57 @@
+import Darwin
 import Foundation
 import MainternanceDomain
 
 /// Moves measured entries to the Trash through `trash`, one at a time; never deletes anything.
 ///
-/// Before each move the entry is checked again, and refused with a reason when any check fails:
-/// 1. its parent, with every link resolved, is exactly one of the Cleanup folders (itself a real folder, not a link),
-///    and its name is a plain name (not `.`, `..` or empty);
-/// 2. the path is not protected (`isProtected`, which resolves links: a link into `/System` is refused);
-/// 3. something is still there, of the kind that was measured (read without following links), and it still matches
-///    its folder's rule (an installer touched since measuring no longer counts).
+/// Right before each move the entry is checked again, and refused with a reason when any check fails:
+/// 1. its parent, with every link resolved, is exactly one of the Cleanup folders, and its name is a plain name
+///    (not `.`, `..` or empty);
+/// 2. that Cleanup folder is opened without following a link (`O_NOFOLLOW | O_DIRECTORY`) and must still be the
+///    same folder on disk (device and inode) it was when this move started: a folder replaced meanwhile is refused;
+/// 3. the entry is read inside that open folder without following links: something is still there, of the kind
+///    that was measured, and the same item (device and inode) when the measurement knew it;
+/// 4. the path is not protected (`isProtected`, which resolves links); a link into a protected place is refused
+///    with its own reason;
+/// 5. it still matches its folder's rule (an installer touched since measuring no longer counts);
+/// 6. last, just before the move, the path is read again (`lstat`) and must name exactly the item checked in the
+///    open folder: a file or folder that became a link, or any other swap, is refused as changed.
 /// The item moved is the resolved parent plus the name, so a link entry moves as the link itself. A failed move is
 /// reported and the rest continue; only entries that really moved are listed as moved.
 ///
-/// Between the last check and the move another program could still swap the item; the move then takes the new item
-/// at that same place in a Cleanup folder (to the Trash, where the owner can put it back), never anything elsewhere.
+/// What is still possible: `trash` takes a path, not the open folder, so another program running as the same user
+/// could swap the Cleanup folder (or the entry) in the moment between step 6 and the move. The move then takes
+/// whatever is at that path at that instant; it only ever goes to the Trash, where the owner can put it back, and
+/// it is never a permanent delete. No program running as someone else can do this in the owner's home folder.
+///
+/// Tests replace `trash` with a fake that moves into a temp folder. The real `FileManager.trashItem` (in
+/// `CleanupServices`) is not exercised by any automated test, links included: that it moves a link as the link
+/// itself rests on the manual check listed in `docs/STATUS.md`.
 struct CleanupMover: CleanupMoving {
     let rules: CleanupRules
     let trash: @Sendable (URL) throws -> Void
     let isProtected: @Sendable (String) -> Bool
 
+    /// A Cleanup folder as found when the move started.
+    private struct Folder {
+        let root: CleanupRoot
+        let resolved: String
+        let identity: CleanupEntry.Identity
+    }
+
+    /// One entry being checked: what was measured, its plain name and the path that would move.
+    private struct Candidate {
+        let entry: CleanupEntry
+        let name: String
+        let target: String
+        let folder: Folder
+    }
+
     func moveToTrash(_ entries: [CleanupEntry]) async -> CleanupOutcome {
         let now = rules.now()
-        let folders = rules.roots.compactMap { root -> (root: CleanupRoot, resolved: String)? in
-            guard case let .folder(_, resolved, _) = CleanupRules.open(root) else { return nil }
-            return (root, resolved)
+        let folders = rules.roots.compactMap { root -> Folder? in
+            guard case let .folder(_, resolved, identity) = CleanupRules.open(root) else { return nil }
+            return Folder(root: root, resolved: resolved, identity: identity)
         }
         var moved: [CleanupEntry] = []
         var failed: [CleanupFailure] = []
@@ -44,28 +72,52 @@ struct CleanupMover: CleanupMoving {
         return CleanupOutcome(moved: moved, failed: failed)
     }
 
-    private func check(
-        _ entry: CleanupEntry, folders: [(root: CleanupRoot, resolved: String)], now: Date
-    ) -> Result<URL, CleanupRefusal> {
+    private func check(_ entry: CleanupEntry, folders: [Folder], now: Date) -> Result<URL, CleanupRefusal> {
         let path = entry.id as NSString
         let name = path.lastPathComponent
         guard entry.id.hasPrefix("/"), !entry.id.hasSuffix("/"), name != ".", name != "..", !name.isEmpty,
               let parent = CleanupRules.resolve(path.deletingLastPathComponent),
               let folder = folders.first(where: { $0.resolved == parent })
         else { return .failure(.notInCleanupFolder) }
-        let target = (parent as NSString).appendingPathComponent(name)
-        guard !isProtected(target) else { return .failure(.protected) }
-        switch ItemStat.read(target) {
+        let candidate = Candidate(
+            entry: entry, name: name, target: (parent as NSString).appendingPathComponent(name), folder: folder
+        )
+        let descriptor = open(folder.resolved, O_RDONLY | O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC)
+        guard descriptor >= 0 else { return .failure(errno == EACCES ? .unreadable : .changed) }
+        defer { close(descriptor) }
+        var opened = stat()
+        guard fstat(descriptor, &opened) == 0 else { return .failure(.unreadable) }
+        guard CleanupEntry.Identity(device: opened.st_dev, inode: opened.st_ino) == folder.identity else {
+            return .failure(.changed)
+        }
+        return inspect(candidate, in: descriptor, now: now)
+    }
+
+    /// Steps 3 to 6, with the Cleanup folder open as `folder`.
+    private func inspect(_ candidate: Candidate, in folder: Int32, now: Date) -> Result<URL, CleanupRefusal> {
+        let entry = candidate.entry
+        let info: ItemStat
+        switch ItemStat.read(candidate.name, in: folder) {
         case .missing:
             return .failure(.vanished)
         case .unreadable:
             return .failure(.unreadable)
-        case let .found(info):
-            guard info.type == entry.type else { return .failure(.changed) }
-            guard rules.accepts(name: name, info, in: folder.root, now: now) else {
-                return .failure(.notInCleanupFolder)
-            }
-            return .success(URL(fileURLWithPath: target, isDirectory: info.type == .directory))
+        case let .found(found):
+            info = found
         }
+        guard info.type == entry.type, entry.identity.map({ $0 == info.identity }) ?? true else {
+            return .failure(.changed)
+        }
+        guard !isProtected(candidate.target) else {
+            return .failure(info.type == .symbolicLink ? .protectedLink : .protected)
+        }
+        guard rules.accepts(path: candidate.target, info, in: candidate.folder.root, now: now) else {
+            return .failure(.notInCleanupFolder)
+        }
+        // The path must still name exactly the item checked inside the open folder, right before the move.
+        guard case let .found(last) = ItemStat.read(candidate.target), last.type == info.type,
+              last.identity == info.identity
+        else { return .failure(.changed) }
+        return .success(URL(fileURLWithPath: candidate.target, isDirectory: info.type == .directory))
     }
 }

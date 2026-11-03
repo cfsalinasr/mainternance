@@ -80,9 +80,28 @@ struct CleanupTypesTests {
     func refusalText() {
         #expect(CleanupRefusal.notInCleanupFolder.text == "It is not in one of the folders Cleanup looks at.")
         #expect(CleanupRefusal.protected.text == "It is in a protected place.")
+        #expect(CleanupRefusal.protectedLink.text == "This is a link to a protected place.")
         #expect(CleanupRefusal.vanished.text == "It is no longer there.")
         #expect(CleanupRefusal.changed.text == "It changed since it was measured.")
         #expect(CleanupRefusal.unreadable.text == "It could not be checked, so it was left where it is.")
         #expect(CleanupRefusal.trashFailed("Busy").text == "macOS could not move it to the Trash: Busy")
+    }
+
+    @Test("an entry keeps the disk identity it was measured with, when known")
+    func entryDiskIdentity() {
+        #expect(entry("a", bytes: 1).identity == nil)
+        let known = CleanupEntry(
+            path: "/Users/me/Library/Caches/a", bytes: 1, isLowerBound: false, type: .file, modified: nil,
+            identity: CleanupEntry.Identity(device: 3, inode: 42)
+        )
+        #expect(known.identity == CleanupEntry.Identity(device: 3, inode: 42))
+    }
+
+    @Test("old installers start unticked; caches, logs and developer caches start ticked")
+    func defaultSelection() {
+        #expect(!CleanupKind.installers.isSelectedByDefault)
+        #expect(CleanupKind.caches.isSelectedByDefault)
+        #expect(CleanupKind.logs.isSelectedByDefault)
+        #expect(CleanupKind.developer.isSelectedByDefault)
     }
 }

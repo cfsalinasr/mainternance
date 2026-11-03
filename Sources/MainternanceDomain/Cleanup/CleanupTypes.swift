@@ -6,10 +6,16 @@ public enum CleanupKind: String, Sendable, CaseIterable {
     case caches
     /// Each direct child of `~/Library/Logs`.
     case logs
-    /// Disk images and installer packages in `~/Downloads` not changed for more than 30 days.
+    /// Disk images and installer packages in `~/Downloads` not changed or added for more than 30 days.
     case installers
     /// Each direct child of `~/Library/Developer/Xcode/DerivedData`.
     case developer
+
+    /// Whether a measuring ticks this category's entries. Old installers never start ticked: an installer can be
+    /// the only copy of something the owner kept on purpose, so it moves only once they tick it themselves.
+    public var isSelectedByDefault: Bool {
+        self != .installers
+    }
 }
 
 /// One direct child of a Cleanup folder: the unit that is reviewed and moved to the Trash.
@@ -22,6 +28,18 @@ public struct CleanupEntry: Sendable, Equatable, Identifiable {
         case file, directory, symbolicLink
     }
 
+    /// Which item on disk it is (device and inode, read without following links): a different item put at the same
+    /// path has a different identity.
+    public struct Identity: Sendable, Equatable {
+        public let device: Int32
+        public let inode: UInt64
+
+        public init(device: Int32, inode: UInt64) {
+            self.device = device
+            self.inode = inode
+        }
+    }
+
     public let id: String
     public let name: String
     /// Allocated bytes, without following links or crossing to another volume.
@@ -30,14 +48,19 @@ public struct CleanupEntry: Sendable, Equatable, Identifiable {
     public let isLowerBound: Bool
     public let type: ItemType
     public let modified: Date?
+    /// The item measured; nil when not known. The mover refuses an entry whose identity changed.
+    public let identity: Identity?
 
-    public init(path: String, bytes: Int64, isLowerBound: Bool, type: ItemType, modified: Date?) {
+    public init(
+        path: String, bytes: Int64, isLowerBound: Bool, type: ItemType, modified: Date?, identity: Identity? = nil
+    ) {
         id = path
         name = (path as NSString).lastPathComponent
         self.bytes = max(bytes, 0)
         self.isLowerBound = isLowerBound
         self.type = type
         self.modified = modified
+        self.identity = identity
     }
 
     public var isDirectory: Bool {
@@ -128,9 +151,11 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
     case notInCleanupFolder
     /// Inside a protected place (system folders, the home folder itself, the app).
     case protected
+    /// A link that points into a protected place. Only the link would move, but it is left alone all the same.
+    case protectedLink
     /// Nothing is at the path any more.
     case vanished
-    /// A file became a folder, a folder became a link, and so on.
+    /// A file became a folder, a folder became a link, another item took its place, or its folder was replaced.
     case changed
     /// It could not be checked again before moving, so it was left alone.
     case unreadable
@@ -141,6 +166,7 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
         switch self {
         case .notInCleanupFolder: "It is not in one of the folders Cleanup looks at."
         case .protected: "It is in a protected place."
+        case .protectedLink: "This is a link to a protected place."
         case .vanished: "It is no longer there."
         case .changed: "It changed since it was measured."
         case .unreadable: "It could not be checked, so it was left where it is."

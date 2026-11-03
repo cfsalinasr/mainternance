@@ -7,9 +7,14 @@ import Synchronization
 /// Nothing is suggested, and nothing is measured, until the Cleanup screen has measured once (`record`): measuring
 /// walks the disk, so it never starts at launch. After that, a Home refresh that finds the estimate older than
 /// `minimumAge` starts one measuring in the background and returns the current estimate at once (Home never waits
-/// for a disk walk); the new one is used from the next refresh. A measurement recorded by the Cleanup screen
-/// replaces the estimate at once, and a background measuring that finishes after it is dropped. A clock that went
-/// backwards counts as stale.
+/// for a disk walk); the new one is used from the next refresh. Such a measuring starts only while Home is on screen
+/// (`setHomeVisible`) and never in Low Power Mode; it runs detached at background priority, Home going off screen
+/// cancels it, and a new one never starts while one (even a cancelled one) is still running.
+///
+/// A measuring that finished replaces the estimate, even with a smaller total (that is what is there now); one that
+/// was cancelled is dropped and the previous estimate stays. A measurement recorded by the Cleanup screen replaces
+/// the estimate at once and cancels a background measuring, whose result is dropped. A clock that went backwards
+/// counts as stale.
 public final class CleanupEstimate: SuggestedActionsProviding, Sendable {
     static let minimumAge: TimeInterval = 600
     /// Below this total nothing is suggested.
@@ -19,16 +24,23 @@ public final class CleanupEstimate: SuggestedActionsProviding, Sendable {
         var latest: CleanupMeasurement?
         var takenAt = Date.distantPast
         var generation = 0
-        var refreshing = false
+        var homeVisible = false
+        /// The running background measuring, until it ended (also after being cancelled).
+        var walk: Task<Void, Never>?
     }
 
     private let scanner: any CleanupScanning
     private let now: @Sendable () -> Date
+    private let isLowPowerMode: @Sendable () -> Bool
     private let state = Mutex(State())
 
-    init(scanner: any CleanupScanning, now: @escaping @Sendable () -> Date) {
+    init(
+        scanner: any CleanupScanning, now: @escaping @Sendable () -> Date,
+        isLowPowerMode: @escaping @Sendable () -> Bool = { ProcessInfo.processInfo.isLowPowerModeEnabled }
+    ) {
         self.scanner = scanner
         self.now = now
+        self.isLowPowerMode = isLowPowerMode
     }
 
     /// The Cleanup screen measured (or moved items): this is the estimate from now on.
@@ -38,37 +50,49 @@ public final class CleanupEstimate: SuggestedActionsProviding, Sendable {
             current.latest = measurement
             current.takenAt = time
             current.generation += 1
+            current.walk?.cancel()
         }
     }
 
-    /// True while a background measuring runs.
+    /// Whether Home (where the suggestion shows) is on screen. Going off screen cancels a running measuring.
+    public func setHomeVisible(_ visible: Bool) {
+        state.withLock { current in
+            current.homeVisible = visible
+            if !visible {
+                current.walk?.cancel()
+            }
+        }
+    }
+
+    /// True while a background measuring runs (until it ended, also after being cancelled).
     var isRefreshing: Bool {
-        state.withLock { $0.refreshing }
+        state.withLock { $0.walk != nil }
     }
 
     public func suggestedActions() async -> [SuggestedAction] {
         let time = now()
-        let (latest, startsRefresh, generation) = state.withLock { current in
+        let lowPower = isLowPowerMode()
+        let latest = state.withLock { current in
             let age = time.timeIntervalSince(current.takenAt)
             let stale = current.latest != nil && !(age >= 0 && age < Self.minimumAge)
-            let starts = stale && !current.refreshing
-            if starts {
-                current.refreshing = true
+            if stale, current.homeVisible, !lowPower, current.walk == nil {
+                let generation = current.generation
+                current.walk = Task.detached(priority: .background) { [self] in
+                    await refresh(generation: generation)
+                }
             }
-            return (current.latest, starts, current.generation)
-        }
-        if startsRefresh {
-            Task { await self.refresh(generation: generation) }
+            return current.latest
         }
         return latest.flatMap(Self.action).map { [$0] } ?? []
     }
 
     private func refresh(generation: Int) async {
         let fresh = await scanner.measure()
+        let finished = !Task.isCancelled
         let time = now()
         state.withLock { current in
-            current.refreshing = false
-            guard current.generation == generation else { return }
+            current.walk = nil
+            guard finished, current.generation == generation else { return }
             current.latest = fresh
             current.takenAt = time
         }
