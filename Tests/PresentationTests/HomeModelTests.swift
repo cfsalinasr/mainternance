@@ -285,14 +285,13 @@ extension HomeModelTests {
     }
 
     @Test func comingNextLineIsPinned() {
-        #expect(HomeModel.comingNextText
-            == "Coming next: file explorer, cleanup, uninstaller.")
+        #expect(HomeModel.comingNextText == "Coming next: file explorer, uninstaller.")
     }
 
     @Test func linksToUnavailableDestinationsAreNotInteractive() {
         let model = HomeModel(
             overview: overview(checks: [
-                check(.diskSpace, .needsAttention, "Disk 91% full", .cleanup),
+                check(.diskSpace, .needsAttention, "Disk 91% full", .files),
                 check(.memoryPressure, .needsAttention, "Memory amber", .settings),
                 check(.thermal, .good, "No throttling", .home)
             ]),

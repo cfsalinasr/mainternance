@@ -14,6 +14,9 @@ struct Composition {
     /// The weekly scheduler and the scan notifications, already connected to Settings and the Scanner.
     let automation: ScanAutomation
     let startup: StartupViewState
+    let cleanup: CleanupViewState
+    /// Tells Home's Cleanup suggestion whether Home is on screen (it measures again in the background only then).
+    let homeVisibility: @MainActor (Bool) -> Void
 }
 
 @MainActor
@@ -27,10 +30,13 @@ enum CompositionRoot {
         // The startup review baseline sits next to the scanner's files:
         // <Application Support>/Mainternance/startup-review.json. Home counts new items with the read-only counter.
         let startupServices = StartupServices(directory: services.paths.supportDirectory)
+        // Cleanup measures the owner's own Caches, Logs, Downloads and DerivedData when its screen appears (never at
+        // launch), and moves what the owner confirmed to the real Trash. Home's suggestion uses its last measurement.
+        let cleanupServices = CleanupServices()
         let load = LoadOverview(
             snapshots: LiveSystemSnapshotProvider(startup: startupServices.newItemCounter),
             scans: services.statusProvider,
-            actions: NoSuggestedActionsProvider()
+            actions: cleanupServices.estimate
         )
         let scannerModel = ScannerViewModel(
             engine: services.scanner,
@@ -54,9 +60,13 @@ enum CompositionRoot {
             reviewer: startupServices.reviewer,
             reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) }
         )
+        let cleanup = CleanupViewState(scanner: cleanupServices.scanner, mover: cleanupServices.mover)
+        let estimate = cleanupServices.estimate
+        cleanup.onMeasurement = { estimate.record($0) }
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
-            settings: settings, automation: automation, startup: startup
+            settings: settings, automation: automation, startup: startup, cleanup: cleanup,
+            homeVisibility: { estimate.setHomeVisible($0) }
         )
     }
 

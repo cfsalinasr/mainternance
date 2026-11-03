@@ -89,4 +89,36 @@ struct MappingsTests {
         await model.refresh()
         #expect(model.history.count == 1) // hidden: no new sample
     }
+
+    @Test func homeCountsAsVisibleOnlyWhenTheWindowShowsHome() {
+        var combiner = VisibilityCombiner()
+        #expect(!combiner.isHomeVisible)
+        combiner.update(.popover, visible: true)
+        #expect(!combiner.isHomeVisible) // the popover has no suggestions
+        combiner.update(.window, visible: true)
+        #expect(combiner.isHomeVisible)
+        combiner.select(.cleanup)
+        #expect(!combiner.isHomeVisible)
+        combiner.select(.home)
+        combiner.update(.window, visible: false)
+        #expect(!combiner.isHomeVisible)
+    }
+
+    @Test func coordinatorTellsWhenHomeShowsOrHides() {
+        let model = OverviewViewModel(
+            load: LoadOverview(
+                snapshots: FakeSnapshots(counter: CallCounter()), scans: FakeScans(), actions: FakeActions()
+            ),
+            sleep: { _ in }
+        )
+        let seen = Recorded<Bool>()
+        let coordinator = VisibilityCoordinator(viewModel: model, onHomeVisibilityChange: { seen.add($0) })
+        coordinator.report(.window, visible: true)
+        coordinator.report(.popover, visible: true) // unchanged for Home: not told again
+        coordinator.select(.cleanup)
+        coordinator.select(.settings)
+        coordinator.select(.home)
+        coordinator.report(.window, visible: false)
+        #expect(seen.all == [true, false, true, false])
+    }
 }

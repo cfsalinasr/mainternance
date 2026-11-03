@@ -17,7 +17,8 @@ struct SampleDataCopyTests {
 
     @Test func onlyScreensWithoutEnginesAreMarked() {
         let marked = SidebarItem.all.filter { SampleDataCopy.isSample($0.destination) }.map(\.title)
-        #expect(Set(marked) == ["Files", "Cleanup", "Uninstaller"])
+        #expect(Set(marked) == ["Files", "Uninstaller"])
+        #expect(!SampleDataCopy.isSample(.cleanup))
         #expect(!SampleDataCopy.isSample(.home))
         #expect(!SampleDataCopy.isSample(.settings))
         #expect(!SampleDataCopy.isSample(.scanner))

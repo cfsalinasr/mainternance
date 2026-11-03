@@ -103,17 +103,7 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
     /// `text` without control, format (bidi, zero-width) or illegal characters; tabs and line breaks become
     /// spaces. For showing untrusted text only, never for what is passed to `launchctl`.
     public static func displayText(_ text: String) -> String {
-        let breaks = CharacterSet.newlines.union(CharacterSet(charactersIn: "\t"))
-        let removed = CharacterSet.controlCharacters.union(.illegalCharacters)
-        var scalars = String.UnicodeScalarView()
-        for scalar in text.unicodeScalars {
-            if breaks.contains(scalar) {
-                scalars.append(" ")
-            } else if !removed.contains(scalar) {
-                scalars.append(scalar)
-            }
-        }
-        return String(scalars).trimmingCharacters(in: .whitespaces)
+        DisplayText.clean(text)
     }
 
     static func displayName(label: String?, plistPath: String) -> String {

@@ -5,6 +5,7 @@ public struct MainWindowView: View {
     private let navigation: Navigation
     private let overview: OverviewViewModel
     private let onVisibilityChange: @MainActor (Bool) -> Void
+    private let onSelectionChange: @MainActor (AppDestination) -> Void
     private let states: WindowStates
 
     public init(
@@ -13,12 +14,16 @@ public struct MainWindowView: View {
         states: WindowStates,
         onVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in
             // Default: visibility is not observed (previews); the app passes the real handler.
+        },
+        onSelectionChange: @escaping @MainActor (AppDestination) -> Void = { _ in
+            // Default: the shown screen is not observed (previews); the app passes the real handler.
         }
     ) {
         self.navigation = navigation
         self.overview = overview
         self.states = states
         self.onVisibilityChange = onVisibilityChange
+        self.onSelectionChange = onSelectionChange
     }
 
     public var body: some View {
@@ -31,6 +36,7 @@ public struct MainWindowView: View {
         }
         .frame(minWidth: 760, minHeight: 520)
         .background(WindowVisibilityObserver { onVisibilityChange($0) })
+        .onChange(of: navigation.selection, initial: true) { _, selection in onSelectionChange(selection) }
     }
 
     @ViewBuilder

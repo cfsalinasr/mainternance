@@ -23,12 +23,15 @@ struct MainternanceApp: App {
         model.start()
         viewModel = model
         let settings = composition.settings
-        states = WindowStates(scanner: composition.scannerModel, settings: settings, startup: composition.startup)
+        states = WindowStates(
+            scanner: composition.scannerModel, settings: settings, startup: composition.startup,
+            cleanup: composition.cleanup
+        )
         // The loaded values reach the scheduler and the notifier through `settings.onChange`. The scheduler holds
         // the defaults (weekly scan off) until then, so starting it first cannot run a scan the owner turned off.
         Task { await settings.load() }
         automation.start()
-        visibility = VisibilityCoordinator(viewModel: model)
+        visibility = VisibilityCoordinator(viewModel: model, onHomeVisibilityChange: composition.homeVisibility)
     }
 
     var body: some Scene {
@@ -44,7 +47,8 @@ struct MainternanceApp: App {
                 navigation: navigation,
                 overview: viewModel,
                 states: states,
-                onVisibilityChange: { visibility.report(.window, visible: $0) }
+                onVisibilityChange: { visibility.report(.window, visible: $0) },
+                onSelectionChange: { visibility.select($0) }
             )
         }
         .defaultLaunchBehavior(.suppressed) // A menu bar app starts with the window closed.
