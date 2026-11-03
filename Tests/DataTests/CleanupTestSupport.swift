@@ -62,6 +62,11 @@ struct CleanupFixture {
         CleanupRules(roots: roots, now: { Self.now }, dateAdded: dateAdded)
     }
 
+    /// The fixed clock, with `volume` standing in for the volume each item is on.
+    func rules(volume: @escaping @Sendable (String, ItemStat) -> Int32) -> CleanupRules {
+        CleanupRules(roots: roots, now: { Self.now }, dateAdded: { _ in nil }, volume: volume)
+    }
+
     var measurer: CleanupMeasurer {
         CleanupMeasurer(rules: rules)
     }

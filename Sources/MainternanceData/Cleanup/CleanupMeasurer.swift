@@ -4,9 +4,10 @@ import MainternanceDomain
 /// Measures the direct children of the fixed Cleanup folders.
 ///
 /// Read-only. Links are never followed (a link entry counts as the link itself), folders on another volume are not
-/// entered, hidden files count. A subfolder that cannot be read makes its entry's size a lower bound. The walk uses
-/// its own list of folders to visit (no recursion, so deep trees cannot exhaust the stack) and checks for
-/// cancellation at every item: a cancelled measuring returns at once, with what it has as lower bounds.
+/// entered (a direct child on another volume is not listed at all), hidden files count. A subfolder that cannot be
+/// read makes its entry's size a lower bound. The walk uses its own list of folders to visit (no recursion, so deep
+/// trees cannot exhaust the stack) and checks for cancellation at every item: a cancelled measuring returns at
+/// once, with what it has as lower bounds.
 struct CleanupMeasurer: CleanupScanning {
     let rules: CleanupRules
 
@@ -43,7 +44,8 @@ struct CleanupMeasurer: CleanupScanning {
         _ name: String, in folder: String, root: CleanupRoot, context: (device: Int32, now: Date)
     ) -> CleanupEntry? {
         let path = (folder as NSString).appendingPathComponent(name)
-        guard case let .found(info) = ItemStat.read(path),
+        // A folder mounted from another volume is neither measured nor offered.
+        guard case let .found(info) = ItemStat.read(path), rules.volume(path, info) == context.device,
               rules.accepts(path: path, info, in: root, now: context.now) else { return nil }
         var bytes = info.allocated
         var complete = true

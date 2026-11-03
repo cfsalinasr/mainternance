@@ -83,6 +83,7 @@ struct CleanupTypesTests {
         #expect(CleanupRefusal.protectedLink.text == "This is a link to a protected place.")
         #expect(CleanupRefusal.vanished.text == "It is no longer there.")
         #expect(CleanupRefusal.changed.text == "It changed since it was measured.")
+        #expect(CleanupRefusal.otherVolume.text == "It is on another disk, so Cleanup leaves it alone.")
         #expect(CleanupRefusal.unreadable.text == "It could not be checked, so it was left where it is.")
         #expect(CleanupRefusal.trashFailed("Busy").text == "macOS could not move it to the Trash: Busy")
     }

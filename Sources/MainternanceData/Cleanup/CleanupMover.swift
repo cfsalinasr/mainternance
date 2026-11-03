@@ -11,16 +11,17 @@ import MainternanceDomain
 ///    same folder on disk (device and inode) it was when this move started: a folder replaced meanwhile is refused;
 /// 3. the entry is read inside that open folder without following links: something is still there, of the kind
 ///    that was measured, and the same item (device and inode) when the measurement knew it;
-/// 4. the path is not protected (`isProtected`, which resolves links); a link into a protected place is refused
+/// 4. it is on the same volume as its Cleanup folder (a folder mounted from another volume is refused);
+/// 5. the path is not protected (`isProtected`, which resolves links); a link into a protected place is refused
 ///    with its own reason;
-/// 5. it still matches its folder's rule (an installer touched since measuring no longer counts);
-/// 6. last, just before the move, the path is read again (`lstat`) and must name exactly the item checked in the
+/// 6. it still matches its folder's rule (an installer touched since measuring no longer counts);
+/// 7. last, just before the move, the path is read again (`lstat`) and must name exactly the item checked in the
 ///    open folder: a file or folder that became a link, or any other swap, is refused as changed.
 /// The item moved is the resolved parent plus the name, so a link entry moves as the link itself. A failed move is
 /// reported and the rest continue; only entries that really moved are listed as moved.
 ///
 /// What is still possible: `trash` takes a path, not the open folder, so another program running as the same user
-/// could swap the Cleanup folder (or the entry) in the moment between step 6 and the move. The move then takes
+/// could swap the Cleanup folder (or the entry) in the moment between step 7 and the move. The move then takes
 /// whatever is at that path at that instant; it only ever goes to the Trash, where the owner can put it back, and
 /// it is never a permanent delete. No program running as someone else can do this in the owner's home folder.
 ///
@@ -93,7 +94,7 @@ struct CleanupMover: CleanupMoving {
         return inspect(candidate, in: descriptor, now: now)
     }
 
-    /// Steps 3 to 6, with the Cleanup folder open as `folder`.
+    /// Steps 3 to 7, with the Cleanup folder open as `folder`.
     private func inspect(_ candidate: Candidate, in folder: Int32, now: Date) -> Result<URL, CleanupRefusal> {
         let entry = candidate.entry
         let info: ItemStat
@@ -107,6 +108,9 @@ struct CleanupMover: CleanupMoving {
         }
         guard info.type == entry.type, entry.identity.map({ $0 == info.identity }) ?? true else {
             return .failure(.changed)
+        }
+        guard rules.volume(candidate.target, info) == candidate.folder.identity.device else {
+            return .failure(.otherVolume)
         }
         guard !isProtected(candidate.target) else {
             return .failure(info.type == .symbolicLink ? .protectedLink : .protected)

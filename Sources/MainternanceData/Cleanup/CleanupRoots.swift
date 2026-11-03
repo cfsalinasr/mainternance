@@ -13,26 +13,29 @@ struct CleanupRoot: Sendable {
     }
 
     let kind: CleanupKind
-    let folder: URL
+    /// The owner's home folder, as given: it and the folders above it may be links (a temp folder under `/var` is).
+    let home: URL
+    /// The folder names from `home` down to the Cleanup folder; none of these may be a link.
+    let relative: [String]
     let selection: Selection
+
+    var folder: URL {
+        relative.reduce(home) { $0.appendingPathComponent($1, isDirectory: true) }
+    }
 }
 
 /// The fixed Cleanup folders under a home folder. Nothing else is ever measured or moved.
 enum CleanupRoots {
     static func standard(home: URL) -> [CleanupRoot] {
         [
-            CleanupRoot(kind: .caches, folder: folder(home, "Library", "Caches"), selection: .everyChild),
-            CleanupRoot(kind: .logs, folder: folder(home, "Library", "Logs"), selection: .everyChild),
-            CleanupRoot(kind: .installers, folder: folder(home, "Downloads"), selection: .oldInstallers),
+            CleanupRoot(kind: .caches, home: home, relative: ["Library", "Caches"], selection: .everyChild),
+            CleanupRoot(kind: .logs, home: home, relative: ["Library", "Logs"], selection: .everyChild),
+            CleanupRoot(kind: .installers, home: home, relative: ["Downloads"], selection: .oldInstallers),
             CleanupRoot(
-                kind: .developer, folder: folder(home, "Library", "Developer", "Xcode", "DerivedData"),
+                kind: .developer, home: home, relative: ["Library", "Developer", "Xcode", "DerivedData"],
                 selection: .everyChild
             )
         ]
-    }
-
-    private static func folder(_ home: URL, _ components: String...) -> URL {
-        components.reduce(home) { $0.appendingPathComponent($1, isDirectory: true) }
     }
 }
 
@@ -116,14 +119,19 @@ struct CleanupRules: Sendable {
     let now: @Sendable () -> Date
     /// When a file was put in its folder (Finder's "Date Added"); nil when not known.
     let dateAdded: @Sendable (String) -> Date?
+    /// The volume (device) the item at a path is on, given its `lstat` reading. Tests replace it, since they cannot
+    /// mount a volume.
+    let volume: @Sendable (String, ItemStat) -> Int32
 
     init(
         roots: [CleanupRoot], now: @escaping @Sendable () -> Date,
-        dateAdded: @escaping @Sendable (String) -> Date? = CleanupRules.readDateAdded
+        dateAdded: @escaping @Sendable (String) -> Date? = CleanupRules.readDateAdded,
+        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device }
     ) {
         self.roots = roots
         self.now = now
         self.dateAdded = dateAdded
+        self.volume = volume
     }
 
     /// The file system's "date added" for the item at `path` (a plain file: links are never passed here).
@@ -133,18 +141,37 @@ struct CleanupRules: Sendable {
         return values?.addedToDirectoryDate
     }
 
-    /// Only a real folder counts; a folder that is itself a symbolic link is refused.
+    /// Only a real folder counts. It is refused when it, or any folder between the home folder and it (such as
+    /// `Library`), is a symbolic link, so a Cleanup folder never leads out of the home folder. The home folder
+    /// itself and the folders above it may be links: only the names below it are checked.
     static func open(_ root: CleanupRoot) -> FolderState {
         let given = root.folder.path
+        guard !hasLinkBelowHome(root) else { return .unusable }
         switch ItemStat.read(given) {
         case .missing:
             return .absent
         case .unreadable:
             return .unusable
         case let .found(info):
-            guard info.type == .directory, let resolved = resolve(given) else { return .unusable }
+            guard info.type == .directory, let resolved = resolve(given),
+                  let home = resolve(root.home.path),
+                  resolved.caseInsensitiveCompare(([home] + root.relative).joined(separator: "/")) == .orderedSame
+            else { return .unusable }
             return .folder(given: given, resolved: resolved, identity: info.identity)
         }
+    }
+
+    /// Whether a folder between the home folder and the Cleanup folder (the Cleanup folder itself excluded: the
+    /// caller reads it) is a symbolic link. `lstat` on each, so no link is followed.
+    private static func hasLinkBelowHome(_ root: CleanupRoot) -> Bool {
+        var path = root.home
+        for name in root.relative.dropLast() {
+            path.appendPathComponent(name, isDirectory: true)
+            if case let .found(info) = ItemStat.read(path.path), info.type == .symbolicLink {
+                return true
+            }
+        }
+        return false
     }
 
     /// Every link in `path` resolved; nil when any part is missing.

@@ -157,6 +157,8 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
     case vanished
     /// A file became a folder, a folder became a link, another item took its place, or its folder was replaced.
     case changed
+    /// A folder on another disk or volume (mounted inside a Cleanup folder): never entered or moved.
+    case otherVolume
     /// It could not be checked again before moving, so it was left alone.
     case unreadable
     /// macOS refused the move; carries its reason.
@@ -169,6 +171,7 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
         case .protectedLink: "This is a link to a protected place."
         case .vanished: "It is no longer there."
         case .changed: "It changed since it was measured."
+        case .otherVolume: "It is on another disk, so Cleanup leaves it alone."
         case .unreadable: "It could not be checked, so it was left where it is."
         case let .trashFailed(reason): "macOS could not move it to the Trash: \(reason)"
         }
