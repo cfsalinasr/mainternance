@@ -52,7 +52,7 @@ struct LargeFileScanner: DiskScanning {
     /// One walk, synchronously. `progress` is told the number of items seen every `progressEvery` items.
     func run(shouldStop: () -> Bool, progress: (Int) -> Void) -> DiskScanResult {
         var largest = LargestFiles(limit: limit)
-        let tree = DiskTreeBuilder(root: walker.home.path, maxChildren: Self.maxChildren)
+        let tree = DiskTreeBuilder(root: walker.root, maxChildren: Self.maxChildren)
         var scanned = 0
         var unreadable = 0
         var stopped = false
@@ -141,17 +141,28 @@ struct LargestFiles {
     }
 }
 
-/// Builds the disk tree from the walked items: folders are created as items below them arrive, and each folder
-/// keeps only its biggest items (the rest are summed into `Other`). Built bottom-up, without recursion.
+/// Builds the disk tree from the walked items, which must arrive depth first (as `FileWalker` reports them: a
+/// folder's own items, then each subfolder's whole subtree in turn).
+///
+/// Only the folders on the path being walked are open. A folder is collapsed into its finished node (its biggest
+/// children plus one `Other` node) as soon as the walk moves past it, and an open folder never holds more than
+/// twice `maxChildren` entries (the smallest are summed into `Other`), so memory is bounded by the depth of the
+/// walk, not the number of files.
 final class DiskTreeBuilder {
+    /// A file, package or finished subfolder, as small as possible: no full path until its node is made.
+    private struct Entry {
+        let name: String
+        let bytes: Int64
+        let isPackage: Bool
+        let node: DiskNode?
+    }
+
     private final class Folder {
         let path: String
         let name: String
-        var subfolders: [String: Folder] = [:]
-        var leaves: [DiskNode] = []
+        var entries: [Entry] = []
         var trimmedBytes: Int64 = 0
         var trimmedCount = 0
-        var built: DiskNode?
 
         init(path: String, name: String) {
             self.path = path
@@ -159,66 +170,92 @@ final class DiskTreeBuilder {
         }
     }
 
-    private let root: Folder
     private let maxChildren: Int
+    /// The root first, then each folder down to the one being walked.
+    private var open: [Folder]
+    private var held = 0
+    /// The most entries ever held at once across the open folders (tests pin the memory bound with it).
+    private(set) var peakHeldEntries = 0
 
     init(root path: String, maxChildren: Int) {
-        root = Folder(path: path, name: (path as NSString).lastPathComponent)
+        open = [Folder(path: path, name: (path as NSString).lastPathComponent)]
         self.maxChildren = max(maxChildren, 1)
     }
 
     func add(_ file: WalkedFile) {
-        let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
-        guard file.path.hasPrefix(prefix) else { return }
-        let components = file.path.dropFirst(prefix.count).split(separator: "/", omittingEmptySubsequences: true)
-        guard let leafName = components.last else { return }
-        var folder = root
-        for component in components.dropLast() {
-            let name = String(component)
-            if let existing = folder.subfolders[name] {
-                folder = existing
-            } else {
-                let created = Folder(path: (folder.path as NSString).appendingPathComponent(name), name: name)
-                folder.subfolders[name] = created
-                folder = created
-            }
-        }
-        folder.leaves.append(DiskNode(
-            id: file.path, name: String(leafName), bytes: file.bytes, isOther: false, isPackage: file.isPackageRoot,
-            children: []
-        ))
-        // Only the biggest items can stay; the rest are summed now so a folder of many files stays small.
-        if folder.leaves.count > 2 * maxChildren {
-            folder.leaves.sort(by: Self.comesFirst)
-            let rest = folder.leaves[maxChildren...]
-            folder.trimmedBytes = CleanupMath.sum([folder.trimmedBytes] + rest.map(\.bytes))
-            folder.trimmedCount += rest.count
-            folder.leaves.removeSubrange(maxChildren...)
-        }
-    }
-
-    /// The finished tree, its folders built after everything below them.
-    func build() -> DiskNode {
-        var order: [Folder] = []
-        var pending = [root]
-        while let folder = pending.popLast() {
-            order.append(folder)
-            pending.append(contentsOf: folder.subfolders.values)
-        }
-        for folder in order.reversed() {
-            folder.built = node(for: folder)
-            folder.subfolders = [:]
-            folder.leaves = []
-        }
-        return root.built ?? DiskNode(
-            id: root.path, name: root.name, bytes: 0, isOther: false, isPackage: false, children: []
+        let parent = (file.path as NSString).deletingLastPathComponent
+        guard enter(parent), let folder = open.last else { return }
+        append(
+            Entry(
+                name: (file.path as NSString).lastPathComponent, bytes: file.bytes, isPackage: file.isPackageRoot,
+                node: nil
+            ),
+            to: folder
         )
     }
 
+    /// The finished tree: every folder still open is collapsed, deepest first.
+    func build() -> DiskNode {
+        while open.count > 1 {
+            closeLast()
+        }
+        return node(for: open[0])
+    }
+
+    /// Collapses the open folders the walk has left, then opens the folders down to `parent`. False when `parent`
+    /// is not below the root.
+    private func enter(_ parent: String) -> Bool {
+        guard Self.isInside(parent, open[0].path) else { return false }
+        while open.count > 1, let last = open.last, !Self.isInside(parent, last.path) {
+            closeLast()
+        }
+        guard let current = open.last, parent != current.path else { return true }
+        var path = current.path
+        for component in parent.dropFirst(path.count + 1).split(separator: "/") {
+            let name = String(component)
+            path = (path as NSString).appendingPathComponent(name)
+            open.append(Folder(path: path, name: name))
+        }
+        return true
+    }
+
+    private static func isInside(_ path: String, _ folder: String) -> Bool {
+        path == folder || path.hasPrefix(folder.hasSuffix("/") ? folder : folder + "/")
+    }
+
+    private func closeLast() {
+        let folder = open.removeLast()
+        held -= folder.entries.count
+        let finished = node(for: folder)
+        if let parent = open.last {
+            append(Entry(name: folder.name, bytes: finished.bytes, isPackage: false, node: finished), to: parent)
+        }
+    }
+
+    private func append(_ entry: Entry, to folder: Folder) {
+        folder.entries.append(entry)
+        held += 1
+        // Only the biggest entries can stay; the rest are summed now so a folder of many items stays small.
+        if folder.entries.count > 2 * maxChildren {
+            folder.entries.sort(by: Self.comesFirst)
+            let rest = folder.entries[maxChildren...]
+            folder.trimmedBytes = CleanupMath.sum([folder.trimmedBytes] + rest.map(\.bytes))
+            folder.trimmedCount += rest.count
+            held -= rest.count
+            folder.entries.removeSubrange(maxChildren...)
+        }
+        peakHeldEntries = max(peakHeldEntries, held)
+    }
+
     private func node(for folder: Folder) -> DiskNode {
-        let all = (folder.subfolders.values.compactMap(\.built) + folder.leaves).sorted(by: Self.comesFirst)
-        var children = Array(all.prefix(maxChildren))
-        let rest = all.dropFirst(maxChildren)
+        let sorted = folder.entries.sorted(by: Self.comesFirst)
+        var children = sorted.prefix(maxChildren).map { entry in
+            entry.node ?? DiskNode(
+                id: (folder.path as NSString).appendingPathComponent(entry.name), name: entry.name,
+                bytes: entry.bytes, isOther: false, isPackage: entry.isPackage, children: []
+            )
+        }
+        let rest = sorted.dropFirst(maxChildren)
         if !rest.isEmpty || folder.trimmedCount > 0 {
             children.append(DiskNode(
                 id: folder.path + "\u{0}other", name: "Other",
@@ -233,7 +270,7 @@ final class DiskTreeBuilder {
     }
 
     /// Largest first; equal sizes by name, so the order is stable.
-    private static func comesFirst(_ lhs: DiskNode, _ rhs: DiskNode) -> Bool {
+    private static func comesFirst(_ lhs: Entry, _ rhs: Entry) -> Bool {
         lhs.bytes == rhs.bytes ? lhs.name < rhs.name : lhs.bytes > rhs.bytes
     }
 }

@@ -160,15 +160,22 @@ struct LargeFileScannerTests {
         #expect(result.largest.count == 5)
     }
 
-    @Test("cancelling the consuming task stops the walk and finishes it as cancelled")
+    @Test("cancelling the consuming task stops the walk promptly and finishes it as cancelled")
     func cancellingConsumer() async throws {
         let fixture = try FilesFixture()
-        for index in 0 ..< 2000 {
+        for index in 0 ..< 1000 {
             try fixture.file("F/\(index % 20)/f\(index).bin", bytes: 10)
         }
         let ended = Received<DiskScanResult>()
+        // Each item takes at least 2 ms, so a full walk takes at least 2 s: far longer than cancelling takes.
+        let slow = fixture.walker(volume: { _, info in
+            usleep(2000)
+            return info.device
+        })
         // Every file is "large" here, so the list shows how far the walk got.
-        let scanner = fixture.scanner(threshold: 1, limit: 5000, progressEvery: 1, ended: { ended.add($0) })
+        let scanner = fixture.scanner(
+            walker: slow, threshold: 1, limit: 5000, progressEvery: 1, ended: { ended.add($0) }
+        )
         let consumer = Task {
             for await update in scanner.scan() {
                 if case .progress = update {
@@ -177,12 +184,42 @@ struct LargeFileScannerTests {
             }
         }
         await consumer.value
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(10)
         while ended.values.isEmpty, Date() < deadline {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         let result = try #require(ended.values.first)
         #expect(result.wasCancelled)
-        #expect(result.largest.count < 2000)
+        #expect(result.largest.count < 250)
+    }
+
+    @Test("the tree builder holds only the folders being walked, never every file")
+    func treeMemoryBounded() throws {
+        let fixture = try FilesFixture()
+        for folder in 0 ..< 60 {
+            for file in 0 ..< 5 {
+                try fixture.file("Top/F\(folder)/sub/f\(file).bin", bytes: 4096 * (file + 1))
+            }
+            try fixture.file("Top/F\(folder)/own.bin", bytes: 4096)
+        }
+        let builder = DiskTreeBuilder(root: fixture.home.path, maxChildren: 4)
+        for file in fixture.walk().files {
+            builder.add(file)
+        }
+        let tree = builder.build()
+        // 360 files went in; open folders (home, Top, one F, its sub) hold at most 2 x 4 entries each.
+        #expect(builder.peakHeldEntries <= 4 * 2 * 4)
+        let top = try #require(child("Top", of: tree))
+        #expect(top.children.count == 5)
+        #expect(top.children.last?.isOther == true)
+        #expect(top.bytes == CleanupMath.sum(top.children.map(\.bytes)))
+        #expect(top.bytes == 60 * 4096 * 16)
+        #expect(tree.bytes == top.bytes)
+        let first = try #require(top.children.first)
+        #expect(first.id.hasPrefix(fixture.path("Top/F")))
+        let sub = try #require(child("sub", of: first))
+        #expect(sub.id == first.id + "/sub")
+        #expect(sub.children.map(\.name) == ["f4.bin", "f3.bin", "f2.bin", "f1.bin", "Other"])
+        #expect(sub.children.first?.id == sub.id + "/f4.bin")
     }
 }

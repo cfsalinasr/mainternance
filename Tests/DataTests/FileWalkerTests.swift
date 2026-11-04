@@ -61,16 +61,39 @@ struct FileWalkerTests {
         #expect(fixture.walk(walker).paths == [fixture.path("Local/kept.bin")])
     }
 
-    @Test("protected places are neither entered nor reported")
+    @Test("a protected folder is neither entered nor reported")
     func protectedSkipped() throws {
         let fixture = try FilesFixture()
-        try fixture.file("Applications/Mainternance.bin", bytes: 100)
-        try fixture.file("Locked/inner.bin", bytes: 100)
+        try fixture.file("Applications/Mainternance.app/Contents/MacOS/Mainternance", bytes: 100)
+        try fixture.file("Locked/deeper/inner.bin", bytes: 100)
         try fixture.file("open.bin", bytes: 100)
         let locked = fixture.path("Locked")
-        let app = fixture.path("Applications/Mainternance.bin")
+        let app = fixture.path("Applications/Mainternance.app")
         let walker = fixture.walker(isProtected: { $0 == locked || $0 == app })
         #expect(fixture.walk(walker).paths == [fixture.path("open.bin")])
+    }
+
+    @Test("only folders are checked against the protected places, never each plain file")
+    func protectedAskedForFoldersOnly() throws {
+        let fixture = try FilesFixture()
+        try fixture.file("A/one.bin", bytes: 10)
+        try fixture.file("A/B/two.bin", bytes: 10)
+        try fixture.file("three.bin", bytes: 10)
+        let asked = Received<String>()
+        let walker = fixture.walker(isProtected: { asked.add($0); return false })
+        #expect(fixture.walk(walker).files.count == 3)
+        #expect(Set(asked.values) == [fixture.path("A"), fixture.path("A/B")])
+    }
+
+    @Test("a home folder that is a link is resolved once and walked; paths are reported resolved")
+    func linkedHome() throws {
+        let fixture = try FilesFixture()
+        try fixture.file("Documents/a.txt", bytes: 100)
+        let linked = fixture.temp.url.appendingPathComponent("linked-home")
+        try FileManager.default.createSymbolicLink(atPath: linked.path, withDestinationPath: fixture.home.path)
+        let walker = fixture.walker(home: linked)
+        #expect(walker.root == fixture.home.path)
+        #expect(fixture.walk(walker).paths == [fixture.path("Documents/a.txt")])
     }
 
     @Test("a folder that cannot be read is counted and the walk goes on")

@@ -6,14 +6,20 @@ import MainternanceDomain
 /// Trash: every walk starts at `home`, a folder inside a fresh temp directory.
 struct FilesFixture {
     let temp: TempDirectory
+    /// Fully resolved (the temp folder sits behind the `/var` link), as the walker reports paths.
+    let home: URL
 
     init() throws {
         temp = try TempDirectory()
-        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let given = temp.url.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: given, withIntermediateDirectories: true)
+        home = URL(fileURLWithPath: FilesFixture.resolved(given.path), isDirectory: true)
     }
 
-    var home: URL {
-        temp.url.appendingPathComponent("home", isDirectory: true)
+    static func resolved(_ path: String) -> String {
+        guard let real = realpath(path, nil) else { return path }
+        defer { free(real) }
+        return String(cString: real)
     }
 
     /// Writes `bytes` non-zero bytes at `path` (relative to the home folder), making its folders.
@@ -45,10 +51,10 @@ struct FilesFixture {
     }
 
     func walker(
-        isProtected: @escaping @Sendable (String) -> Bool = { _ in false },
+        home given: URL? = nil, isProtected: @escaping @Sendable (String) -> Bool = { _ in false },
         volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device }
     ) -> FileWalker {
-        FileWalker(home: home, isProtected: isProtected, volume: volume)
+        FileWalker(home: given ?? home, isProtected: isProtected, volume: volume)
     }
 
     /// Everything one walk reports, in order.
@@ -66,11 +72,11 @@ struct FilesFixture {
     }
 
     func scanner(
-        threshold: Int64 = 20000, limit: Int = 200, progressEvery: Int = 1000,
+        walker given: FileWalker? = nil, threshold: Int64 = 20000, limit: Int = 200, progressEvery: Int = 1000,
         ended: @escaping @Sendable (DiskScanResult) -> Void = { _ in }
     ) -> LargeFileScanner {
         LargeFileScanner(
-            walker: walker(), threshold: threshold, limit: limit, progressEvery: progressEvery, ended: ended
+            walker: given ?? walker(), threshold: threshold, limit: limit, progressEvery: progressEvery, ended: ended
         )
     }
 

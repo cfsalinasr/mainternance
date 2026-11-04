@@ -18,7 +18,7 @@ struct WalkedFile: Sendable {
 ///
 /// Never entered or reported: `Library` at the top of home, any folder whose name starts with `.` (the Trash
 /// among them), links (never followed and not counted), anything on another volume than the home folder, and
-/// anything `isProtected` refuses. Only plain files and packages are reported; a file with several hard links is
+/// any folder `isProtected` refuses. Only plain files and packages are reported; a file with several hard links is
 /// reported once. Read-only.
 struct FileWalker: Sendable {
     /// Folder extensions treated as one item even when macOS does not say it is a package.
@@ -55,6 +55,14 @@ struct FileWalker: Sendable {
         return values?.isPackage ?? false
     }
 
+    /// The home folder fully resolved (`realpath`), so a home folder that is itself a link is still walked. Every
+    /// reported path starts with it. The home folder as given when it cannot be resolved.
+    var root: String {
+        guard let real = realpath(home.path, nil) else { return home.path }
+        defer { free(real) }
+        return String(cString: real)
+    }
+
     /// What to do with one item found in a folder.
     private enum Step {
         case enter(String)
@@ -66,7 +74,7 @@ struct FileWalker: Sendable {
     /// it says true the walk returns at once. A folder that cannot be listed (or a package only partly read) is
     /// reported through `onFolderUnreadable` and the walk goes on.
     func walk(onFile: (WalkedFile) -> Void, onFolderUnreadable: () -> Void, shouldStop: () -> Bool) {
-        let root = home.path
+        let root = root
         guard case let .found(info) = ItemStat.read(root), info.type == .directory else {
             onFolderUnreadable()
             return
@@ -114,7 +122,9 @@ struct FileWalker: Sendable {
             }
             return .report(WalkedFile(path: path, stat: item, isPackageRoot: true, bytes: bytes))
         }
-        guard item.isRegular, !isProtected(path) else { return .skip }
+        // A plain file reached without following a link, on the home volume, in a folder already checked, cannot be
+        // in a protected place: only folders are checked.
+        guard item.isRegular else { return .skip }
         return .report(WalkedFile(path: path, stat: item, isPackageRoot: false, bytes: item.allocated))
     }
 }
