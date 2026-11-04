@@ -31,7 +31,9 @@ struct FilesSampleDataTests {
 
 struct FileSearchTests {
     private let now = Date(timeIntervalSince1970: 2_000_000_000)
-    private func file(_ path: String, size: Int64 = 10, daysAgo: Double = 1, kind: FileKind = .document) -> SampleFile {
+    private func file(
+        _ path: String, size: Int64 = 10, daysAgo: Double = 1, kind: SampleFileKind = .document
+    ) -> SampleFile {
         SampleFile(
             name: (path as NSString).lastPathComponent, path: path, size: size,
             modified: now.addingTimeInterval(-daysAgo * 86400), kind: kind

@@ -2,7 +2,7 @@ import Foundation
 
 // Replaced by Domain providers in the file-explorer plan
 
-enum FileKind: String, CaseIterable, Sendable, Identifiable {
+enum SampleFileKind: String, CaseIterable, Sendable, Identifiable {
     case document, image, video, audio, archive, code, other
 
     var id: String {
@@ -43,7 +43,7 @@ struct SampleFile: Identifiable, Equatable, Sendable {
     var path: String
     var size: Int64
     var modified: Date
-    var kind: FileKind
+    var kind: SampleFileKind
 }
 
 struct DuplicateGroup: Identifiable, Equatable, Sendable {
@@ -74,7 +74,9 @@ enum FilesSampleData {
         Date(timeIntervalSinceNow: -days * day)
     }
 
-    private static func file(_ path: String, _ megabytes: Double, _ days: Double, _ kind: FileKind) -> SampleFile {
+    private static func file(
+        _ path: String, _ megabytes: Double, _ days: Double, _ kind: SampleFileKind
+    ) -> SampleFile {
         SampleFile(
             name: (path as NSString).lastPathComponent, path: path,
             size: Int64(megabytes * 1_000_000), modified: ago(days), kind: kind

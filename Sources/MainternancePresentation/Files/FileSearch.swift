@@ -56,7 +56,7 @@ enum DateFilter: String, CaseIterable, Identifiable, Sendable {
 
 struct FileSearchCriteria: Equatable, Sendable {
     var text = ""
-    var kind: FileKind?
+    var kind: SampleFileKind?
     var size: SizeFilter = .any
     var date: DateFilter = .any
 

@@ -24,8 +24,10 @@ struct FileSearchBar: View {
 
             Menu {
                 Picker("Type", selection: $state.criteria.kind) {
-                    Text("Any type").tag(FileKind?.none)
-                    ForEach(FileKind.allCases) { Label($0.title, systemImage: $0.symbol).tag(FileKind?.some($0)) }
+                    Text("Any type").tag(SampleFileKind?.none)
+                    ForEach(SampleFileKind.allCases) {
+                        Label($0.title, systemImage: $0.symbol).tag(SampleFileKind?.some($0))
+                    }
                 }
             } label: {
                 Label(state.criteria.kind?.title ?? "Type", systemImage: "square.grid.2x2")

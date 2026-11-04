@@ -55,6 +55,8 @@ struct ItemStat: Sendable {
     /// Allocated bytes (`st_blocks` is counted in 512-byte units).
     let allocated: Int64
     let identity: CleanupEntry.Identity
+    /// How many names (hard links) the item has (`st_nlink`).
+    let linkCount: Int
     let modified: Date
     /// When the item was made (`st_birthtime`).
     let created: Date
@@ -90,6 +92,7 @@ struct ItemStat: Sendable {
         isRegular = format == S_IFREG
         allocated = Int64(info.st_blocks) * 512
         identity = CleanupEntry.Identity(device: info.st_dev, inode: info.st_ino)
+        linkCount = Int(info.st_nlink)
         modified = Self.date(info.st_mtimespec)
         created = Self.date(info.st_birthtimespec)
     }
