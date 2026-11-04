@@ -112,6 +112,23 @@ otherwise; both intervals are doubled in Low Power Mode.
   screen in the window and never in Low Power Mode (at low priority; leaving Home stops it), and updates at once
   whenever the Cleanup screen measures or moves items.
 
+**Uninstaller** (Uninstaller screen):
+
+- Lists the apps directly inside `/Applications` and `~/Applications` (not deeper folders). Apple's apps
+  (bundle identifier starting `com.apple.`, which includes ones installed from the App Store) and Mainternance itself are not listed. The list loads when you open
+  the screen, never at launch.
+- Choosing an app measures it and looks for its leftovers in a fixed set of `~/Library` folders (Application
+  Support, Caches, Containers, Group Containers, Preferences, Saved Application State, HTTPStorages, WebKit,
+  Cookies, Logs, LaunchAgents). A leftover is found by **exact** identifier or exact name, never by "contains".
+  This can **miss** leftovers and can **over-match**: review the list. Leftovers matched by name only are
+  unticked and labelled so; launch agents are unticked too, and the screen says to switch them off in Startup first.
+- Nothing is permanently deleted. After you review, the app and the ticked leftovers **move to the Trash**; Put
+  Back restores them, and space comes back only when you empty the Trash. The app moves first: if it cannot move
+  (it is running, or macOS refuses), its leftovers stay where they are. A running app is refused: quit it first.
+- Apps in `/Applications` may need an administrator password; if macOS refuses, the screen says so per item and
+  nothing is retried.
+- Sizes are "about"; "freed" counts only what really moved.
+
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
 silicon) and macOS update status.
 
@@ -119,7 +136,6 @@ silicon) and macOS update status.
 "Coming next"):
 
 - File explorer
-- Uninstaller
 
 Later plans bring these back one by one.
 
@@ -127,7 +143,7 @@ Later plans bring these back one by one.
 
 Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar to see the
 popover with the live readings, then choose Open Mainternance to show the window, which has Home, Cleanup,
-Scanner, Startup and Settings (see What is live).
+Scanner, Startup, Uninstaller and Settings (see What is live).
 
 - `scripts/build-app.sh` builds a release binary and assembles and signs
   `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).

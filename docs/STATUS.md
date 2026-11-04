@@ -1,23 +1,19 @@
 # Project status
 
-Last updated: 2026-11-02.
+Last updated: 2026-11-03.
 
 ## Shipped on `main`
 - Menu bar item and popover plus a main window (Home, Settings) showing **live readings** of this Mac: free disk space (the figure System Settings shows), memory pressure, thermal state, battery (percent, charging, health, cycles), CPU, GPU. Unknown data is shown as unknown, never faked. See `README.md` ("What is live").
 - Malware scanner (PR #3): ClamAV installed through Homebrew from the app, quick/full/folder scans, quarantine and restore, status on Home.
+- Settings, weekly scan and notifications (plan `2026-11-02-schedule-notifications-settings.md`): merged to `main`. Live Settings saved to `preferences.json`, Launch at login through macOS, an opt-in weekly quick scan that runs only while the app is open (a missed slot runs once later; also checked on wake), and notifications with counts only, never file names.
+- Startup (plan `2026-11-02-startup-items.md`): merged to `main`. Real list of launch agents and daemons with launchd state, Reveal in Finder, switching your own agents off and on, "New" badges and the count on Home.
+- Cleanup (plan `2026-11-03-cleanup.md`): merged to `main`. Measures caches, logs, old installers and Xcode build caches, review sheet, move to the Trash (never a permanent delete), Home suggestion.
 - Build, sign and install scripts (`scripts/build-app.sh`, `scripts/make-signing-cert.sh`), CI, SonarCloud and CodeRabbit.
 
-## Done on branch `feat/schedule-notifications` (plan `docs/superpowers/plans/2026-11-02-schedule-notifications-settings.md`)
-All six tasks are implemented: live Settings saved to `preferences.json`, Launch at login through macOS (shows the real state), an opt-in weekly quick scan that runs only while the app is open (a missed slot runs once later; also checked when the Mac wakes), and notifications for scan findings and the weekly result (counts only, never file names; they need permission). Not merged yet: ask the owner before opening or merging the pull request.
-
-## Done on branch `feat/startup-items` (plan `docs/superpowers/plans/2026-11-02-startup-items.md`)
-All three tasks are implemented: a real Startup screen listing launch agents and daemons (your own, for all users, system daemons) with launchd's on/off state, Reveal in Finder, switching your own agents off and on (`launchctl disable`/`enable`, takes effect at the next login), a review baseline with "New" badges and Mark all as reviewed, and the real count of new startup items on Home. Not merged yet: ask the owner before opening or merging the pull request.
-
-## Done on branch `feat/cleanup` (plan `docs/superpowers/plans/2026-11-03-cleanup.md`)
-All three tasks are implemented: a real Cleanup screen that measures caches, logs, old installers in Downloads and Xcode build caches in the home folder, a review sheet, and a move to the Trash (never a permanent delete) with a result that counts only what really moved; Home suggests "Free about N GB in Cleanup" from the last measurement. Not merged yet: ask the owner before opening or merging the pull request.
+## Done on branch `feat/uninstaller` (plan `docs/superpowers/plans/2026-11-03-uninstaller.md`)
+- Uninstaller (plan `2026-11-03-uninstaller.md`): moves an app and its leftovers to the Trash after review (never permanent). Leftovers are found by exact identifier or name in fixed `~/Library` folders, so some can be missed or over-matched; name-only ones and launch agents are unticked. Apple's apps (bundle identifier starting com.apple.) are not listed. Apps in `/Applications` may need an administrator password.
 
 ## Remaining plans (not started)
-- Uninstaller
 - File explorer
 
 ## Rules that apply to all remaining work
@@ -31,6 +27,7 @@ All three tasks are implemented: a real Cleanup screen that measures caches, log
 - Launch at login from `/Applications`, including the approval step in System Settings > General > Login Items.
 - Cleanup: run it on a real Mac, move a few caches, then look in the Trash (they are there and Put Back restores them), and check Home's suggestion.
 - Cleanup and links: the real `FileManager.trashItem` is never run by the automated tests (they use a fake Trash), so its handling of links rests on this check only. Put a link in `~/Library/Caches` that points to a folder elsewhere, move it with Cleanup, and confirm the Trash holds the link while the folder it pointed to is untouched.
+- Uninstaller: uninstall a throwaway app on a real Mac with the app in `/Applications` and look in the Trash (the app and its ticked leftovers are there), including the administrator-password case, and check that Put Back restores it. The real `FileManager.trashItem` is never run by the automated tests.
 - Startup: switching one of your own agents off, logging out and in, and checking it no longer starts (then switching it back on).
 - Notifications: the permission prompt, then a weekly scan set a few minutes ahead (see `docs/testing-the-scanner.md`).
 - First real scanner run with real ClamAV (not done yet): Install button, Update definitions, the harmless EICAR test file (see `docs/testing-the-scanner.md`).
