@@ -23,6 +23,12 @@ Last updated: 2026-11-04.
 - ClamAV is installed through Homebrew from inside the app; the app keeps its own config and virus database in `~/Library/Application Support/Mainternance/ClamAV` and never edits Homebrew's files.
 - Anything that is not real must say so in the UI, or stay hidden.
 
+## Known limits (accepted, not bugs to hide)
+- Files: a file that has other hard links frees nothing when moved, but "freed" still counts its size. APFS clones can free less than shown too.
+- Files: if a file becomes iCloud-only (stored online) in the moment between the duplicate scan listing it and reading it, opening it may start a download. Files already iCloud-only when scanned are skipped.
+- Files: Spotlight search lists files only (no folders), and Spotlight may not have indexed everything.
+- Uninstaller: a running app with no bundle identifier can still be moved.
+
 ## Needs a human (cannot be verified without a screen)
 - Popover: after "Open Mainternance" the popover closes, the window stays open, and one click on the menu bar icon reopens it without leaving the icon highlighted.
 - App CPU in Activity Monitor stays near 0% with the popover and window closed.
