@@ -285,7 +285,7 @@ extension HomeModelTests {
     }
 
     @Test func comingNextLineIsPinned() {
-        #expect(HomeModel.comingNextText == "Coming next: file explorer, uninstaller.")
+        #expect(HomeModel.comingNextText == "Coming next: file explorer.")
     }
 
     @Test func linksToUnavailableDestinationsAreNotInteractive() {
