@@ -14,6 +14,9 @@ struct DuplicatesView: View {
             ForEach(state.duplicateNotes, id: \.self) { note in
                 Text(note).font(.system(size: 12)).foregroundStyle(.secondary)
             }
+            if !state.duplicateGroups.isEmpty {
+                Text(state.duplicatesTotalText).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
             rulePicker
             groups
         }

@@ -45,7 +45,7 @@ public final class FilesViewState {
         }
     }
 
-    var chosenRule: KeepRule = .newest
+    private(set) var chosenRule: KeepRule = .newest
 
     public internal(set) var searchResults: [FileItem] = []
     private(set) var isSearching = false
@@ -56,6 +56,8 @@ public final class FilesViewState {
 
     public internal(set) var diskResult: DiskScanResult?
     private(set) var isScanningDisk = false
+    /// True once files moved to the Trash after the last disk result: the treemap and total were drawn before.
+    internal(set) var diskMapIsStale = false
     private(set) var scanProgress = 0
     /// Ids of the treemap nodes drilled into, outermost first.
     private(set) var drillPath: [String] = []
@@ -162,6 +164,10 @@ public final class FilesViewState {
         diskResult?.largest ?? []
     }
 
+    var staleMapNote: String? {
+        diskMapIsStale && diskResult != nil ? FilesText.staleMap : nil
+    }
+
     var scanProgressText: String? {
         isScanningDisk ? FilesText.scanned(scanProgress) : nil
     }
@@ -230,6 +236,7 @@ public final class FilesViewState {
                     scanProgress = count
                 case let .finished(result) where !result.wasCancelled:
                     diskResult = result
+                    diskMapIsStale = false
                     drillPath = []
                 case .finished:
                     break // A stopped walk is only a lower bound: the previous result stays.
@@ -260,6 +267,7 @@ public final class FilesViewState {
         isSearching = false
         stopDiskScan()
         stopDuplicateScan()
+        cancelReview() // does nothing while a move runs: that move cannot be taken back
     }
 
     /// Stops the disk scan; the previous result stays.

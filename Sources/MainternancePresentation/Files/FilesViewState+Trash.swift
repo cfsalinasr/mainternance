@@ -121,6 +121,7 @@ extension FilesViewState {
     /// Removes moved files from every list; a group left with one copy goes away.
     private func drop(_ moved: Set<String>) {
         guard !moved.isEmpty else { return }
+        diskMapIsStale = true
         searchResults.removeAll { moved.contains($0.id) }
         if let result = diskResult {
             diskResult = DiskScanResult(

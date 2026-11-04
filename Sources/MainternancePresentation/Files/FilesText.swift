@@ -24,6 +24,7 @@ enum FilesText {
     static let noLargeFiles = "No large files found"
     static let nothingToShow = "Nothing to show"
 
+    static let staleMap = "The map was drawn before your last move. Scan again to update it."
     static let trash = "Move to the Trash"
     static let cancel = "Cancel"
     static let keep = "Keep"

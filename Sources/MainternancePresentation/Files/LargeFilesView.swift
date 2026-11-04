@@ -11,6 +11,9 @@ struct LargeFilesView: View {
             if let note = state.unreadableNote {
                 Text(note).font(.system(size: 12)).foregroundStyle(.secondary)
             }
+            if let stale = state.staleMapNote {
+                Text(stale).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
             if state.diskResult == nil {
                 if !state.isScanningDisk {
                     ContentUnavailableView(FilesText.notScanned, systemImage: "internaldrive")
