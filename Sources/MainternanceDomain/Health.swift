@@ -15,12 +15,11 @@ public enum CheckID: String, Sendable, CaseIterable {
 public enum AppDestination: String, Sendable, CaseIterable {
     case home, cleanup, files, scanner, startup, uninstaller, settings
 
-    /// Whether the screen is backed by a working engine. Screens that still run on invented sample data are
-    /// hidden from the sidebar and unreachable by links; their code stays in the repo and comes back one by one.
+    /// Whether the screen is backed by a working engine. A screen without one stays hidden from the sidebar and
+    /// unreachable by links; today every screen is real.
     public var isAvailable: Bool {
         switch self {
-        case .home, .settings, .scanner, .startup, .cleanup, .uninstaller: true
-        case .files: false
+        case .home, .settings, .scanner, .startup, .cleanup, .uninstaller, .files: true
         }
     }
 }

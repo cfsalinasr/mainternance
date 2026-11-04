@@ -284,11 +284,7 @@ extension HomeModelTests {
         #expect(full.suggestionsEmptyText == nil)
     }
 
-    @Test func comingNextLineIsPinned() {
-        #expect(HomeModel.comingNextText == "Coming next: file explorer.")
-    }
-
-    @Test func linksToUnavailableDestinationsAreNotInteractive() {
+    @Test func everyDestinationIsALink() {
         let model = HomeModel(
             overview: overview(checks: [
                 check(.diskSpace, .needsAttention, "Disk 91% full", .files),
@@ -298,12 +294,12 @@ extension HomeModelTests {
             now: now, locale: locale
         )
         let reasons = model.banner.reasons
-        #expect(reasons.map(\.isLink) == [false, true])
-        #expect(model.tiles.first { $0.title == "Disk free" }?.isLink == false)
+        #expect(reasons.map(\.isLink) == [true, true])
+        #expect(model.tiles.first { $0.title == "Disk free" }?.isLink == true)
         #expect(model.tiles.first { $0.title == "Memory" }?.isLink == true)
-        let hidden = SuggestedAction(id: "a", title: "t", detail: "d", symbol: "s", destination: .files)
+        let files = SuggestedAction(id: "a", title: "t", detail: "d", symbol: "s", destination: .files)
         let shown = SuggestedAction(id: "b", title: "t", detail: "d", symbol: "s", destination: .settings)
-        #expect(!hidden.isLink)
+        #expect(files.isLink)
         #expect(shown.isLink)
     }
 
