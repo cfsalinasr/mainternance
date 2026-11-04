@@ -60,11 +60,12 @@ extension FilesFixture {
     func finder(
         minimum: Int64 = 1000, willRead: @escaping @Sendable (DuplicateFinder.Pass, String) -> Void = { _, _ in },
         didReadChunk: @escaping @Sendable (String) -> Void = { _ in },
-        ended: @escaping @Sendable (DuplicateFinder.Outcome) -> Void = { _ in }
+        ended: @escaping @Sendable (DuplicateFinder.Outcome) -> Void = { _ in },
+        isDataless: @escaping @Sendable (String, ItemStat) -> Bool = { $1.isDataless }
     ) -> DuplicateFinder {
         DuplicateFinder(
             home: home, isProtected: { _ in false }, minimumBytes: minimum, willRead: willRead,
-            didReadChunk: didReadChunk, ended: ended
+            didReadChunk: didReadChunk, ended: ended, isDataless: isDataless
         )
     }
 

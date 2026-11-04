@@ -167,4 +167,35 @@ struct DuplicateFinderSafetyTests {
         #expect(updates.map(UpdateKind.init).last == .finished(unreadableFolders: 1, wasCancelled: false))
         #expect(updates.compactMap(\.group).map { $0.files.map(\.name) } == [["a.bin", "b.bin"]])
     }
+
+    @Test("files stored only online are never opened and never grouped")
+    func datalessSkipped() throws {
+        let fixture = try FilesFixture()
+        let online = try fixture.write("Documents/online.bin", pattern(5000)).path
+        let lonely = try fixture.write("Other/online-pair.bin", pattern(7000)).path
+        try fixture.write("Other/local-pair.bin", pattern(7000))
+        try fixture.write("Documents/a.bin", pattern(5000))
+        try fixture.write("Documents/b.bin", pattern(5000))
+        let opened = Received<String>()
+        var groups: [DuplicateGroup] = []
+        _ = fixture.finder(
+            willRead: { _, path in opened.add(path) },
+            isDataless: { path, _ in path == online || path == lonely }
+        ).run(shouldStop: { false }, phase: { _ in }, group: { groups.append($0) })
+        #expect(groups.map { $0.files.map(\.name) } == [["a.bin", "b.bin"]])
+        #expect(!opened.values.contains(online) && !opened.values.contains(lonely))
+        #expect(!opened.values.contains { $0.hasSuffix("local-pair.bin") }) // left alone, it has no pair to read
+    }
+
+    @Test("the dataless flag is read from the file flags")
+    func datalessFlag() throws {
+        let fixture = try FilesFixture()
+        let url = try fixture.write("plain.bin", pattern(10))
+        guard case let .found(info) = ItemStat.read(url.path) else {
+            Issue.record("not found")
+            return
+        }
+        #expect(!info.isDataless)
+        #expect(ItemStat.datalessFlag == 0x4000_0000)
+    }
 }

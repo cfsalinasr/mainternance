@@ -38,6 +38,6 @@ Last updated: 2026-11-04.
 - Files, duplicates: a scan with a planted duplicate pair (two identical files of 1 MB or more) finds exactly that pair.
 - Files: Quick Look and Reveal in Finder from a row.
 - Files, Trash: a real move of a single file and of a duplicate, then Put Back in Finder. The real `FileManager.trashItem` is never run by the automated tests.
-- Files, packages: trashing a file inside a package folder (for example inside an `.app`) should not be possible. Try it and record what happens.
+- Files, packages: check that moving a file inside a package folder (for example inside an `.app` or a Photos library) is refused, and that search does not list files inside packages.
 - Files, privacy: the prompts for Desktop, Documents and Downloads, and the "folders could not be read" note when you decline.
 - Uninstaller, known limit: a running app with no bundle identifier can still be moved by the Uninstaller. Check what happens.

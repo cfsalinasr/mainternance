@@ -5,8 +5,9 @@ import MainternanceDomain
 /// expect to see.
 ///
 /// Spotlight's answer is a list of paths and is treated as untrusted: each path is resolved, must lie inside the
-/// resolved home folder (not under `~/Library`, not under or named like a dot-folder), and is re-read with `lstat`
-/// (it must exist and be a plain file, not a link or folder). Results are sorted newest first and capped.
+/// resolved home folder (not under `~/Library` in any letter case, not under or named like a dot-folder, not inside
+/// a package such as an app or a Photos library, which counts as one item), and is re-read with `lstat` (it must
+/// exist and be a plain file, not a link or folder). Results are sorted newest first and capped.
 struct SpotlightSearcher: FileSearching {
     static let maxResults = 500
     /// How many paths one query asks Spotlight for (results are dropped after, so ask for more than the cap).
@@ -17,13 +18,17 @@ struct SpotlightSearcher: FileSearching {
     let home: URL
     /// Runs the query for a predicate in a folder, returning at most the given number of paths, newest change first.
     let runQuery: @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer
+    /// Whether the folder at a path is a package (the walker's rule). Tests may replace it.
+    let isPackage: @Sendable (String) -> Bool
 
     init(
         home: URL,
-        runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer = SpotlightSearcher.runSpotlight
+        runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer = SpotlightSearcher.runSpotlight,
+        isPackage: @escaping @Sendable (String) -> Bool = FileWalker.readIsPackage
     ) {
         self.home = home
         self.runQuery = runQuery
+        self.isPackage = isPackage
     }
 
     func search(_ query: FileSearchQuery) async -> FileSearchResult {
@@ -38,11 +43,14 @@ struct SpotlightSearcher: FileSearching {
         if Task.isCancelled {
             return FileSearchResult(files: [], isTruncated: false)
         }
-        let root = Self.resolved(home.path)
+        let root = CleanupRules.resolve(home.path) ?? home.path
         var seen = Set<String>()
+        var packages: [String: Bool] = [:]
         var files: [FileItem] = []
         for path in paths {
-            guard let item = Self.checked(path, root: root), seen.insert(item.id).inserted else { continue }
+            guard let item = checked(path, root: root, packages: &packages), seen.insert(item.id).inserted else {
+                continue
+            }
             files.append(item)
         }
         files.sort { $0.modified != $1.modified ? $0.modified > $1.modified : $0.id < $1.id }
@@ -50,25 +58,28 @@ struct SpotlightSearcher: FileSearching {
         return FileSearchResult(files: Array(files.prefix(Self.maxResults)), isTruncated: truncated)
     }
 
-    /// The item for one path Spotlight reported, or nil when it must not be shown.
-    private static func checked(_ path: String, root: String) -> FileItem? {
+    /// The item for one path Spotlight reported, or nil when it must not be shown. `packages` remembers, for this
+    /// search, which folders were already asked about.
+    private func checked(_ path: String, root: String, packages: inout [String: Bool]) -> FileItem? {
         guard path.hasPrefix("/") else { return nil }
         let name = (path as NSString).lastPathComponent
         guard !name.isEmpty, name != "..", name != "." else { return nil }
-        // Resolve the folder, not the file: a link as the last component is kept so `lstat` can refuse it.
-        let parent = resolved((path as NSString).deletingLastPathComponent)
+        // Resolve the folder, not the file: a link as the last component is kept so `lstat` can refuse it. A folder
+        // that cannot be resolved is gone, and so is the file.
+        guard let parent = CleanupRules.resolve((path as NSString).deletingLastPathComponent),
+              let folders = HomePlaces.names(from: root, to: parent),
+              !HomePlaces.isHidden(folders + [Substring(name)]) else { return nil }
+        let insidePackage = HomePlaces.isInsidePackage(home: root, names: folders) { folder in
+            if let known = packages[folder] {
+                return known
+            }
+            let answer = isPackage(folder)
+            packages[folder] = answer
+            return answer
+        }
         let full = (parent as NSString).appendingPathComponent(name)
-        guard full.hasPrefix(root + "/") else { return nil }
-        let relative = full.dropFirst(root.count + 1).split(separator: "/", omittingEmptySubsequences: true)
-        guard let first = relative.first, first != "Library", !relative.contains(where: { $0.hasPrefix(".") }),
-              case let .found(info) = ItemStat.read(full), info.isRegular else { return nil }
+        guard !insidePackage, case let .found(info) = ItemStat.read(full), info.isRegular else { return nil }
         return FileItem(path: full, bytes: info.allocated, modified: info.modified, identity: info.identity)
-    }
-
-    private static func resolved(_ path: String) -> String {
-        guard let real = realpath(path, nil) else { return path }
-        defer { free(real) }
-        return String(cString: real)
     }
 
     /// The real Spotlight query: an `NSMetadataQuery` on the main run loop, scoped to `home`, newest change first.

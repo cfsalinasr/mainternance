@@ -14,7 +14,9 @@ import MainternanceDomain
 /// two names for the same item are never a pair. Every file is opened without following a link and must still be
 /// the same item, with the same length and modified date, as the walk found, before and after it is read; a file
 /// that fails any of that, or cannot be read, is dropped, and a group left with fewer than two files is not
-/// reported. Read-only. Runs at utility priority and stops when the consuming task is cancelled.
+/// reported. Files stored only online (iCloud placeholders, `ItemStat.isDataless`) are skipped before anything is
+/// opened, because reading one would download it. Read-only. Runs at utility priority and stops when the consuming
+/// task is cancelled.
 struct DuplicateFinder: DuplicateFinding {
     /// 1 MB, as Finder counts (decimal).
     static let standardMinimum: Int64 = 1_000_000
@@ -51,19 +53,24 @@ struct DuplicateFinder: DuplicateFinding {
     let didReadChunk: @Sendable (String) -> Void
     /// Told the outcome of every search, including one whose consumer has gone (tests watch cancellation with it).
     let ended: @Sendable (Outcome) -> Void
+    /// Whether a file the walk found is stored only online, from its path and `lstat` reading. Tests replace it,
+    /// since a real iCloud placeholder cannot be made in a temp folder.
+    let isDataless: @Sendable (String, ItemStat) -> Bool
 
     init(
         home: URL, isProtected: @escaping @Sendable (String) -> Bool,
         minimumBytes: Int64 = DuplicateFinder.standardMinimum,
         willRead: @escaping @Sendable (Pass, String) -> Void = { _, _ in },
         didReadChunk: @escaping @Sendable (String) -> Void = { _ in },
-        ended: @escaping @Sendable (Outcome) -> Void = { _ in }
+        ended: @escaping @Sendable (Outcome) -> Void = { _ in },
+        isDataless: @escaping @Sendable (String, ItemStat) -> Bool = { $1.isDataless }
     ) {
         walker = FileWalker(home: home, isProtected: isProtected)
         self.minimumBytes = max(minimumBytes, 1)
         self.willRead = willRead
         self.didReadChunk = didReadChunk
         self.ended = ended
+        self.isDataless = isDataless
     }
 
     func find() -> AsyncStream<DuplicateUpdate> {
@@ -101,7 +108,8 @@ struct DuplicateFinder: DuplicateFinding {
         var byLength: [Int64: [Candidate]] = [:]
         walker.walk(
             onFile: { file in
-                guard !file.isPackageRoot, file.stat.isRegular, file.stat.size >= minimumBytes else { return }
+                guard !file.isPackageRoot, file.stat.isRegular, file.stat.size >= minimumBytes,
+                      !isDataless(file.path, file.stat) else { return }
                 byLength[file.stat.size, default: []].append(Candidate(path: file.path, stat: file.stat))
             },
             onFolderUnreadable: { unreadable += 1 },
@@ -191,7 +199,8 @@ struct DuplicateFinder: DuplicateFinding {
         var info = stat()
         guard fstat(descriptor, &info) == 0 else { return false }
         let now = ItemStat(info)
-        return now.isRegular && now.identity == found.identity && now.size == found.size
+        // A file that became stored only online since the walk is not read: reading would download it.
+        return now.isRegular && !now.isDataless && now.identity == found.identity && now.size == found.size
             && now.modified == found.modified
     }
 

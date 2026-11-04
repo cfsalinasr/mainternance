@@ -10,7 +10,9 @@ import MainternanceDomain
 /// in the home folder, not a fixed list). It is refused with a reason when:
 /// 1. its path is not a plain absolute path (`.`, `..`, a trailing slash), or its parent, with every link resolved,
 ///    is not the home folder or a folder inside it (`notInHome`), or that parent is inside `~/Library` or has a
-///    folder whose name starts with `.` on the way (`hiddenPlace`; `Library` in any letter case);
+///    folder whose name starts with `.` on the way (`hiddenPlace`; `Library` in any letter case), or any folder
+///    from just below the home folder down to that parent is a package such as an app or a Photos library
+///    (`insidePackage`: a package counts as one item, so nothing inside it is moved on its own);
 /// 2. that parent, opened without following a link (`O_NOFOLLOW | O_DIRECTORY`), is not the same folder (device and
 ///    inode) the path named a moment before;
 /// 3. the file, read inside that open folder without following links (`fstatat`), is gone, is a link, a folder, a
@@ -40,16 +42,20 @@ struct FileTrasher: FileTrashing {
     let isProtected: @Sendable (String) -> Bool
     /// The volume (device) the item at a path is on, given its `lstat` reading. Tests replace it.
     let volume: @Sendable (String, ItemStat) -> Int32
+    /// Whether the folder at a path is a package (the walker's rule). Tests may replace it.
+    let isPackage: @Sendable (String) -> Bool
 
     init(
         home: URL, trash: @escaping @Sendable (URL) throws -> Void,
         isProtected: @escaping @Sendable (String) -> Bool,
-        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device }
+        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device },
+        isPackage: @escaping @Sendable (String) -> Bool = FileWalker.readIsPackage
     ) {
         self.home = home
         self.trash = trash
         self.isProtected = isProtected
         self.volume = volume
+        self.isPackage = isPackage
     }
 
     /// The home folder as found when the move started.
@@ -165,18 +171,11 @@ struct FileTrasher: FileTrashing {
         }
         // A missing folder means the file cannot be there either.
         guard let parent = CleanupRules.resolve(path.deletingLastPathComponent) else { return .failure(.vanished) }
-        let below: [Substring]
-        if parent == home.resolved {
-            below = []
-        } else if parent.hasPrefix(home.resolved + "/") {
-            below = parent.dropFirst(home.resolved.count + 1).split(separator: "/")
-        } else {
-            return .failure(.notInHome)
+        guard let below = HomePlaces.names(from: home.resolved, to: parent) else { return .failure(.notInHome) }
+        guard !HomePlaces.isHidden(below) else { return .failure(.hiddenPlace) }
+        guard !HomePlaces.isInsidePackage(home: home.resolved, names: below, isPackage: isPackage) else {
+            return .failure(.insidePackage)
         }
-        if let first = below.first, first.caseInsensitiveCompare("Library") == .orderedSame {
-            return .failure(.hiddenPlace)
-        }
-        guard !below.contains(where: { $0.hasPrefix(".") }) else { return .failure(.hiddenPlace) }
         guard let identity = file.identity else { return .failure(.unreadable) }
         let candidate = Candidate(
             file: file, identity: identity, name: name, parent: parent,

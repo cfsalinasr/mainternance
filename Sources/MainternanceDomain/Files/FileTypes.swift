@@ -263,6 +263,8 @@ public enum FileRefusal: Error, Equatable, Sendable {
     case link
     /// A folder, a package (such as an app) or anything else that is not a plain file.
     case notPlainFile
+    /// Inside a package folder (an app, a Photos library, anything macOS shows as one item).
+    case insidePackage
     /// On another disk or volume than the home folder.
     case otherVolume
     /// Another item took its place, or its size or modified date is not what was found.
@@ -287,14 +289,16 @@ public enum FileRefusal: Error, Equatable, Sendable {
         case .protected: "It is in a protected place."
         case .link: "It is a link to something else, not a file, so it is left alone."
         case .notPlainFile: "It is a folder, an app or something else that is not a single file, so it is left alone."
+        case .insidePackage:
+            "It is inside an app, a Photos library or another item macOS shows as one file, so it is left alone."
         case .otherVolume: "It is on another disk, so it is left alone."
         case .changed: "It changed since it was found, so it was left where it is."
         case .vanished: "It is no longer there."
         case .unreadable: "It could not be checked, so it was left where it is."
         case let .trashFailed(reason): "macOS could not move it to the Trash: \(reason)"
-        case .wouldLeaveNoCopy: "That would leave no copy of this file, so nothing was moved."
-        case .notInGroup: "One of the files chosen is not a copy in this group, so nothing was moved."
-        case .noKeptCopy: "The copy you are keeping is no longer there unchanged, so nothing was moved."
+        case .wouldLeaveNoCopy: "That would leave no copy of this file, so this group was left as it is."
+        case .notInGroup: "One of the files chosen is not a copy in this group, so this group was left as it is."
+        case .noKeptCopy: "The copy you are keeping is no longer there unchanged, so this one was left where it is."
         }
     }
 }

@@ -11,17 +11,25 @@ public struct FilesServices: Sendable {
 
     /// `home` is the owner's home folder. Tests pass a temp folder, a fake `runQuery` (Spotlight is never queried
     /// from tests) and a `trash` that moves items into a temp folder, so no test touches the real home folder,
-    /// `~/Library` or Trash.
+    /// `~/Library` or Trash. Without `isProtected`, the protected places are `ProtectedPaths`, with its fixed folders
+    /// resolved once here (the walker asks once per folder), giving the same answers as `ProtectedPaths.isProtected`.
     public init(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer = FilesServices.runSpotlight,
         trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash,
-        isProtected: @escaping @Sendable (String) -> Bool = { ProtectedPaths.isProtected($0) }
+        isProtected given: (@Sendable (String) -> Bool)? = nil
     ) {
+        let isProtected = given ?? Self.protectedChecker()
         search = SpotlightSearcher(home: home, runQuery: runQuery)
         disk = LargeFileScanner(walker: FileWalker(home: home, isProtected: isProtected))
         duplicates = DuplicateFinder(home: home, isProtected: isProtected)
         trasher = FileTrasher(home: home, trash: trash, isProtected: isProtected)
+    }
+
+    /// `ProtectedPaths.isProtected`, with the fixed folders resolved once.
+    static func protectedChecker() -> @Sendable (String) -> Bool {
+        let resolved = ProtectedPaths.Resolved()
+        return { resolved.isProtected($0) }
     }
 
     /// The real Spotlight query (`SpotlightSearcher.runSpotlight`); never called by automated tests.
