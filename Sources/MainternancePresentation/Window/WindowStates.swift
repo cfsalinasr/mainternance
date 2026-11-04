@@ -9,13 +9,14 @@ public final class WindowStates {
     let settings: SettingsViewState
 
     public init(
-        scanner: ScannerViewModel, settings: SettingsViewState, startup: StartupViewState, cleanup: CleanupViewState
+        scanner: ScannerViewModel, settings: SettingsViewState, startup: StartupViewState, cleanup: CleanupViewState,
+        uninstaller: UninstallerViewState
     ) {
         files = FilesViewState()
         self.scanner = scanner
         self.cleanup = cleanup
         self.startup = startup
-        uninstaller = UninstallerViewState()
+        self.uninstaller = uninstaller
         self.settings = settings
     }
 }
