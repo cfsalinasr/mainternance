@@ -59,18 +59,21 @@ extension FilesFixture {
 
     func finder(
         minimum: Int64 = 1000, willRead: @escaping @Sendable (DuplicateFinder.Pass, String) -> Void = { _, _ in },
+        didReadChunk: @escaping @Sendable (String) -> Void = { _ in },
         ended: @escaping @Sendable (DuplicateFinder.Outcome) -> Void = { _ in }
     ) -> DuplicateFinder {
         DuplicateFinder(
-            home: home, isProtected: { _ in false }, minimumBytes: minimum, willRead: willRead, ended: ended
+            home: home, isProtected: { _ in false }, minimumBytes: minimum, willRead: willRead,
+            didReadChunk: didReadChunk, ended: ended
         )
     }
 
     func findDuplicates(
-        minimum: Int64 = 1000, willRead: @escaping @Sendable (DuplicateFinder.Pass, String) -> Void = { _, _ in }
+        minimum: Int64 = 1000, willRead: @escaping @Sendable (DuplicateFinder.Pass, String) -> Void = { _, _ in },
+        didReadChunk: @escaping @Sendable (String) -> Void = { _ in }
     ) -> DuplicateRun {
         var run = DuplicateRun()
-        run.outcome = finder(minimum: minimum, willRead: willRead).run(
+        run.outcome = finder(minimum: minimum, willRead: willRead, didReadChunk: didReadChunk).run(
             shouldStop: { false }, phase: { _ in }, group: { run.groups.append($0) }
         )
         return run

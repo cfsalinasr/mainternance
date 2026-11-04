@@ -47,6 +47,8 @@ struct DuplicateFinder: DuplicateFinding {
     let minimumBytes: Int64
     /// Told before each file is opened (tests change files at that moment).
     let willRead: @Sendable (Pass, String) -> Void
+    /// Told after each chunk of a whole read, with the file's path (tests change files mid-read with it).
+    let didReadChunk: @Sendable (String) -> Void
     /// Told the outcome of every search, including one whose consumer has gone (tests watch cancellation with it).
     let ended: @Sendable (Outcome) -> Void
 
@@ -54,11 +56,13 @@ struct DuplicateFinder: DuplicateFinding {
         home: URL, isProtected: @escaping @Sendable (String) -> Bool,
         minimumBytes: Int64 = DuplicateFinder.standardMinimum,
         willRead: @escaping @Sendable (Pass, String) -> Void = { _, _ in },
+        didReadChunk: @escaping @Sendable (String) -> Void = { _ in },
         ended: @escaping @Sendable (Outcome) -> Void = { _ in }
     ) {
         walker = FileWalker(home: home, isProtected: isProtected)
         self.minimumBytes = max(minimumBytes, 1)
         self.willRead = willRead
+        self.didReadChunk = didReadChunk
         self.ended = ended
     }
 
@@ -144,7 +148,7 @@ struct DuplicateFinder: DuplicateFinding {
         for file in files {
             guard !stop() else { break }
             willRead(pass, file.path)
-            if let digest = Self.digest(of: file, pass: pass, stop: stop) {
+            if let digest = digest(of: file, pass: pass, stop: stop) {
                 byDigest[digest, default: []].append(file)
             }
         }
@@ -162,20 +166,23 @@ struct DuplicateFinder: DuplicateFinding {
 
     /// The SHA-256 (hex) of the file's start and end, or of all of it; nil when it cannot be read in full or is no
     /// longer the file the walk found.
-    private static func digest(of file: Candidate, pass: Pass, stop: () -> Bool) -> String? {
+    private func digest(of file: Candidate, pass: Pass, stop: () -> Bool) -> String? {
         // O_NOFOLLOW: a file swapped for a link is refused, never followed to whatever it points at.
         let descriptor = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { return nil }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        guard isUnchanged(descriptor, from: file.stat) else { return nil }
+        // The descriptor is closed here, after the last check on it, never by the handle (an optimized build may
+        // release the handle as soon as its last read is done).
+        defer { close(descriptor) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+        guard Self.isUnchanged(descriptor, from: file.stat) else { return nil }
         var hasher = SHA256()
         let complete = switch pass {
         case .edges:
-            readEdges(handle, length: file.stat.size, into: &hasher)
+            Self.readEdges(handle, length: file.stat.size, into: &hasher)
         case .whole:
-            readWhole(handle, length: file.stat.size, into: &hasher, stop: stop)
+            readWhole(handle, path: file.path, length: file.stat.size, into: &hasher, stop: stop)
         }
-        guard complete, isUnchanged(descriptor, from: file.stat) else { return nil }
+        guard complete, Self.isUnchanged(descriptor, from: file.stat) else { return nil }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
@@ -204,14 +211,21 @@ struct DuplicateFinder: DuplicateFinding {
     }
 
     /// Everything, `chunkBytes` at a time, asking `stop` between chunks. False when stopped or short.
-    private static func readWhole(
-        _ handle: FileHandle, length: Int64, into hasher: inout SHA256, stop: () -> Bool
+    private func readWhole(
+        _ handle: FileHandle, path: String, length: Int64, into hasher: inout SHA256, stop: () -> Bool
     ) -> Bool {
         var total: Int64 = 0
         while total < length {
-            guard !stop(), let chunk = try? handle.read(upToCount: chunkBytes), !chunk.isEmpty else { return false }
-            hasher.update(data: chunk)
-            total += Int64(chunk.count)
+            guard !stop() else { return false }
+            // Each chunk is freed before the next is read, so memory per file stays one chunk.
+            let read: Int? = autoreleasepool {
+                guard let chunk = try? handle.read(upToCount: Self.chunkBytes), !chunk.isEmpty else { return nil }
+                hasher.update(data: chunk)
+                return chunk.count
+            }
+            guard let read else { return false }
+            total += Int64(read)
+            didReadChunk(path)
         }
         return total == length
     }
