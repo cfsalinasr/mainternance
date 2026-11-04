@@ -180,6 +180,29 @@ struct FilesLargeStateTests {
         #expect(rig.disk.starts == 2)
     }
 
+    @Test func onlyTheFirstOpenScansByItselfEvenAfterAStopOrLeavingEarly() async {
+        let rig = FilesRig()
+        rig.state.segment = .large
+        await rig.state.appear()
+        #expect(rig.disk.starts == 1)
+        rig.state.stopDiskScan() // Stop before any result
+        await rig.state.appear()
+        #expect(rig.disk.starts == 1)
+        rig.state.startDiskScan() // the button always works
+        #expect(rig.disk.starts == 2)
+        rig.state.cancelWork() // left the screen before a result
+        rig.state.segment = .search
+        await rig.state.appear()
+        rig.state.segment = .large
+        await rig.state.appear()
+        #expect(rig.disk.starts == 2)
+        #expect(!rig.state.isScanningDisk)
+    }
+
+    @Test func duplicatesIntroSaysICloudOnlyFilesAreSkipped() {
+        #expect(FilesText.duplicatesIntro.contains("files stored only in iCloud are not included"))
+    }
+
     @Test func progressAndResultFillTheState() async {
         let rig = FilesRig()
         rig.state.startDiskScan()

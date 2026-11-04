@@ -57,8 +57,10 @@ public final class FilesViewState {
     public internal(set) var diskResult: DiskScanResult?
     private(set) var isScanningDisk = false
     /// True once files moved to the Trash after the last disk result: the treemap and total were drawn before.
-    internal(set) var diskMapIsStale = false
+    var diskMapIsStale = false
     private(set) var scanProgress = 0
+    /// True once the Large files tab started its one automatic scan; later visits scan only from the button.
+    private var hasAutoScanned = false
     /// Ids of the treemap nodes drilled into, outermost first.
     private(set) var drillPath: [String] = []
 
@@ -66,9 +68,9 @@ public final class FilesViewState {
     public internal(set) var isFindingDuplicates = false
     public internal(set) var duplicatePhase: String?
     /// True once a duplicate scan has ended (finished or stopped), so "No duplicates" is not shown before asking.
-    internal(set) var hasFoundDuplicates = false
-    internal(set) var duplicatesStoppedEarly = false
-    internal(set) var duplicateUnreadable = 0
+    var hasFoundDuplicates = false
+    var duplicatesStoppedEarly = false
+    var duplicateUnreadable = 0
 
     public internal(set) var isReviewing = false
     public internal(set) var isMoving = false
@@ -254,11 +256,13 @@ public final class FilesViewState {
 
     // MARK: - Lifecycle and actions
 
-    /// The screen (or its tab) appeared: the first time Large files is on screen it scans. Nothing runs on Search.
+    /// The screen (or its tab) appeared: only the first time Large files is on screen does it scan by itself (a
+    /// stopped or still unfinished scan is not restarted on return; the Scan button always works). Nothing runs on
+    /// Search.
     public func appear() async {
-        if segment == .large, diskResult == nil, !isScanningDisk {
-            startDiskScan()
-        }
+        guard segment == .large, !hasAutoScanned, diskResult == nil, !isScanningDisk else { return }
+        startDiskScan()
+        hasAutoScanned = isScanningDisk
     }
 
     /// The screen went away: stops the search and both scans; late answers are ignored.

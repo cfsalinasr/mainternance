@@ -131,18 +131,21 @@ otherwise; both intervals are doubled in Low Power Mode.
 
 **Files** (Files screen), three parts:
 
-- **Search**: Spotlight search by name text, with type, size and date filters. What you type is plain text: `*`,
-  `?` and quotes are not special. Up to 500 results, newest change first. Spotlight may not have indexed
-  everything, so a file it has not indexed will not appear (and an empty result does not mean Spotlight is off).
-- **Large files**: files of at least 50 MB (the largest 200) plus a treemap of disk use. It runs when you open the
-  tab or press Scan, never at launch, and you can cancel it. Sizes are the space taken on disk, shown as "about" or
-  "at least".
+- **Search**: Spotlight search by name text, with type, size and date filters. What you type is sent to
+  Spotlight as plain text; whether Spotlight treats `*`, `?` and quotes literally is part of the manual check. Up
+  to 500 results, newest change first. Spotlight may not have indexed everything, so a file it has not indexed
+  will not appear (and an empty result does not mean Spotlight is off).
+- **Large files**: files of at least 50 MB (the largest 200) plus a treemap of disk use. It runs by itself only
+  the first time you open the tab, and whenever you press Scan; never at launch, and you can cancel it. Sizes are
+  the space taken on disk, shown as "about" or "at least".
 - **Duplicates**: files of at least 1 MB found by exact size, then a SHA-256 of the first and last 64 KiB, then a
-  SHA-256 of the whole file to confirm. Hard links to the same file are not duplicates. APFS clones share disk
-  space, so moving one may free less than shown.
+  SHA-256 of the whole file to confirm. Hard links to the same file are not duplicates. Files stored only in
+  iCloud are skipped (reading one would download it). APFS clones share disk space, so moving one may free less
+  than shown.
 - Looks in your home folder only. It never looks in `~/Library`, the Trash, hidden folders (names starting with a
-  dot), links (not followed) or other disks. Package folders such as `.app` count as one item and cannot be moved
-  from here; search results are files only.
+  dot), links (not followed) or other disks. Package folders such as `.app` or a Photos library count as one item
+  in sizes and the treemap. Neither a package nor any file inside one can be moved from here, and search does not
+  show files inside packages; search results are plain files only.
 - Some folders need your permission (macOS asks for Desktop, Documents and Downloads). Folders that cannot be read
   are counted and reported as unreadable, and totals then say "at least".
 - Quick Look and Reveal in Finder are on each row. Moves go to the **Trash after you review them, never a

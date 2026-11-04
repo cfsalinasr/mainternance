@@ -1,6 +1,7 @@
 @testable import MainternancePresentation
 import Testing
 
+@MainActor
 struct SettingsRefreshNoteTests {
     @Test func settingsRefreshNoteMentionsLowPowerMode() {
         #expect(SettingsView.refreshNote == [

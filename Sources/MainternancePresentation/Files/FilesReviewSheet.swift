@@ -11,7 +11,7 @@ struct FilesReviewSheet: View {
             Text(FilesText.reviewTitle).font(.title3.bold())
             Text(FilesText.reviewNote).font(.system(size: 13)).foregroundStyle(.secondary)
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(state.removableFiles) { file in
                         PreviewListRow(
                             title: file.displayName, subtitle: file.displayPath, trailing: formatFileSize(file.bytes)
