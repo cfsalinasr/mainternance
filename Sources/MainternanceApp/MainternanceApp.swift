@@ -25,7 +25,8 @@ struct MainternanceApp: App {
         let settings = composition.settings
         states = WindowStates(
             scanner: composition.scannerModel, settings: settings, startup: composition.startup,
-            cleanup: composition.cleanup, uninstaller: composition.uninstaller
+            cleanup: composition.cleanup, uninstaller: composition.uninstaller,
+            files: composition.files
         )
         // The loaded values reach the scheduler and the notifier through `settings.onChange`. The scheduler holds
         // the defaults (weekly scan off) until then, so starting it first cannot run a scan the owner turned off.

@@ -41,6 +41,10 @@ enum CleanupRoots {
 
 /// What `lstat` says about a path: links are never followed.
 struct ItemStat: Sendable {
+    /// `SF_DATALESS`: the file's contents are stored only online (an iCloud file not downloaded); reading it would
+    /// download it. Defined here because not every SDK's Darwin overlay exports it.
+    static let datalessFlag: UInt32 = 0x4000_0000
+
     enum Reading: Sendable {
         case found(ItemStat)
         /// Nothing is at the path.
@@ -54,10 +58,16 @@ struct ItemStat: Sendable {
     let isRegular: Bool
     /// Allocated bytes (`st_blocks` is counted in 512-byte units).
     let allocated: Int64
+    /// Length in bytes (`st_size`): what the contents hold, whatever the disk space taken.
+    let size: Int64
     let identity: CleanupEntry.Identity
+    /// How many names (hard links) the item has (`st_nlink`).
+    let linkCount: Int
     let modified: Date
     /// When the item was made (`st_birthtime`).
     let created: Date
+    /// The file flags (`st_flags`).
+    let flags: UInt32
 
     var device: Int32 {
         identity.device
@@ -89,9 +99,17 @@ struct ItemStat: Sendable {
         }
         isRegular = format == S_IFREG
         allocated = Int64(info.st_blocks) * 512
+        size = Int64(info.st_size)
         identity = CleanupEntry.Identity(device: info.st_dev, inode: info.st_ino)
+        linkCount = Int(info.st_nlink)
         modified = Self.date(info.st_mtimespec)
         created = Self.date(info.st_birthtimespec)
+        flags = info.st_flags
+    }
+
+    /// The contents are stored only online (`SF_DATALESS`): reading the file would download it.
+    var isDataless: Bool {
+        flags & Self.datalessFlag != 0
     }
 
     private static func date(_ time: timespec) -> Date {

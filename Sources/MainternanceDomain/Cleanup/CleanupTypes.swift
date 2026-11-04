@@ -30,7 +30,7 @@ public struct CleanupEntry: Sendable, Equatable, Identifiable {
 
     /// Which item on disk it is (device and inode, read without following links): a different item put at the same
     /// path has a different identity.
-    public struct Identity: Sendable, Equatable {
+    public struct Identity: Sendable, Hashable {
         public let device: Int32
         public let inode: UInt64
 

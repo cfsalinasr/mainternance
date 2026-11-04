@@ -1,4 +1,5 @@
 import Foundation
+import MainternanceDomain
 
 enum KeepRule: String, CaseIterable, Identifiable, Sendable {
     case newest, oldest, shortestPath
@@ -16,33 +17,32 @@ enum KeepRule: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Which file of a duplicate group is kept; the rest are marked as removable. Nothing is deleted here.
+/// Which copy of a duplicate group is kept; the rest are marked as removable. Nothing is moved here.
+///
+/// Exactly one file is kept whatever the rule, so the removable files are never all the copies.
 struct DuplicateSelection: Equatable, Sendable {
-    let kept: SampleFile?
-    let removable: [SampleFile]
+    let kept: FileItem?
+    let removable: [FileItem]
 
-    /// Ties break by shorter path, then alphabetical path, so the result is deterministic.
-    init(group: [SampleFile], rule: KeepRule) {
+    /// Ties break by shorter path, then alphabetical path, so the result is deterministic (also when two copies
+    /// have identical dates).
+    init(group: [FileItem], rule: KeepRule) {
         let ordered = group.sorted { lhs, rhs in
             switch rule {
             case .newest where lhs.modified != rhs.modified: return lhs.modified > rhs.modified
             case .oldest where lhs.modified != rhs.modified: return lhs.modified < rhs.modified
             default: break
             }
-            if lhs.path.count != rhs.path.count {
-                return lhs.path.count < rhs.path.count
+            if lhs.id.count != rhs.id.count {
+                return lhs.id.count < rhs.id.count
             }
-            return lhs.path < rhs.path
+            return lhs.id < rhs.id
         }
         kept = ordered.first
         removable = Array(ordered.dropFirst())
     }
 
-    func isKept(_ file: SampleFile) -> Bool {
+    func isKept(_ file: FileItem) -> Bool {
         kept?.id == file.id
-    }
-
-    var reclaimableBytes: Int64 {
-        removable.reduce(0) { $0 + max($1.size, 0) }
     }
 }

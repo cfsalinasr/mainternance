@@ -70,4 +70,33 @@ struct ProtectedPathsTests {
         try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "/usr")
         #expect(ProtectedPaths.isProtected(link.path + "/bin/ls"))
     }
+
+    @Test("the resolved-once checker answers exactly like isProtected")
+    func resolvedOnceMatches() throws {
+        let temp = try TempDirectory()
+        let link = temp.url.appendingPathComponent("sys")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "/System")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let bundle = Bundle.main.bundlePath
+        let paths = [
+            "/", "/System", "/System/Library/CoreServices/Finder.app", "/usr/bin/ls", "/bin/sh", "/sbin/mount",
+            "/Library/Apple/usr/bin/x", "/private/var/db/x", "/etc/hosts", "/system/library", "/usr/local",
+            "/usr/local/bin/tool", "/usr/local/../bin/ls", "/usr/localx/x", "/Library/Caches/x", home, home + "/",
+            home + "/Downloads/mainternance-not-real.zip", bundle, bundle + "/Contents/MacOS/x",
+            temp.url.appendingPathComponent("a.txt").path, link.path, link.path + "/Library/x", "", "relative/x"
+        ]
+        let checker = FilesServices.protectedChecker()
+        let resolved = ProtectedPaths.Resolved()
+        for path in paths {
+            #expect(checker(path) == ProtectedPaths.isProtected(path), "\(path)")
+            #expect(resolved.isProtected(path) == ProtectedPaths.isProtected(path), "\(path)")
+        }
+        #expect(checker(link.path + "/Library/x"))
+        #expect(!checker(temp.url.appendingPathComponent("a.txt").path))
+        let extra = temp.url.appendingPathComponent("Quarantine", isDirectory: true)
+        let withExtra = ProtectedPaths.Resolved(including: [extra])
+        for path in paths + [extra.path, extra.path + "/abc"] {
+            #expect(withExtra.isProtected(path) == ProtectedPaths.isProtected(path, including: [extra]), "\(path)")
+        }
+    }
 }

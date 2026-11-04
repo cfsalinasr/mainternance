@@ -16,6 +16,7 @@ struct Composition {
     let startup: StartupViewState
     let cleanup: CleanupViewState
     let uninstaller: UninstallerViewState
+    let files: FilesViewState
     /// Tells Home's Cleanup suggestion whether Home is on screen (it measures again in the background only then).
     let homeVisibility: @MainActor (Bool) -> Void
 }
@@ -66,12 +67,19 @@ enum CompositionRoot {
         let uninstaller = UninstallerViewState(
             lister: uninstallerServices.lister, finder: uninstallerServices.finder, mover: uninstallerServices.mover
         )
+        // Files scans the owner's home folder only when its Large files tab opens or Scan is pressed, never at launch.
+        let filesServices = FilesServices()
+        let files = FilesViewState(
+            search: filesServices.search, disk: filesServices.disk, duplicates: filesServices.duplicates,
+            trasher: filesServices.trasher,
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) }
+        )
         let estimate = cleanupServices.estimate
         cleanup.onMeasurement = { estimate.record($0) }
         return Composition(
             overview: OverviewViewModel(load: load), scannerModel: scannerModel, scannerServices: services,
             settings: settings, automation: automation, startup: startup, cleanup: cleanup,
-            uninstaller: uninstaller, homeVisibility: { estimate.setHomeVisible($0) }
+            uninstaller: uninstaller, files: files, homeVisibility: { estimate.setHomeVisible($0) }
         )
     }
 

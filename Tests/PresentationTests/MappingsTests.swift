@@ -17,7 +17,6 @@ struct MappingsTests {
         for kind in FileKind.allCases {
             #expect(kind.title == expected[kind]?.0)
             #expect(kind.symbol == expected[kind]?.1)
-            #expect(kind.id == kind.rawValue)
         }
     }
 

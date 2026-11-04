@@ -16,7 +16,7 @@ and the `MainternanceApp` executable that wires them together.
 
 ## What is live
 
-Only part of the app reads your Mac today. Screens that are not backed by a working engine are hidden.
+Every screen in the app reads your Mac for real; a screen without a working engine would be hidden.
 
 **Live readings of this Mac** (Overview, popover and menu bar):
 
@@ -129,21 +129,38 @@ otherwise; both intervals are doubled in Low Power Mode.
   nothing is retried.
 - Sizes are "about"; "freed" counts only what really moved.
 
+**Files** (Files screen), three parts:
+
+- **Search**: Spotlight search by name text, with type, size and date filters. What you type is sent to
+  Spotlight as plain text; whether Spotlight treats `*`, `?` and quotes literally is part of the manual check. Up
+  to 500 results, newest change first. Spotlight may not have indexed everything, so a file it has not indexed
+  will not appear (and an empty result does not mean Spotlight is off).
+- **Large files**: files of at least 50 MB (the largest 200) plus a treemap of disk use. It runs by itself only
+  the first time you open the tab, and whenever you press Scan; never at launch, and you can cancel it. Sizes are
+  the space taken on disk, shown as "about" or "at least".
+- **Duplicates**: files of at least 1 MB found by exact size, then a SHA-256 of the first and last 64 KiB, then a
+  SHA-256 of the whole file to confirm. Hard links to the same file are not duplicates. Files stored only in
+  iCloud are skipped (reading one would download it). APFS clones share disk space, so moving one may free less
+  than shown.
+- Looks in your home folder only. It never looks in `~/Library`, the Trash, hidden folders (names starting with a
+  dot), links (not followed) or other disks. Package folders such as `.app` or a Photos library count as one item
+  in sizes and the treemap. Neither a package nor any file inside one can be moved from here, and search does not
+  show files inside packages; search results are plain files only.
+- Some folders need your permission (macOS asks for Desktop, Documents and Downloads). Folders that cannot be read
+  are counted and reported as unreadable, and totals then say "at least".
+- Quick Look and Reveal in Finder are on each row. Moves go to the **Trash after you review them, never a
+  permanent delete**; Put Back restores them. Each file is checked again just before it moves, and anything that
+  changed or cannot move is listed with the reason. A duplicate group always keeps at least one copy: the app will
+  not offer to move the last one. "Freed" counts only what really moved.
+
 **Not available** (shown as unknown, never as a made-up value): temperatures (no public source on Apple
 silicon) and macOS update status.
-
-**Planned, not available yet** (hidden in the app until each one works; Home lists them under
-"Coming next"):
-
-- File explorer
-
-Later plans bring these back one by one.
 
 ## Install
 
 Mainternance is a menu bar app: there is no Dock icon. Click the shield in the menu bar to see the
 popover with the live readings, then choose Open Mainternance to show the window, which has Home, Cleanup,
-Scanner, Startup, Uninstaller and Settings (see What is live).
+Files, Scanner, Startup, Uninstaller and Settings (see What is live).
 
 - `scripts/build-app.sh` builds a release binary and assembles and signs
   `~/Library/Caches/mainternance/dist/Mainternance.app` (outside the repo).

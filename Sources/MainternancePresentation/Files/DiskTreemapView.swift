@@ -1,3 +1,4 @@
+import MainternanceDomain
 import SwiftUI
 
 struct DiskTreemapView: View {
@@ -19,10 +20,10 @@ struct DiskTreemapView: View {
             GeometryReader { proxy in
                 let bounds = CGRect(origin: .zero, size: proxy.size)
                 let tiles = TreemapLayout.layout(
-                    node.children.map { TreemapItem(id: $0.id, size: $0.size) }, in: bounds
+                    node.children.map { TreemapItem(id: $0.id, size: $0.bytes) }, in: bounds
                 )
                 if tiles.isEmpty {
-                    ContentUnavailableView("Nothing to show", systemImage: "square.dashed")
+                    ContentUnavailableView(FilesText.nothingToShow, systemImage: "square.dashed")
                 } else {
                     Canvas { context, _ in
                         for (index, tile) in tiles.enumerated() {
@@ -33,7 +34,7 @@ struct DiskTreemapView: View {
                                 with: .color(Self.palette[index % Self.palette.count])
                             )
                             if rect.width > 70, rect.height > 34 {
-                                let label = "\(child.name)\n\(formatFileSize(child.size))"
+                                let label = "\(child.displayName)\n\(formatFileSize(child.bytes))"
                                 context.drawLayer { layer in
                                     layer.clip(to: Path(rect.insetBy(dx: 4, dy: 4)))
                                     layer.draw(
@@ -51,10 +52,10 @@ struct DiskTreemapView: View {
                         }
                     }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Disk usage treemap for \(node.name)")
+                    .accessibilityLabel("Disk usage treemap for \(node.displayName)")
                     .accessibilityValue(
-                        node.children.filter { $0.size > 0 }
-                            .map { "\($0.name) \(formatFileSize($0.size))" }.joined(separator: ", ")
+                        node.children.filter { $0.bytes > 0 }
+                            .map { "\($0.displayName) \(formatFileSize($0.bytes))" }.joined(separator: ", ")
                     )
                 }
             }
@@ -73,10 +74,10 @@ struct DiskTreemapView: View {
                 HStack(spacing: 6) {
                     ForEach(folders) { folder in
                         Button { state.drillInto(folder.id) } label: {
-                            Label(folder.name, systemImage: "folder")
+                            Label(folder.displayName, systemImage: "folder")
                         }
                         .controlSize(.small)
-                        .accessibilityLabel("Open \(folder.name)")
+                        .accessibilityLabel("Open \(folder.displayName)")
                     }
                 }
             }
@@ -93,12 +94,12 @@ struct DiskTreemapView: View {
                 if depth > 0 {
                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
                 }
-                Button(node.name) { state.jump(toDepth: depth) }
+                Button(node.displayName) { state.jump(toDepth: depth) }
                     .buttonStyle(.borderless)
                     .fontWeight(depth == state.breadcrumb.count - 1 ? .semibold : .regular)
             }
             Spacer()
-            Text(formatFileSize(state.currentNode.size)).font(.caption).foregroundStyle(.secondary)
+            Text(state.total(of: state.currentNode)).font(.caption).foregroundStyle(.secondary)
         }
         .font(.system(size: 12))
     }

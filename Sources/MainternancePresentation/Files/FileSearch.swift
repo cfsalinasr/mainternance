@@ -1,4 +1,5 @@
 import Foundation
+import MainternanceDomain
 
 enum SizeFilter: String, CaseIterable, Identifiable, Sendable {
     case any, over1MB, over100MB, over1GB
@@ -61,33 +62,14 @@ struct FileSearchCriteria: Equatable, Sendable {
     var date: DateFilter = .any
 
     var isActive: Bool {
-        !text.trimmingCharacters(in: .whitespaces).isEmpty || kind != nil || size != .any || date != .any
-    }
-}
-
-enum FileSearch {
-    /// Case-insensitive match on name and path, combined with the type, size and date filters.
-    private static func matches(_ file: SampleFile, query: String) -> Bool {
-        file.name.localizedCaseInsensitiveContains(query) || file.path.localizedCaseInsensitiveContains(query)
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || kind != nil || size != .any || date != .any
     }
 
-    static func filter(_ files: [SampleFile], criteria: FileSearchCriteria, now: Date = Date()) -> [SampleFile] {
-        let query = criteria.text.trimmingCharacters(in: .whitespaces)
-        let cutoff = criteria.date.days.map { now.addingTimeInterval(-$0 * 86400) }
-        return files.filter { file in
-            if !query.isEmpty, !matches(file, query: query) {
-                return false
-            }
-            if let kind = criteria.kind, file.kind != kind {
-                return false
-            }
-            if file.size < criteria.size.minimumBytes {
-                return false
-            }
-            if let cutoff, file.modified < cutoff {
-                return false
-            }
-            return true
-        }
+    /// What to ask the search port; the date filter counts back from `now`.
+    func query(now: Date) -> FileSearchQuery {
+        FileSearchQuery(
+            text: text, kind: kind, minimumBytes: size.minimumBytes,
+            modifiedAfter: date.days.map { now.addingTimeInterval(-$0 * 86400) }
+        )
     }
 }
