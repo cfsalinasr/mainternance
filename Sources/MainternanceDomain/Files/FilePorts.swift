@@ -6,3 +6,10 @@ public protocol DiskScanning: Sendable {
     /// stream) stops the walk; the walk then ends with a result marked `wasCancelled`.
     func scan() -> AsyncStream<DiskScanUpdate>
 }
+
+/// Finds plain files with identical contents in the owner's home folder.
+public protocol DuplicateFinding: Sendable {
+    /// Phases and groups as they are confirmed, then one `finished`, then the stream ends. Cancelling the consuming
+    /// task (or dropping the stream) stops the search; it then ends with `wasCancelled`.
+    func find() -> AsyncStream<DuplicateUpdate>
+}

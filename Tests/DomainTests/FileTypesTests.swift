@@ -75,4 +75,17 @@ struct FileTypesTests {
         #expect(tree(5) == tree(5))
         #expect(tree(5) != tree(6))
     }
+
+    @Test("a duplicate group sorts its files by path; moving all but one copy frees one less than the count")
+    func duplicateGroup() {
+        let modified = Date(timeIntervalSince1970: 1_700_000_000)
+        let files = ["/h/b", "/h/c", "/h/a"].map { FileItem(path: $0, bytes: 4096, modified: modified, identity: nil) }
+        let group = DuplicateGroup(id: "4096-abc", bytesEach: 4096, files: files)
+        #expect(group.id == "4096-abc")
+        #expect(group.files.map(\.id) == ["/h/a", "/h/b", "/h/c"])
+        #expect(group.reclaimableBytes == 8192)
+        #expect(DuplicateGroup(id: "x", bytesEach: -1, files: files).bytesEach == 0)
+        #expect(DuplicateGroup(id: "x", bytesEach: 10, files: []).reclaimableBytes == 0)
+        #expect(DuplicateGroup(id: "x", bytesEach: .max, files: files).reclaimableBytes == .max)
+    }
 }

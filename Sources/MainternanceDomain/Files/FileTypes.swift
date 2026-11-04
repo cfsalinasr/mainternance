@@ -138,3 +138,39 @@ public enum DiskScanUpdate: Sendable {
     case progress(scannedFiles: Int)
     case finished(DiskScanResult)
 }
+
+/// Plain files with exactly the same contents (same size, and the same SHA-256 of the whole file).
+///
+/// Hard links (two names for one item) are never a group: they are one file. APFS clones look like separate files
+/// and can be a group, though they share disk space.
+public struct DuplicateGroup: Sendable, Equatable, Identifiable {
+    /// Stable for the same contents: the size and the content hash.
+    public let id: String
+    /// Allocated bytes of one copy (the smallest any copy takes, so the saving is never overstated).
+    public let bytesEach: Int64
+    /// At least two, sorted by path.
+    public let files: [FileItem]
+
+    public init(id: String, bytesEach: Int64, files: [FileItem]) {
+        self.id = id
+        self.bytesEach = max(bytesEach, 0)
+        self.files = files.sorted { $0.id < $1.id }
+    }
+
+    /// What moving all but one copy would free: `bytesEach` times one less than the number of copies.
+    public var reclaimableBytes: Int64 {
+        let copies = Int64(max(files.count - 1, 0))
+        let product = bytesEach.multipliedReportingOverflow(by: copies)
+        return product.overflow ? .max : product.partialValue
+    }
+}
+
+/// What a duplicate search reports while it runs.
+public enum DuplicateUpdate: Sendable {
+    /// What the search is doing now, in plain words.
+    case phase(String)
+    /// One group, confirmed by comparing whole files.
+    case group(DuplicateGroup)
+    /// The last update. When cancelled, the groups already sent are real but more may exist.
+    case finished(unreadableFolders: Int, wasCancelled: Bool)
+}
