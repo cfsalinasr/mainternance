@@ -20,3 +20,13 @@ public protocol FileSearching: Sendable {
     /// empty result.
     func search(_ query: FileSearchQuery) async -> FileSearchResult
 }
+
+/// Moves files the owner chose to the Trash, checking each one again first; never deletes anything.
+public protocol FileTrashing: Sendable {
+    /// Moves each plain file that is still exactly as it was found; refuses the rest with a reason. One refusal
+    /// never stops the others.
+    func moveToTrash(_ files: [FileItem]) async -> FileTrashOutcome
+    /// Moves the copies in `remove` out of `group`, but only while at least one other copy of the group stays where
+    /// it is, unchanged. Otherwise nothing at all is moved.
+    func moveDuplicatesToTrash(_ group: DuplicateGroup, remove: [FileItem]) async -> FileTrashOutcome
+}

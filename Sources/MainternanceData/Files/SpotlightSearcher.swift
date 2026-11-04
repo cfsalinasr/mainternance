@@ -85,18 +85,19 @@ struct SpotlightSearcher: FileSearching {
     }
 }
 
-/// What one Spotlight run gave back.
-struct SpotlightAnswer: Sendable, ExpressibleByArrayLiteral {
-    let paths: [String]
+/// What one Spotlight run gave back. Public so `FilesServices` can take a Spotlight runner (tests pass a fake).
+public struct SpotlightAnswer: Sendable, ExpressibleByArrayLiteral {
+    /// Untrusted: the searcher checks every path again before showing it.
+    public let paths: [String]
     /// Spotlight could not start or did not finish in time.
-    let isUnavailable: Bool
+    public let isUnavailable: Bool
 
-    init(paths: [String], isUnavailable: Bool = false) {
+    public init(paths: [String], isUnavailable: Bool = false) {
         self.paths = paths
         self.isUnavailable = isUnavailable
     }
 
-    init(arrayLiteral elements: String...) {
+    public init(arrayLiteral elements: String...) {
         self.init(paths: elements)
     }
 }

@@ -223,3 +223,78 @@ public struct FileSearchResult: Sendable, Equatable {
         self.isUnavailable = isUnavailable
     }
 }
+
+/// A file that was not moved, and why in plain words.
+public struct FileFailure: Sendable, Equatable {
+    public let file: FileItem
+    public let reason: String
+
+    public init(file: FileItem, reason: String) {
+        self.file = file
+        self.reason = reason
+    }
+}
+
+/// What a move to the Trash really did. Only `moved` files count as freed (once the owner empties the Trash).
+public struct FileTrashOutcome: Sendable, Equatable {
+    public let moved: [FileItem]
+    public let failed: [FileFailure]
+
+    public init(moved: [FileItem], failed: [FileFailure]) {
+        self.moved = moved
+        self.failed = failed
+    }
+
+    /// The allocated bytes of the files that really moved.
+    public var movedBytes: Int64 {
+        CleanupMath.sum(moved.map(\.bytes))
+    }
+}
+
+/// Why a file was not moved to the Trash.
+public enum FileRefusal: Error, Equatable, Sendable {
+    /// Its folder is not inside the home folder.
+    case notInHome
+    /// Inside `~/Library` or a folder whose name starts with a dot.
+    case hiddenPlace
+    /// Inside a protected place (system folders, the home folder itself, the app).
+    case protected
+    /// A link (an alias-like pointer), not a file.
+    case link
+    /// A folder, a package (such as an app) or anything else that is not a plain file.
+    case notPlainFile
+    /// On another disk or volume than the home folder.
+    case otherVolume
+    /// Another item took its place, or its size or modified date is not what was found.
+    case changed
+    /// Nothing is at the path any more.
+    case vanished
+    /// It could not be checked again before moving, so it was left alone.
+    case unreadable
+    /// macOS refused the move; carries its reason.
+    case trashFailed(String)
+    /// Moving the chosen copies would leave no copy of the file at all.
+    case wouldLeaveNoCopy
+    /// A file chosen for the Trash is not one of the copies in its group.
+    case notInGroup
+    /// No copy that would stay is still there, unchanged.
+    case noKeptCopy
+
+    public var text: String {
+        switch self {
+        case .notInHome: "It is not in your home folder."
+        case .hiddenPlace: "It is in your Library folder or a hidden folder, so it is left alone."
+        case .protected: "It is in a protected place."
+        case .link: "It is a link to something else, not a file, so it is left alone."
+        case .notPlainFile: "It is a folder, an app or something else that is not a single file, so it is left alone."
+        case .otherVolume: "It is on another disk, so it is left alone."
+        case .changed: "It changed since it was found, so it was left where it is."
+        case .vanished: "It is no longer there."
+        case .unreadable: "It could not be checked, so it was left where it is."
+        case let .trashFailed(reason): "macOS could not move it to the Trash: \(reason)"
+        case .wouldLeaveNoCopy: "That would leave no copy of this file, so nothing was moved."
+        case .notInGroup: "One of the files chosen is not a copy in this group, so nothing was moved."
+        case .noKeptCopy: "The copy you are keeping is no longer there unchanged, so nothing was moved."
+        }
+    }
+}
