@@ -145,8 +145,13 @@ struct CleanupRules: Sendable {
     /// `Library`), is a symbolic link, so a Cleanup folder never leads out of the home folder. The home folder
     /// itself and the folders above it may be links: only the names below it are checked.
     static func open(_ root: CleanupRoot) -> FolderState {
-        let given = root.folder.path
-        guard !hasLinkBelowHome(root) else { return .unusable }
+        open(home: root.home, relative: root.relative)
+    }
+
+    /// The same rules for the folder `relative` below `home` (the Uninstaller's fixed `~/Library` folders use it).
+    static func open(home: URL, relative: [String]) -> FolderState {
+        let given = relative.reduce(home) { $0.appendingPathComponent($1, isDirectory: true) }.path
+        guard !hasLinkBelowHome(home: home, relative: relative) else { return .unusable }
         switch ItemStat.read(given) {
         case .missing:
             return .absent
@@ -154,8 +159,8 @@ struct CleanupRules: Sendable {
             return .unusable
         case let .found(info):
             guard info.type == .directory, let resolved = resolve(given),
-                  let home = resolve(root.home.path),
-                  resolved.caseInsensitiveCompare(([home] + root.relative).joined(separator: "/")) == .orderedSame
+                  let resolvedHome = resolve(home.path),
+                  resolved.caseInsensitiveCompare(([resolvedHome] + relative).joined(separator: "/")) == .orderedSame
             else { return .unusable }
             return .folder(given: given, resolved: resolved, identity: info.identity)
         }
@@ -163,9 +168,9 @@ struct CleanupRules: Sendable {
 
     /// Whether a folder between the home folder and the Cleanup folder (the Cleanup folder itself excluded: the
     /// caller reads it) is a symbolic link. `lstat` on each, so no link is followed.
-    private static func hasLinkBelowHome(_ root: CleanupRoot) -> Bool {
-        var path = root.home
-        for name in root.relative.dropLast() {
+    private static func hasLinkBelowHome(home: URL, relative: [String]) -> Bool {
+        var path = home
+        for name in relative.dropLast() {
             path.appendPathComponent(name, isDirectory: true)
             if case let .found(info) = ItemStat.read(path.path), info.type == .symbolicLink {
                 return true

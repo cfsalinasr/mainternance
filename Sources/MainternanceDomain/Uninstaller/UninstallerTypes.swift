@@ -92,3 +92,65 @@ public struct AppDetails: Sendable, Equatable {
         self.leftovers = leftovers
     }
 }
+
+/// A leftover that was not moved, and why in plain words.
+public struct LeftoverFailure: Sendable, Equatable {
+    public let leftover: Leftover
+    public let reason: String
+
+    public init(leftover: Leftover, reason: String) {
+        self.leftover = leftover
+        self.reason = reason
+    }
+}
+
+/// What a move to the Trash really did. Only what moved counts as freed (once the owner empties the Trash).
+public struct UninstallOutcome: Sendable, Equatable {
+    public let appMoved: Bool
+    /// Why the app was not moved; nil when it moved or was not asked for.
+    public let appFailure: String?
+    public let movedLeftovers: [Leftover]
+    public let failedLeftovers: [LeftoverFailure]
+    /// Not tried, because the app did not move.
+    public let skipped: [Leftover]
+    /// The app's measured size, counted only when it moved.
+    private let appBytes: Int64
+
+    public init(
+        appMoved: Bool, appFailure: String?, appBytes: Int64, movedLeftovers: [Leftover],
+        failedLeftovers: [LeftoverFailure], skipped: [Leftover]
+    ) {
+        self.appMoved = appMoved
+        self.appFailure = appFailure
+        self.appBytes = appMoved ? max(appBytes, 0) : 0
+        self.movedLeftovers = movedLeftovers
+        self.failedLeftovers = failedLeftovers
+        self.skipped = skipped
+    }
+
+    /// The app's bytes only when it moved, plus the leftovers that moved.
+    public var movedBytes: Int64 {
+        CleanupMath.sum([appBytes] + movedLeftovers.map(\.bytes))
+    }
+}
+
+/// Why the Uninstaller left something alone, beyond the reasons it shares with Cleanup (`CleanupRefusal`).
+public enum UninstallRefusal: Error, Equatable, Sendable {
+    /// The app is open.
+    case running
+    /// One of macOS's own apps (identifier starting `com.apple.`).
+    case appleApp
+    /// Not a `.app` directly in an Applications folder, or not directly in one of the fixed `~/Library` folders.
+    case notInUninstallerFolder
+    /// On another disk or volume than its folder.
+    case otherVolume
+
+    public var text: String {
+        switch self {
+        case .running: "It is open. Quit it first."
+        case .appleApp: "It is part of macOS, and macOS apps are not removed."
+        case .notInUninstallerFolder: "It is not in one of the folders the Uninstaller looks at."
+        case .otherVolume: "It is on another disk, so the Uninstaller leaves it alone."
+        }
+    }
+}

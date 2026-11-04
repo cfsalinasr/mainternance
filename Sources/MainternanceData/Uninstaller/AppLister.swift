@@ -90,7 +90,9 @@ struct AppLister: AppListing {
         return (app, raw)
     }
 
-    private static func readPlist(in app: String) -> [String: Any]? {
+    /// The app's `Contents/Info.plist` (a regular file of at most 1 MiB, no link followed), or nil. The mover reads it
+    /// again right before a move.
+    static func readPlist(in app: String) -> [String: Any]? {
         let contents = (app as NSString).appendingPathComponent("Contents")
         guard case let .found(folder) = ItemStat.read(contents), folder.type == .directory else { return nil }
         let path = (contents as NSString).appendingPathComponent("Info.plist")

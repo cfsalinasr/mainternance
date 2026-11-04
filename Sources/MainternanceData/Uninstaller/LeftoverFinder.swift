@@ -28,6 +28,8 @@ struct LeftoverFinder: LeftoverFinding {
         ("Cookies", .suffixed(".binarycookies")), ("Logs", .exact), ("LaunchAgents", .launchAgent)
     ]
     private static let nameFolders = ["Application Support", "Logs", "Caches"]
+    /// Every `~/Library` folder a leftover can be in (the name folders are among them); the mover moves nothing else.
+    static let libraryFolders = identifierRules.map(\.folder)
     static let minimumNameLength = 4
 
     func details(for app: InstalledApp) async -> AppDetails {
