@@ -8,11 +8,12 @@ import MainternanceDomain
 /// again in a loop. Each due tick first re-reads the engine's status (the Scanner screen may never have opened, as
 /// after a launch at login, or ClamAV may have changed since it did); when the scanner cannot start (engine not
 /// ready, or a scan, install or quarantine working) the tick is skipped without recording, nothing is queued, and
-/// the next tick tries again. Definitions older than a week are updated first; if that fails the scan still runs
-/// and its result says how old they are. A scan the engine refused before it started gives its slot back once (in
-/// memory: the record on disk stays, so a restart does not retry), so the next tick retries and a scanner that
-/// always refuses cannot start a scan every minute. A run missed while the app was closed or the Mac asleep is made
-/// up once, at the first tick that finds the slot due.
+/// the next tick tries again. Definitions older than a week are updated first; if that fails the scan still runs,
+/// its result says how old they are, and the Scanner screen keeps saying why the update failed; if the update left
+/// the engine unable to scan, no scan starts. That scan, like one the engine refused before it started, gives its
+/// slot back once (in memory: the record on disk stays, so a restart does not retry), so the next tick retries and
+/// a scanner that always refuses cannot start a scan every minute. A run missed while the app was closed or the Mac
+/// asleep is made up once, at the first tick that finds the slot due.
 ///
 /// A timer ticks every 60 s, at `start()`, and when preferences change; the App target also calls `tick()` when
 /// the Mac wakes.
@@ -114,13 +115,23 @@ public final class ScanScheduler {
         await record(moment)
         // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
         guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+        var updateFailure: String?
         if scanner.staleDefinitionsDays != nil {
             await scanner.updateDefinitions()
-            guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+            updateFailure = scanner.errorMessage
+            guard current.weeklyScanEnabled else { return }
+            guard scanner.canStartScan else {
+                // The update left the engine unusable (definitions removed or damaged): no scan started.
+                giveBack(moment, previousRun: previousRun)
+                return
+            }
         }
         scanner.startingScheduledScan = true
         let result = await scanner.runScan(.quick)
         scanner.startingScheduledScan = false
+        if let updateFailure {
+            scanner.noteScheduledUpdateFailure(updateFailure)
+        }
         if !result.began {
             giveBack(moment, previousRun: previousRun)
         }

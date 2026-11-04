@@ -145,7 +145,9 @@ public struct PopoverModel: Equatable, Sendable {
         }
         rows.append(Row(
             title: "Next scan",
-            value: scan.nextScan.map { relative($0, now: now, locale: locale) } ?? weeklyScanOff,
+            value: scan.weeklyScanWaiting
+                ? "Waiting: scanner not ready"
+                : scan.nextScan.map { relative($0, now: now, locale: locale) } ?? weeklyScanOff,
             symbol: "calendar", state: .good
         ))
         return rows

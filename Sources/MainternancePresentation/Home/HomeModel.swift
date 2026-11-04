@@ -167,7 +167,9 @@ public struct HomeModel: Equatable, Sendable {
             state: scanState,
             last: last,
             // The status carries a next scan whenever the weekly scan is on (`ScheduledScanStatusProvider`).
-            next: scan.nextScan.map { Self.nextText($0, locale: locale) } ?? PopoverModel.weeklyScanOff
+            next: scan.weeklyScanWaiting
+                ? "Weekly scan is waiting: the scanner is not ready"
+                : scan.nextScan.map { Self.nextText($0, locale: locale) } ?? PopoverModel.weeklyScanOff
         )
     }
 

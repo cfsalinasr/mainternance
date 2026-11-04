@@ -58,7 +58,16 @@ public final class ScanAutomation {
 
     /// Home's scanner status with the next weekly scan filled in from what the scheduler follows.
     public func statusWithNextScan(_ base: any ScanStatusProviding) -> any ScanStatusProviding {
-        ScheduledScanStatusProvider(base: base, preferences: { [scheduler] in await scheduler.weeklyPreferences() })
+        Self.statusWithNextScan(base, scanner: scanner, scheduler: scheduler)
+    }
+
+    static func statusWithNextScan(
+        _ base: any ScanStatusProviding, scanner: ScannerViewModel, scheduler: ScanScheduler
+    ) -> any ScanStatusProviding {
+        ScheduledScanStatusProvider(
+            base: base, preferences: { [scheduler] in await scheduler.weeklyPreferences() },
+            scannerCannotStart: { [scanner] in await scanner.engineCannotScan }
+        )
     }
 
     /// The Mac woke: a slot missed while asleep is checked now rather than at the next timer tick.

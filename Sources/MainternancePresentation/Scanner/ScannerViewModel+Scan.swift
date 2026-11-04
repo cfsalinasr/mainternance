@@ -86,6 +86,13 @@ extension ScannerViewModel {
         var refound: Set<String> = []
     }
 
+    /// The weekly scheduler updated the definitions before its scan and the update failed: the scan cleared the
+    /// message when it started, so the reason is put back next to whatever the scan itself reported.
+    func noteScheduledUpdateFailure(_ failure: String) {
+        let note = ScannerText.scheduledUpdateFailed(failure)
+        errorMessage = [errorMessage, note].compactMap(\.self).joined(separator: " ")
+    }
+
     /// A finding the scan reports replaces the older entry for the same file and detection, otherwise it is added.
     func merge(_ finding: ScanFinding) {
         if let index = findings.firstIndex(where: { $0.path == finding.path && $0.signature == finding.signature }) {

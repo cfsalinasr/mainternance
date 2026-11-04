@@ -95,9 +95,19 @@ public final class ScannerViewModel {
     /// Scans start only when the engine is ready (or has old but present definitions) and nothing else runs.
     public var canStartScan: Bool {
         guard !isBusy, let engine else { return false }
+        return Self.canScan(engine)
+    }
+
+    /// The engine's status is known and no scan can run on it (not installed, no definitions, failed), whatever is
+    /// running now. Unknown (not checked yet) is not "cannot".
+    var engineCannotScan: Bool {
+        engine.map { !Self.canScan($0) } ?? false
+    }
+
+    private static func canScan(_ engine: EngineStatus) -> Bool {
         switch engine {
-        case .ready, .updateNeeded(definitionsAge: .some): return true
-        default: return false
+        case .ready, .updateNeeded(definitionsAge: .some): true
+        default: false
         }
     }
 

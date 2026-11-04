@@ -64,6 +64,11 @@ enum ScannerText {
     static let restoreHint = "Puts the file back where it came from"
     static let fullDiskAccessHint = "Opens System Settings, where you can allow Mainternance to read all files"
 
+    /// The definitions update the weekly scheduler ran before its scan failed; `reason` is the update's own message.
+    static func scheduledUpdateFailed(_ reason: String) -> String {
+        "The virus definitions could not be updated before the weekly scan. \(reason)"
+    }
+
     static func findingsHeading(_ count: Int) -> String {
         "Findings (\(count))"
     }

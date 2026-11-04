@@ -52,23 +52,31 @@ enum ScanNotices {
     /// "Problem alerts": any scan with something to review. "Weekly digest": every scheduled scan that finished with
     /// a result, clean or not; when it is posted it carries the count, so the separate alert is left out (one event,
     /// one notification).
+    ///
+    /// A scheduled scan that failed (not one the owner cancelled) is a problem in itself: with the digest off, a
+    /// problem alert says so even when nothing was found.
     static func notices(for completion: ScanCompletion, preferences: AppPreferences) -> [UserNotice] {
         if completion.scheduled, preferences.weeklyDigest {
             return [digest(completion)]
         }
-        guard preferences.problemAlerts, toReview(completion.summary) > 0 else { return [] }
-        return [alert(completion)]
+        guard preferences.problemAlerts else { return [] }
+        if toReview(completion.summary) > 0 {
+            return [alert(completion)]
+        }
+        guard completion.scheduled, completion.failed, !completion.summary.cancelled else { return [] }
+        return [digest(completion, id: findingsID)]
     }
 
-    /// A scheduled scan with the digest on says it could not finish, with what it found so far; otherwise only
-    /// something to review is alerted, like a finished scan.
+    /// A scheduled scan says it could not finish, with what it found so far: as the digest when that is on,
+    /// otherwise as a problem alert. A manual scan alerts only something to review, like a finished scan.
     static func notices(for failure: ScanFailure, preferences: AppPreferences) -> [UserNotice] {
         let count = toReview(files: failure.found, detections: failure.unattributedDetections)
         let found = toReviewText(fileCount: failure.found, detections: failure.unattributedDetections)
-        if failure.scheduled, preferences.weeklyDigest {
+        if failure.scheduled, preferences.weeklyDigest || preferences.problemAlerts {
             var body = staleText(failure.staleDefinitionsDays).map { "\($0). " } ?? ""
             body += count > 0 ? "It found \(found) before it stopped. \(reviewHint)" : whatHappenedHint
-            return [UserNotice(id: digestID, title: "The weekly scan could not finish", body: body)]
+            let id = preferences.weeklyDigest ? digestID : findingsID
+            return [UserNotice(id: id, title: "The weekly scan could not finish", body: body)]
         }
         guard preferences.problemAlerts, count > 0 else { return [] }
         return [UserNotice(
@@ -101,7 +109,7 @@ enum ScanNotices {
         return UserNotice(id: findingsID, title: title, body: body)
     }
 
-    private static func digest(_ completion: ScanCompletion) -> UserNotice {
+    private static func digest(_ completion: ScanCompletion, id: String = digestID) -> UserNotice {
         let summary = completion.summary
         let count = toReview(summary)
         let found = toReviewText(summary)
@@ -132,7 +140,7 @@ enum ScanNotices {
         if count > 0 {
             body += " \(reviewHint)"
         }
-        return UserNotice(id: digestID, title: title, body: body)
+        return UserNotice(id: id, title: title, body: body)
     }
 
     /// "2 files", "1 detection" (found but not tied to a file, so not called a file), or "2 files and 1 detection".
