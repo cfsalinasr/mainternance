@@ -68,12 +68,10 @@ enum CompositionRoot {
             lister: uninstallerServices.lister, finder: uninstallerServices.finder, mover: uninstallerServices.mover
         )
         // Files scans the owner's home folder only when its Large files tab opens or Scan is pressed, never at launch.
-        let quickLook = QuickLookController()
         let filesServices = FilesServices()
         let files = FilesViewState(
             search: filesServices.search, disk: filesServices.disk, duplicates: filesServices.duplicates,
             trasher: filesServices.trasher,
-            quickLook: { quickLook.show(path: $0) },
             reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) }
         )
         let estimate = cleanupServices.estimate

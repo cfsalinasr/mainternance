@@ -40,12 +40,30 @@ public final class FilesViewState {
     var keepRule: KeepRule {
         get { chosenRule }
         set {
-            guard !isReviewing, !isMoving else { return }
+            guard canChangeKeepRule else { return }
             chosenRule = newValue
         }
     }
 
     private(set) var chosenRule: KeepRule = .newest
+
+    /// The one rule for the keep-rule picker and its setter: not while a review is open or files move.
+    var canChangeKeepRule: Bool {
+        !isReviewing && !isMoving
+    }
+
+    /// The one rule for the duplicate Scan button and `startDuplicateScan()`: not while files are about to move.
+    var canStartDuplicateScan: Bool {
+        !isReviewing && !isMoving
+    }
+
+    /// The one rule for the Large files Scan button and `startDiskScan()`.
+    var canStartDiskScan: Bool {
+        !isScanningDisk && !isReviewing && !isMoving
+    }
+
+    /// The file Quick Look shows, set by `quickLook(_:)`; the view binds it and clears it when the panel closes.
+    var previewURL: URL?
 
     public internal(set) var searchResults: [FileItem] = []
     private(set) var isSearching = false
@@ -81,7 +99,6 @@ public final class FilesViewState {
     @ObservationIgnored private let disk: any DiskScanning
     @ObservationIgnored let duplicateFinder: any DuplicateFinding
     @ObservationIgnored let trasher: any FileTrashing
-    @ObservationIgnored private let quickLookAction: @MainActor (String) -> Void
     @ObservationIgnored private let revealAction: @MainActor (String) -> Void
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
@@ -96,7 +113,6 @@ public final class FilesViewState {
         disk: any DiskScanning,
         duplicates: any DuplicateFinding,
         trasher: any FileTrashing,
-        quickLook: @escaping @MainActor (String) -> Void,
         reveal: @escaping @MainActor (String) -> Void,
         now: @escaping @Sendable () -> Date = { Date() },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
@@ -105,7 +121,6 @@ public final class FilesViewState {
         self.disk = disk
         duplicateFinder = duplicates
         self.trasher = trasher
-        quickLookAction = quickLook
         revealAction = reveal
         self.now = now
         self.sleep = sleep
@@ -224,7 +239,7 @@ public final class FilesViewState {
 
     /// Starts a scan, unless one is running or files are about to move.
     func startDiskScan() {
-        guard !isScanningDisk, !isReviewing, !isMoving else { return }
+        guard canStartDiskScan else { return }
         scanGeneration += 1
         let mine = scanGeneration
         isScanningDisk = true
@@ -282,7 +297,7 @@ public final class FilesViewState {
     }
 
     func quickLook(_ file: FileItem) {
-        quickLookAction(file.id)
+        previewURL = URL(fileURLWithPath: file.id)
     }
 
     func reveal(_ file: FileItem) {

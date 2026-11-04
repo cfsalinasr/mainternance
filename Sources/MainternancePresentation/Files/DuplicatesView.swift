@@ -34,7 +34,7 @@ struct DuplicatesView: View {
                 Button(state.hasFoundDuplicates ? FilesText.scanAgain : FilesText.scan) {
                     state.startDuplicateScan()
                 }
-                .disabled(state.isReviewing || state.isMoving)
+                .disabled(!state.canStartDuplicateScan)
             }
             Spacer()
         }
@@ -50,7 +50,7 @@ struct DuplicatesView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .disabled(state.isReviewing || state.isMoving)
+            .disabled(!state.canChangeKeepRule)
             .accessibilityLabel("Keep rule")
             Spacer()
             if let text = state.reviewButtonText {

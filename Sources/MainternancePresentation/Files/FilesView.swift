@@ -1,4 +1,5 @@
 import MainternanceDomain
+import QuickLook
 import SwiftUI
 
 public struct FilesView: View {
@@ -34,6 +35,7 @@ public struct FilesView: View {
         .padding(20)
         .task(id: state.segment) { await state.appear() }
         .onDisappear { state.cancelWork() }
+        .quickLookPreview($state.previewURL)
         .sheet(isPresented: Binding(
             get: { state.isReviewing },
             set: {

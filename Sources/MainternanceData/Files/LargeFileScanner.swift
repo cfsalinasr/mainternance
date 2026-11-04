@@ -24,7 +24,9 @@ struct LargeFileScanner: DiskScanning {
     init(
         walker: FileWalker, threshold: Int64 = LargeFileScanner.standardThreshold,
         limit: Int = LargeFileScanner.standardLimit, progressEvery: Int = LargeFileScanner.standardProgressEvery,
-        ended: @escaping @Sendable (DiskScanResult) -> Void = { _ in }
+        ended: @escaping @Sendable (DiskScanResult) -> Void = { _ in
+            // Intentionally empty: a test hook, nothing to do in the app.
+        }
     ) {
         self.walker = walker
         self.threshold = threshold
@@ -37,16 +39,21 @@ struct LargeFileScanner: DiskScanning {
         // Only the newest updates are buffered: a slow consumer may miss progress, never the final result.
         AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
             let task = Task.detached(priority: .utility) { [self] in
-                let result = run(
-                    shouldStop: { Task.isCancelled },
-                    progress: { continuation.yield(.progress(scannedFiles: $0)) }
-                )
-                ended(result)
-                continuation.yield(.finished(result))
-                continuation.finish()
+                stream(to: continuation)
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Runs one walk and reports it to the stream, then ends the stream. Called from the detached task.
+    private func stream(to continuation: AsyncStream<DiskScanUpdate>.Continuation) {
+        let result = run(
+            shouldStop: { Task.isCancelled },
+            progress: { continuation.yield(.progress(scannedFiles: $0)) }
+        )
+        ended(result)
+        continuation.yield(.finished(result))
+        continuation.finish()
     }
 
     /// One walk, synchronously. `progress` is told the number of items seen every `progressEvery` items.

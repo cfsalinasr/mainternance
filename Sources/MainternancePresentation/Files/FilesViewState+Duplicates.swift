@@ -26,7 +26,7 @@ extension FilesViewState {
     /// Starts a duplicate scan. A scan already running is replaced: the older one stops and its late updates are
     /// ignored. Not while files are about to move.
     func startDuplicateScan() {
-        guard !isReviewing, !isMoving else { return }
+        guard canStartDuplicateScan else { return }
         duplicateGeneration += 1
         let mine = duplicateGeneration
         duplicateTask?.cancel()

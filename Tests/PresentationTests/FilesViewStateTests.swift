@@ -137,13 +137,31 @@ struct FilesSearchStateTests {
         #expect(rig.state.searchResults.isEmpty)
     }
 
-    @Test func quickLookAndRevealGetTheRealUncleanedPath() {
+    @Test func rulesHaveOnePropertyEach() {
+        let rig = FilesRig()
+        #expect(rig.state.canStartDuplicateScan)
+        #expect(rig.state.canChangeKeepRule)
+        #expect(rig.state.canStartDiskScan)
+        rig.state.startDiskScan()
+        #expect(!rig.state.canStartDiskScan) // already scanning
+        #expect(rig.state.canStartDuplicateScan)
+        rig.state.stopDiskScan()
+    }
+
+    @Test func quickLookSetsThePreviewToTheRealPathAndDismissClearsIt() {
+        let rig = FilesRig()
+        let path = "/h/evil\u{202E}name\ntxt"
+        rig.state.quickLook(FilesRig.file(path))
+        #expect(rig.state.previewURL?.path == path)
+        rig.state.previewURL = nil
+        #expect(rig.state.previewURL == nil)
+    }
+
+    @Test func revealGetsTheRealUncleanedPath() {
         let rig = FilesRig()
         let path = "/h/evil\u{202E}name\ntxt"
         let file = FilesRig.file(path)
-        rig.state.quickLook(file)
         rig.state.reveal(file)
-        #expect(rig.recorder.quickLooked == [path])
         #expect(rig.recorder.revealed == [path])
         #expect(file.displayPath != path) // cleaning is for showing only
     }

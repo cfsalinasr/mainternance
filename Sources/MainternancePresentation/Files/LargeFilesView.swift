@@ -54,6 +54,7 @@ struct LargeFilesView: View {
                 }
             } else {
                 Button(state.diskResult == nil ? FilesText.scan : FilesText.scanAgain) { state.startDiskScan() }
+                    .disabled(!state.canStartDiskScan)
                 if state.diskResult != nil {
                     Text(state.totalText).font(.system(size: 12)).foregroundStyle(.secondary)
                 }

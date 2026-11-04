@@ -174,10 +174,9 @@ final class GatedTrasher: FileTrashing {
     }
 }
 
-/// Records the paths the Quick Look and Reveal closures were called with.
+/// Records the paths the Reveal closure was called with.
 @MainActor
 final class FileOpenRecorder {
-    var quickLooked: [String] = []
     var revealed: [String] = []
 }
 
@@ -216,7 +215,7 @@ final class FilesRig {
         let recorder = recorder
         state = FilesViewState(
             search: override ?? search, disk: disk, duplicates: duplicates, trasher: trasherOverride ?? trasher,
-            quickLook: { recorder.quickLooked.append($0) }, reveal: { recorder.revealed.append($0) },
+            reveal: { recorder.revealed.append($0) },
             now: { FilesRig.now },
             sleep: sleep ?? { duration in sleeps.record(duration) }
         )

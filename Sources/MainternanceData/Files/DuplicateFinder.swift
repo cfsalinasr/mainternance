@@ -60,9 +60,15 @@ struct DuplicateFinder: DuplicateFinding {
     init(
         home: URL, isProtected: @escaping @Sendable (String) -> Bool,
         minimumBytes: Int64 = DuplicateFinder.standardMinimum,
-        willRead: @escaping @Sendable (Pass, String) -> Void = { _, _ in },
-        didReadChunk: @escaping @Sendable (String) -> Void = { _ in },
-        ended: @escaping @Sendable (Outcome) -> Void = { _ in },
+        willRead: @escaping @Sendable (Pass, String) -> Void = { _, _ in
+            // Intentionally empty: a test hook, nothing to do in the app.
+        },
+        didReadChunk: @escaping @Sendable (String) -> Void = { _ in
+            // Intentionally empty: a test hook, nothing to do in the app.
+        },
+        ended: @escaping @Sendable (Outcome) -> Void = { _ in
+            // Intentionally empty: a test hook, nothing to do in the app.
+        },
         isDataless: @escaping @Sendable (String, ItemStat) -> Bool = { $1.isDataless }
     ) {
         walker = FileWalker(home: home, isProtected: isProtected)
@@ -77,19 +83,28 @@ struct DuplicateFinder: DuplicateFinding {
         // Nothing is dropped: every confirmed group must reach the screen, and there are only a few phases.
         AsyncStream(bufferingPolicy: .unbounded) { continuation in
             let task = Task.detached(priority: .utility) { [self] in
-                let outcome = run(
-                    shouldStop: { Task.isCancelled },
-                    phase: { continuation.yield(.phase($0)) },
-                    group: { continuation.yield(.group($0)) }
-                )
-                ended(outcome)
-                continuation.yield(.finished(
-                    unreadableFolders: outcome.unreadableFolders, wasCancelled: outcome.wasCancelled
-                ))
-                continuation.finish()
+                stream(to: continuation)
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Runs one search and reports it to the stream, then ends the stream. Called from the detached task.
+    private func stream(to continuation: AsyncStream<DuplicateUpdate>.Continuation) {
+        let outcome = run(
+            shouldStop: Self.isTaskCancelled,
+            phase: { continuation.yield(.phase($0)) },
+            group: { continuation.yield(.group($0)) }
+        )
+        ended(outcome)
+        continuation.yield(.finished(
+            unreadableFolders: outcome.unreadableFolders, wasCancelled: outcome.wasCancelled
+        ))
+        continuation.finish()
+    }
+
+    private static func isTaskCancelled() -> Bool {
+        Task.isCancelled
     }
 
     /// One search, synchronously. `shouldStop` is asked before every item walked, every file read and every chunk;
