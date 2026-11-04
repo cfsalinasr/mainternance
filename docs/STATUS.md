@@ -9,11 +9,8 @@ Last updated: 2026-11-04.
 - Startup (plan `2026-11-02-startup-items.md`): merged to `main`. Real list of launch agents and daemons with launchd state, Reveal in Finder, switching your own agents off and on, "New" badges and the count on Home.
 - Cleanup (plan `2026-11-03-cleanup.md`): merged to `main`. Measures caches, logs, old installers and Xcode build caches, review sheet, move to the Trash (never a permanent delete), Home suggestion.
 - Build, sign and install scripts (`scripts/build-app.sh`, `scripts/make-signing-cert.sh`), CI, SonarCloud and CodeRabbit.
-
 - Uninstaller (plan `2026-11-03-uninstaller.md`): merged to `main` (PR #7). Moves an app and its leftovers to the Trash after review (never permanent). Leftovers are found by exact identifier or name in fixed `~/Library` folders, so some can be missed or over-matched; name-only ones and launch agents are unticked. Apple's apps (bundle identifier starting com.apple.) are not listed. Apps in `/Applications` may need an administrator password.
-
-## Done on branch `feat/files` (plan `docs/superpowers/plans/2026-11-04-file-explorer.md`)
-- Files: Spotlight search with type, size and date filters; large files with a treemap of disk use; duplicates by size, then partial hash, then full SHA-256. Home folder only; never `~/Library`, hidden folders, links or other disks. Quick Look, Reveal in Finder, and moves to the Trash after review (never permanent), with a keep-one rule so a duplicate group never loses its last copy. The sample-data markers and Home's "Coming next" line are gone because every screen is real.
+- Files (plan `2026-11-04-file-explorer.md`): merged to `main` (PR #8). Spotlight search with type, size and date filters; large files with a treemap of disk use; duplicates by size, then partial hash, then full SHA-256. Home folder only; never `~/Library`, hidden folders, links or other disks. Quick Look, Reveal in Finder, and moves to the Trash after review (never permanent), with a keep-one rule so a duplicate group never loses its last copy. The sample-data markers and Home's "Coming next" line are gone because every screen is real.
 
 ## Remaining plans
 - None.
