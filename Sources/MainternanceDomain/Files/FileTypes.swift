@@ -174,3 +174,44 @@ public enum DuplicateUpdate: Sendable {
     /// The last update. When cancelled, the groups already sent are real but more may exist.
     case finished(unreadableFolders: Int, wasCancelled: Bool)
 }
+
+/// What the owner asked the file search for. Every filter that is set must hold.
+public struct FileSearchQuery: Sendable, Equatable {
+    /// Part of the file name; case and accents do not matter. Taken literally, never as a pattern.
+    public var text: String
+    public var kind: FileKind?
+    /// Files at least this big; zero or less means no size filter.
+    public var minimumBytes: Int64
+    /// Files changed at or after this moment.
+    public var modifiedAfter: Date?
+
+    public init(text: String = "", kind: FileKind? = nil, minimumBytes: Int64 = 0, modifiedAfter: Date? = nil) {
+        self.text = text
+        self.kind = kind
+        self.minimumBytes = minimumBytes
+        self.modifiedAfter = modifiedAfter
+    }
+
+    /// The name text without surrounding spaces and line breaks.
+    public var trimmedText: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Nothing to search for: no text, no kind, no size, no date.
+    public var isEmpty: Bool {
+        trimmedText.isEmpty && kind == nil && minimumBytes <= 0 && modifiedAfter == nil
+    }
+}
+
+/// What a file search found.
+public struct FileSearchResult: Sendable, Equatable {
+    /// Plain files, newest change first, at most the search's cap.
+    public let files: [FileItem]
+    /// There were more matches than `files` holds.
+    public let isTruncated: Bool
+
+    public init(files: [FileItem], isTruncated: Bool) {
+        self.files = files
+        self.isTruncated = isTruncated
+    }
+}

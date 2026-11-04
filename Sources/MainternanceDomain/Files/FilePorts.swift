@@ -13,3 +13,10 @@ public protocol DuplicateFinding: Sendable {
     /// task (or dropping the stream) stops the search; it then ends with `wasCancelled`.
     func find() -> AsyncStream<DuplicateUpdate>
 }
+
+/// Searches the owner's home folder by name, kind, size and date.
+public protocol FileSearching: Sendable {
+    /// Matching plain files, newest change first, capped. An empty query finds nothing. Cancelling the task gives an
+    /// empty result.
+    func search(_ query: FileSearchQuery) async -> FileSearchResult
+}
