@@ -29,7 +29,9 @@ struct LargeFilesView: View {
                         LazyVStack(spacing: 8) {
                             ForEach(state.largestFiles) { file in
                                 FileResultRow(
-                                    file: file, quickLook: { state.quickLook(file) }, reveal: { state.reveal(file) }
+                                    file: file, quickLook: { state.quickLook(file) }, reveal: { state.reveal(file) },
+                                    trash: { state.requestTrash(file) }, canTrash: !state.isBusy,
+                                    note: state.failureReason(for: file)
                                 )
                             }
                         }
@@ -42,7 +44,7 @@ struct LargeFilesView: View {
     private var controls: some View {
         HStack(spacing: 10) {
             if state.isScanningDisk {
-                Button(FilesText.stop) { state.cancelWork() }
+                Button(FilesText.stop) { state.stopDiskScan() }
                 ProgressView().controlSize(.small)
                 if let progress = state.scanProgressText {
                     Text(progress).font(.system(size: 12)).foregroundStyle(.secondary)

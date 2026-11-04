@@ -20,11 +20,13 @@ public struct FilesView: View {
             .labelsHidden()
             .accessibilityLabel("Files section")
 
+            FilesResultCard(state: state)
+
             switch state.segment {
             case .search:
                 searchPane(state)
             case .duplicates:
-                duplicatesPane(state)
+                DuplicatesView(state: state)
             case .large:
                 LargeFilesView(state: state)
             }
@@ -32,6 +34,16 @@ public struct FilesView: View {
         .padding(20)
         .task(id: state.segment) { await state.appear() }
         .onDisappear { state.cancelWork() }
+        .sheet(isPresented: Binding(
+            get: { state.isReviewing },
+            set: {
+                if !$0 {
+                    state.cancelReview()
+                }
+            }
+        )) {
+            FilesReviewSheet(state: state)
+        }
     }
 
     private func searchPane(_ state: FilesViewState) -> some View {
@@ -52,7 +64,9 @@ public struct FilesView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(state.searchResults) { file in
                             FileResultRow(
-                                file: file, quickLook: { state.quickLook(file) }, reveal: { state.reveal(file) }
+                                file: file, quickLook: { state.quickLook(file) }, reveal: { state.reveal(file) },
+                                trash: { state.requestTrash(file) }, canTrash: !state.isBusy,
+                                note: state.failureReason(for: file)
                             )
                         }
                     }
@@ -61,30 +75,23 @@ public struct FilesView: View {
         }
         .task(id: state.criteria) { await state.searchChanged() }
     }
+}
 
-    private func duplicatesPane(_ state: FilesViewState) -> some View {
-        @Bindable var state = state
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text("Keep:").font(.system(size: 13, weight: .medium))
-                Picker("Keep", selection: $state.keepRule) {
-                    ForEach(KeepRule.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityLabel("Keep rule")
-            }
-            if state.duplicates.isEmpty {
-                ContentUnavailableView("No duplicates found", systemImage: "doc.on.doc")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(state.duplicates) { DuplicateGroupView(group: $0, rule: state.keepRule) }
-                    }
+/// What the last move to the Trash really did: moved files and space, then each file that could not move and why.
+struct FilesResultCard: View {
+    let state: FilesViewState
+
+    var body: some View {
+        if let result = state.resultText {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(result).font(.system(size: 13, weight: .medium))
+                ForEach(state.failureLines, id: \.self) { line in
+                    Text(line).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .solidCard()
+            .accessibilityElement(children: .combine)
         }
     }
 }

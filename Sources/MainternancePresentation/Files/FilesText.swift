@@ -24,6 +24,54 @@ enum FilesText {
     static let noLargeFiles = "No large files found"
     static let nothingToShow = "Nothing to show"
 
+    static let trash = "Move to the Trash"
+    static let cancel = "Cancel"
+    static let keep = "Keep"
+    static let wouldRemove = "Would remove"
+    static let keepLabel = "Keep:"
+    static let duplicatesIntro = "Plain files of at least 1 MB in your home folder with exactly the same contents. "
+        + "Your Library folder and hidden folders are not included."
+    static let noDuplicates = "No duplicates found"
+    static let duplicatesNotScanned = "Not scanned yet"
+    static let duplicatesStopped = "The search stopped early, so more duplicates may exist."
+    static let cloneNote = "Clones share disk space, so moving one may free less than shown."
+    static let reviewTitle = "Move these files to the Trash?"
+    static let reviewNote = "These files move to the Trash. Space comes back when you empty the Trash. " + cloneNote
+    static let resultTitle = "Last move"
+
+    static func reviewButton(count: Int, bytes: Int64) -> String {
+        "Review \(count.formatted()) \(count == 1 ? "file" : "files"), frees about \(formatBytes(bytes))"
+    }
+
+    static func reviewSummary(count: Int, bytes: Int64) -> String {
+        "\(count.formatted()) \(count == 1 ? "file" : "files"), about \(formatBytes(bytes))"
+    }
+
+    static func copies(_ count: Int, each bytes: Int64) -> String {
+        "\(count.formatted()) copies, about \(formatBytes(bytes)) each"
+    }
+
+    static func frees(_ bytes: Int64) -> String {
+        "Frees about \(formatBytes(bytes))"
+    }
+
+    /// Counts only what really moved.
+    static func result(_ outcome: FileTrashOutcome) -> String {
+        let count = outcome.moved.count
+        var text = count == 0
+            ? "Nothing was moved."
+            : "Moved \(count.formatted()) \(count == 1 ? "file" : "files"), about \(formatBytes(outcome.movedBytes)), "
+            + "to the Trash. " + cloneNote
+        if !outcome.failed.isEmpty {
+            text += " \(outcome.failed.count.formatted()) could not be moved."
+        }
+        return text
+    }
+
+    static func failure(_ failure: FileFailure) -> String {
+        "\(failure.file.displayName): \(failure.reason)"
+    }
+
     static func scanned(_ count: Int) -> String {
         "Scanned \(count.formatted()) \(count == 1 ? "file" : "files")"
     }

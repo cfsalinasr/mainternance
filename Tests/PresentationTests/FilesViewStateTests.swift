@@ -5,8 +5,8 @@ import Testing
 
 @MainActor
 struct FilesSearchStateTests {
-    @Test func duplicatesTabIsHiddenUntilItIsReal() {
-        #expect(FilesSegment.shown == [.search, .large])
+    @Test func allThreeTabsAreShown() {
+        #expect(FilesSegment.shown == [.search, .duplicates, .large])
     }
 
     @Test func searchWaitsThreeHundredMillisecondsBeforeAsking() async {

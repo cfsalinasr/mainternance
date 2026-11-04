@@ -79,27 +79,98 @@ final class FakeDiskScanner: DiskScanning {
     }
 
     func waitForStarts(_ count: Int) async {
-        while starts < count {
+        for _ in 0 ..< 10000 where starts < count {
             await Task.yield()
         }
     }
 }
 
-/// Never used in Task 5 tests: the Duplicates tab is hidden until Task 6.
-struct IdleDuplicateFinder: DuplicateFinding {
+/// A duplicate finder the test drives by hand, like `FakeDiskScanner`.
+final class FakeDuplicateFinder: DuplicateFinding {
+    private struct Inner {
+        var continuations: [AsyncStream<DuplicateUpdate>.Continuation] = []
+        var terminated = 0
+    }
+
+    private let inner = Mutex(Inner())
+
+    var starts: Int {
+        inner.withLock { $0.continuations.count }
+    }
+
+    var terminated: Int {
+        inner.withLock { $0.terminated }
+    }
+
     func find() -> AsyncStream<DuplicateUpdate> {
-        AsyncStream { $0.finish() }
+        AsyncStream { continuation in
+            continuation.onTermination = { [weak self] _ in self?.inner.withLock { $0.terminated += 1 } }
+            inner.withLock { $0.continuations.append(continuation) }
+        }
+    }
+
+    func send(_ update: DuplicateUpdate, scan index: Int = 0) {
+        let continuation = inner.withLock { $0.continuations.indices.contains(index) ? $0.continuations[index] : nil }
+        continuation?.yield(update)
+        if case .finished = update {
+            continuation?.finish()
+        }
+    }
+
+    func waitForStarts(_ count: Int) async {
+        for _ in 0 ..< 10000 where starts < count {
+            await Task.yield()
+        }
     }
 }
 
-/// Never used in Task 5 tests: nothing moves to the Trash from the Search and Large files tabs yet.
-struct IdleTrasher: FileTrashing {
+/// A trasher that records every call and moves everything except the paths in `refusals` (path to reason).
+final class FakeTrasher: FileTrashing {
+    struct Call: Equatable {
+        let group: DuplicateGroup?
+        let files: [FileItem]
+    }
+
+    private let inner = Mutex<(calls: [Call], refusals: [String: String])>(([], [:]))
+
+    var calls: [Call] {
+        inner.withLock { $0.calls }
+    }
+
+    func refuse(_ path: String, reason: String) {
+        inner.withLock { $0.refusals[path] = reason }
+    }
+
+    private func outcome(_ files: [FileItem], group: DuplicateGroup?) -> FileTrashOutcome {
+        inner.withLock { current in
+            current.calls.append(Call(group: group, files: files))
+            let refusals = current.refusals
+            return FileTrashOutcome(
+                moved: files.filter { refusals[$0.id] == nil },
+                failed: files.compactMap { file in refusals[file.id].map { FileFailure(file: file, reason: $0) } }
+            )
+        }
+    }
+
+    func moveToTrash(_ files: [FileItem]) async -> FileTrashOutcome {
+        outcome(files, group: nil)
+    }
+
+    func moveDuplicatesToTrash(_ group: DuplicateGroup, remove: [FileItem]) async -> FileTrashOutcome {
+        outcome(remove, group: group)
+    }
+}
+
+/// A trasher whose single-file move waits until the test releases it.
+final class GatedTrasher: FileTrashing {
+    let gate = Gate<FileTrashOutcome>()
+
     func moveToTrash(_: [FileItem]) async -> FileTrashOutcome {
-        FileTrashOutcome(moved: [], failed: [])
+        await gate.wait()
     }
 
     func moveDuplicatesToTrash(_: DuplicateGroup, remove _: [FileItem]) async -> FileTrashOutcome {
-        FileTrashOutcome(moved: [], failed: [])
+        await gate.wait()
     }
 }
 
@@ -130,15 +201,21 @@ final class FilesRig {
 
     let search = FakeFileSearch()
     let disk = FakeDiskScanner()
+    let duplicates = FakeDuplicateFinder()
+    let trasher = FakeTrasher()
     let recorder = FileOpenRecorder()
     let sleeps = SleepLog()
     let state: FilesViewState
 
-    init(sleep: (@Sendable (Duration) async throws -> Void)? = nil, search override: (any FileSearching)? = nil) {
+    init(
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil,
+        search override: (any FileSearching)? = nil,
+        trasher trasherOverride: (any FileTrashing)? = nil
+    ) {
         let sleeps = sleeps
         let recorder = recorder
         state = FilesViewState(
-            search: override ?? search, disk: disk, duplicates: IdleDuplicateFinder(), trasher: IdleTrasher(),
+            search: override ?? search, disk: disk, duplicates: duplicates, trasher: trasherOverride ?? trasher,
             quickLook: { recorder.quickLooked.append($0) }, reveal: { recorder.revealed.append($0) },
             now: { FilesRig.now },
             sleep: sleep ?? { duration in sleeps.record(duration) }
@@ -149,8 +226,30 @@ final class FilesRig {
         sleeps.durations
     }
 
-    static func file(_ path: String, bytes: Int64 = 100) -> FileItem {
-        FileItem(path: path, bytes: bytes, modified: now, identity: nil)
+    static func file(_ path: String, bytes: Int64 = 100, age: TimeInterval = 0) -> FileItem {
+        FileItem(path: path, bytes: bytes, modified: now.addingTimeInterval(-age), identity: nil)
+    }
+
+    static func group(_ id: String, _ files: [FileItem], bytes: Int64 = 2_000_000) -> DuplicateGroup {
+        DuplicateGroup(id: id, bytesEach: bytes, files: files)
+    }
+
+    /// Yields until `condition` holds, at most 10 000 times, so a regression fails instead of hanging.
+    func until(_ condition: @MainActor () -> Bool) async {
+        for _ in 0 ..< 10000 where !condition() {
+            await Task.yield()
+        }
+    }
+
+    /// Runs a duplicate scan that streams `groups` and finishes.
+    func scanDuplicates(_ groups: [DuplicateGroup], scan index: Int = 0) async {
+        state.startDuplicateScan()
+        await duplicates.waitForStarts(index + 1)
+        for group in groups {
+            duplicates.send(.group(group), scan: index)
+        }
+        duplicates.send(.finished(unreadableFolders: 0, wasCancelled: false), scan: index)
+        await state.waitForDuplicateScan()
     }
 
     /// A small tree: root with a folder (holding a file), a package, a plain file and an Other node.

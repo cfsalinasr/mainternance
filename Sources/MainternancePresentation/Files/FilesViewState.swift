@@ -5,8 +5,8 @@ import Observation
 enum FilesSegment: String, CaseIterable, Identifiable, Sendable {
     case search, duplicates, large
 
-    /// The tabs the picker offers. Duplicates stays hidden until its real engine is wired in (Task 6).
-    static let shown: [FilesSegment] = [.search, .large]
+    /// The tabs the picker offers.
+    static let shown: [FilesSegment] = [.search, .duplicates, .large]
 
     var id: String {
         rawValue
@@ -21,37 +21,62 @@ enum FilesSegment: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// The real Files screen: Spotlight search, the large-files list and the disk treemap.
+/// The real Files screen: Spotlight search, duplicates, the large-files list and the disk treemap.
 ///
 /// Search waits 300 ms after the last change and only the newest query's answer is shown; criteria with nothing set
 /// clear the results without asking. The disk scan runs when the owner presses Scan and the first time the Large files
 /// tab opens (never at launch); a cancelled scan keeps the previous result. Leaving the screen calls `cancelWork()`.
+///
+/// Duplicates run when the owner presses Scan: groups stream in, and a newer scan replaces an older one. Each group
+/// keeps exactly one copy, chosen by `keepRule`. Nothing moves to the Trash without `review()` and then `confirm()`;
+/// the review holds a snapshot of what will move, so later changes cannot alter it. Moved files leave every list,
+/// files that could not be moved stay with their reason.
 @MainActor
 @Observable
 public final class FilesViewState {
     var segment: FilesSegment = .search
     var criteria = FileSearchCriteria()
-    var keepRule: KeepRule = .newest
-    /// Sample groups for the hidden Duplicates tab; Task 6 replaces them with the real finder.
-    let duplicates: [SampleDuplicateGroup] = FilesSampleData.duplicates
+    /// The rule that picks the copy to keep. Changing it while the review is open is ignored.
+    var keepRule: KeepRule {
+        get { chosenRule }
+        set {
+            guard !isReviewing, !isMoving else { return }
+            chosenRule = newValue
+        }
+    }
 
-    public private(set) var searchResults: [FileItem] = []
+    var chosenRule: KeepRule = .newest
+
+    public internal(set) var searchResults: [FileItem] = []
     private(set) var isSearching = false
     private(set) var searchIsTruncated = false
     private(set) var searchIsUnavailable = false
     /// True once an answer for the current criteria is on screen (so "No files found" is not shown before asking).
     private var hasSearched = false
 
-    public private(set) var diskResult: DiskScanResult?
+    public internal(set) var diskResult: DiskScanResult?
     private(set) var isScanningDisk = false
     private(set) var scanProgress = 0
     /// Ids of the treemap nodes drilled into, outermost first.
     private(set) var drillPath: [String] = []
 
+    public internal(set) var duplicateGroups: [DuplicateGroup] = []
+    public internal(set) var isFindingDuplicates = false
+    public internal(set) var duplicatePhase: String?
+    /// True once a duplicate scan has ended (finished or stopped), so "No duplicates" is not shown before asking.
+    internal(set) var hasFoundDuplicates = false
+    internal(set) var duplicatesStoppedEarly = false
+    internal(set) var duplicateUnreadable = 0
+
+    public internal(set) var isReviewing = false
+    public internal(set) var isMoving = false
+    public internal(set) var lastOutcome: FileTrashOutcome?
+    var plan: TrashPlan?
+
     @ObservationIgnored private let search: any FileSearching
     @ObservationIgnored private let disk: any DiskScanning
-    @ObservationIgnored private let duplicateFinder: any DuplicateFinding
-    @ObservationIgnored private let trasher: any FileTrashing
+    @ObservationIgnored let duplicateFinder: any DuplicateFinding
+    @ObservationIgnored let trasher: any FileTrashing
     @ObservationIgnored private let quickLookAction: @MainActor (String) -> Void
     @ObservationIgnored private let revealAction: @MainActor (String) -> Void
     @ObservationIgnored private let now: @Sendable () -> Date
@@ -59,6 +84,8 @@ public final class FilesViewState {
     @ObservationIgnored private var searchGeneration = 0
     @ObservationIgnored private var scanGeneration = 0
     @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored var duplicateGeneration = 0
+    @ObservationIgnored var duplicateTask: Task<Void, Never>?
 
     public init(
         search: any FileSearching,
@@ -187,9 +214,9 @@ public final class FilesViewState {
         drillPath = Array(drillPath.prefix(max(depth, 0)))
     }
 
-    /// Starts a scan, unless one is running.
+    /// Starts a scan, unless one is running or files are about to move.
     func startDiskScan() {
-        guard !isScanningDisk else { return }
+        guard !isScanningDisk, !isReviewing, !isMoving else { return }
         scanGeneration += 1
         let mine = scanGeneration
         isScanningDisk = true
@@ -227,10 +254,16 @@ public final class FilesViewState {
         }
     }
 
-    /// The screen went away: stops the search and the scan; late answers are ignored.
+    /// The screen went away: stops the search and both scans; late answers are ignored.
     func cancelWork() {
         searchGeneration += 1
         isSearching = false
+        stopDiskScan()
+        stopDuplicateScan()
+    }
+
+    /// Stops the disk scan; the previous result stays.
+    func stopDiskScan() {
         scanGeneration += 1
         scanTask?.cancel()
         isScanningDisk = false
