@@ -19,18 +19,17 @@ struct ScannerTextTests {
             == "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles")
         #expect(ScannerText.fullDiskAccessButton == "Open Full Disk Access settings")
         #expect(ScannerText.notMovedNote == "could not be moved; still in its original place")
+        let onlineOnly = [
+            "The scan asks macOS not to download files and folders that are stored only in iCloud, so those are not",
+            "checked and are counted as files that could not be read or folders that could not be opened. If macOS",
+            "downloads one anyway, it is checked and takes up space on this Mac."
+        ].joined(separator: " ")
         #expect(ScannerText.cloudAdvisory == [
-            "Your Desktop and Documents may hold iCloud Drive files. The scan asks macOS not to download files that",
-            "are stored only in iCloud, so those are not checked and are counted as files that could not be read. If",
-            "macOS downloads one anyway, it is checked and takes up space on this Mac. A full scan skips your iCloud",
-            "Drive (~/Library/Mobile Documents) and cloud storage (~/Library/CloudStorage) folders, so files that only",
-            "live there are not checked."
+            "Your Desktop and Documents may hold iCloud Drive files.", onlineOnly,
+            "A full scan skips your iCloud Drive (~/Library/Mobile Documents) and cloud storage",
+            "(~/Library/CloudStorage) folders, so files that only live there are not checked."
         ].joined(separator: " "))
-        #expect(ScannerText.quickCloudAdvisory == [
-            "Your Desktop may hold iCloud Drive files. The scan asks macOS not to download files that are stored only",
-            "in iCloud, so those are not checked and are counted as files that could not be read. If macOS downloads",
-            "one anyway, it is checked and takes up space on this Mac."
-        ].joined(separator: " "))
+        #expect(ScannerText.quickCloudAdvisory == "Your Desktop may hold iCloud Drive files. \(onlineOnly)")
     }
 
     @Test func unattributedMessageIsExactAndPluralisedCorrectly() {

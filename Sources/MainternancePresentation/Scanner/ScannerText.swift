@@ -16,9 +16,9 @@ enum ScannerText {
     /// What happens to files stored only in iCloud. The scanner asks macOS not to download them (best effort), so
     /// this never claims they are skipped for sure.
     private static let onlineOnlyFiles = [
-        "The scan asks macOS not to download files that are stored only in iCloud, so those are not checked and are",
-        "counted as files that could not be read. If macOS downloads one anyway, it is checked and takes up space",
-        "on this Mac."
+        "The scan asks macOS not to download files and folders that are stored only in iCloud, so those are not",
+        "checked and are counted as files that could not be read or folders that could not be opened. If macOS",
+        "downloads one anyway, it is checked and takes up space on this Mac."
     ].joined(separator: " ")
     /// A quick scan covers the Desktop, which iCloud "Desktop & Documents" can keep online.
     static let quickCloudAdvisory = "Your Desktop may hold iCloud Drive files. \(onlineOnlyFiles)"
@@ -138,25 +138,28 @@ enum ScannerText {
             + "(unusual file names). It stays counted until \(clearedBy) finishes without such detections."
     }
 
-    /// Why macOS denied access, for `count` files and `folders` folders (everything in a folder was skipped).
+    /// Why `count` files (macOS denied access) and `folders` folders could not be opened. The reason for a folder
+    /// is not known: it is usually denied access, but a folder stored only in iCloud fails the same way (it is not
+    /// downloaded), and Full Disk Access does not help with that, so the folder wording names both causes.
     static func permissionExplanation(_ count: Int, folders: Int = 0, locale: Locale = .current) -> String {
-        let cause = "This usually means Mainternance does not have Full Disk Access."
+        let deniedAccess = "Usually macOS denied access (Mainternance may need Full Disk Access)"
         switch (max(0, count), max(0, folders)) {
         case (_, 0):
             return [
-                "\(files(count, locale: locale)) could not be read because macOS denied access.", cause,
+                "\(files(count, locale: locale)) could not be read because macOS denied access.",
+                "This usually means Mainternance does not have Full Disk Access.",
                 count == 1 ? "That file was not scanned." : "Those files were not scanned."
             ].joined(separator: " ")
         case let (0, folderCount):
-            return [
-                "\(self.folders(folderCount, locale: locale)) could not be opened because macOS denied access.", cause,
-                folderCount == 1 ? "Nothing in that folder was scanned." : "Nothing in those folders was scanned."
-            ].joined(separator: " ")
+            let one = folderCount == 1
+            let (subject, verb, place) = one ? ("it is", "was", "that folder") : ("they are", "were", "those folders")
+            return "\(self.folders(folderCount, locale: locale)) could not be opened. \(deniedAccess), or \(subject) "
+                + "stored only in iCloud and \(verb) not downloaded. Nothing in \(place) was scanned."
         case let (fileCount, folderCount):
             let both = "\(files(fileCount, locale: locale)) and \(self.folders(folderCount, locale: locale))"
             return [
-                "\(both) could not be opened because macOS denied access.", cause,
-                "\(fileCount == 1 ? "That file" : "Those files") and everything in "
+                "\(both) could not be opened. \(deniedAccess); a folder may also be stored only in iCloud and not",
+                "downloaded. \(fileCount == 1 ? "That file" : "Those files") and everything in "
                     + "\(folderCount == 1 ? "that folder was" : "those folders were") not scanned."
             ].joined(separator: " ")
         }

@@ -11,6 +11,8 @@ struct ScanTally {
     private(set) var tooLarge = 0
     /// Folders clamscan could not open; nothing inside them was scanned. Not part of `unreadable` (files).
     private(set) var unreadableFolders = 0
+    /// clamscan's own `Infected files:` total (the last one read from stdout), nil when it printed none.
+    private(set) var infectedTotal: Int?
     private(set) var current = ""
     /// Lines dropped because their path was not plausible (forged by a file name, outside the roots). Debug only.
     private(set) var ignoredSuspicious = 0
@@ -30,11 +32,22 @@ struct ScanTally {
         unattributedDetections = min(unattributedDetections + 1, Int.max / 2)
     }
 
-    /// clamscan exited 1 (infected files found) but no finding was accepted: a detection exists that could not be
-    /// attributed (for example its line was mangled by a file name), so the scan must not look clean. With
-    /// `--alert-exceeds-max` a file over a limit also makes clamscan exit 1, so a limits alert explains the exit.
+    /// The last stdout total wins: clamscan prints its summary last, so a forged earlier line cannot lower it.
+    mutating func noteInfectedTotal(_ total: Int) {
+        infectedTotal = max(0, total)
+    }
+
+    /// clamscan exited 1 (infected files found). With `--alert-exceeds-max` a file over a limit also counts as
+    /// infected, so clamscan's own total is compared with what was attributed: every infected file that is neither
+    /// an accepted finding nor an accepted too-large alert is a detection that could not be attributed (a FOUND
+    /// line lost to a file name, for example). Without a total (crash, truncated output) it fails closed: exit 1
+    /// with no finding always means at least one unattributed detection, too-large alerts or not.
     mutating func noteExitOne() {
-        if findings == 0, tooLarge == 0 {
+        if let infectedTotal {
+            let missing = infectedTotal - findings - tooLarge
+            unattributedDetections = max(unattributedDetections, min(missing, Int.max / 2))
+        }
+        if findings == 0, tooLarge == 0 || infectedTotal == nil {
             unattributedDetections = max(unattributedDetections, 1)
         }
     }
@@ -67,8 +80,13 @@ struct ScanTally {
 
     /// Counts the line and returns the finding, if the line was one. FOUND files count as scanned; unreadable
     /// files and folders and files too large to scan are never scanned and never clean.
-    mutating func consume(_ line: ClamLine) -> (path: String, signature: String)? {
+    /// Only stdout carries clamscan's summary, so a total on stderr is never trusted.
+    mutating func consume(_ line: ClamLine, fromStderr: Bool = false) -> (path: String, signature: String)? {
         switch line {
+        case let .infectedTotal(total):
+            if !fromStderr {
+                noteInfectedTotal(total)
+            }
         case let .scanned(path):
             scanned += 1
             current = path
@@ -77,23 +95,33 @@ struct ScanTally {
             findings += 1
             current = path
             return (path, signature)
+        case .unreadable, .unreadableFolder, .tooLarge:
+            countNotScanned(line)
+        case .ignored:
+            break
+        }
+        return nil
+    }
+
+    /// Unreadable files, unreadable folders and files too large to scan, each path once.
+    private mutating func countNotScanned(_ line: ClamLine) {
+        switch line {
         case let .unreadable(path, isPermission):
-            guard isFirstReport(of: path) else { break }
+            guard isFirstReport(of: path) else { return }
             unreadable += 1
             if isPermission {
                 permissionDenied += 1
             }
         case let .unreadableFolder(path):
-            guard isFirstReport(of: path) else { break }
+            guard isFirstReport(of: path) else { return }
             unreadableFolders += 1
         case let .tooLarge(path):
-            guard isFirstReport(of: path) else { break }
+            guard isFirstReport(of: path) else { return }
             tooLarge += 1
             current = path
-        case .ignored:
-            break
+        default:
+            return
         }
-        return nil
     }
 
     /// One entry per path, whatever number of messages clamscan printed for it. Past the cap the set stops growing

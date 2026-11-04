@@ -75,17 +75,24 @@ struct ScannerLimitsTextTests {
     }
 
     @Test func permissionExplanationNamesFoldersSeparately() {
+        // A folder may also be online-only in iCloud (not downloaded), so Full Disk Access is not the only cause.
         #expect(ScannerText.permissionExplanation(0, folders: 2, locale: british) == [
-            "2 folders could not be opened because macOS denied access.",
-            "This usually means Mainternance does not have Full Disk Access. Nothing in those folders was scanned."
+            "2 folders could not be opened. Usually macOS denied access (Mainternance may need Full Disk Access),",
+            "or they are stored only in iCloud and were not downloaded. Nothing in those folders was scanned."
         ].joined(separator: " "))
-        #expect(ScannerText.permissionExplanation(0, folders: 1, locale: british)
-            .hasSuffix("Nothing in that folder was scanned."))
+        #expect(ScannerText.permissionExplanation(0, folders: 1, locale: british) == [
+            "1 folder could not be opened. Usually macOS denied access (Mainternance may need Full Disk Access),",
+            "or it is stored only in iCloud and was not downloaded. Nothing in that folder was scanned."
+        ].joined(separator: " "))
         #expect(ScannerText.permissionExplanation(3, folders: 2, locale: british) == [
-            "3 files and 2 folders could not be opened because macOS denied access.",
-            "This usually means Mainternance does not have Full Disk Access.",
+            "3 files and 2 folders could not be opened. Usually macOS denied access (Mainternance may need Full",
+            "Disk Access); a folder may also be stored only in iCloud and not downloaded.",
             "Those files and everything in those folders were not scanned."
         ].joined(separator: " "))
+        for folders in [1, 2] {
+            #expect(!ScannerText.permissionExplanation(0, folders: folders, locale: british)
+                .contains("This usually means Mainternance does not have Full Disk Access"))
+        }
         #expect(ScannerText.permissionExplanation(4, folders: 0, locale: british)
             == ScannerText.permissionExplanation(4, locale: british))
     }
@@ -99,6 +106,8 @@ struct ScannerLimitsTextTests {
         #expect(ScannerText.quickCloudAdvisory.contains("iCloud"))
         #expect(!ScannerText.quickCloudAdvisory.contains("skips"))
         #expect(!ScannerText.quickCloudAdvisory.contains("Mobile Documents"))
+        // Online-only folders are counted as folders, so the note names both.
+        #expect(ScannerText.quickCloudAdvisory.contains("folders that could not be opened"))
         #expect(ScannerText.quickScopeNote.hasPrefix(ScannerText.quickScope))
         #expect(ScannerText.quickScopeNote.contains(ScannerText.quickCloudAdvisory))
     }

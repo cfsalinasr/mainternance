@@ -8,8 +8,9 @@ extension ClamAVScanner {
     static let alertExceedsMax = "--alert-exceeds-max=yes"
 
     /// The argv of a scan: options first, then `--`, then the roots (so a folder named like an option is data).
+    /// No `--no-summary`: the closing `Infected files:` total is how a detection whose line was lost is noticed.
     static func scanArguments(database: String, excluded: [String], roots: [String]) -> [String] {
-        ["--database=\(database)", "-v", "--no-summary", alertExceedsMax, "--recursive"]
+        ["--database=\(database)", "-v", alertExceedsMax, "--recursive"]
             + ScanExclusions.arguments(for: excluded) + ["--"] + roots
     }
 

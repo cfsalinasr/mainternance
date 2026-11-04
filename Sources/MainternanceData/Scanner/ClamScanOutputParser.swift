@@ -1,6 +1,6 @@
 import Foundation
 
-/// What one line of `clamscan -v --no-summary` output means.
+/// What one line of `clamscan -v` output means.
 public enum ClamLine: Equatable, Sendable {
     /// `<path>: OK`
     case scanned(path: String)
@@ -13,6 +13,9 @@ public enum ClamLine: Equatable, Sendable {
     /// `<path>: Heuristics.Limits.Exceeded[.<limit>] FOUND` (printed with `--alert-exceeds-max=yes`): the file is
     /// over a size or scan limit and was skipped or only partly read. Never a finding, never clean.
     case tooLarge(path: String)
+    /// `Infected files: <n>` from clamscan's closing summary: every file it counted as infected, limits alerts
+    /// included. Only the LAST one on stdout is clamscan's own (a file name can forge earlier ones).
+    case infectedTotal(Int)
     /// Anything else: `Scanning <path>` progress lines, informational lines (`Empty file`, `Excluded`), noise.
     case ignored
 }
@@ -24,6 +27,7 @@ public enum ClamLine: Equatable, Sendable {
 /// - stdout `<path>: Access denied` (a file the user cannot read), `<dir>: Can't open directory.`
 /// - stderr `WARNING: Can't open file <path>: <strerror>` (open failed, e.g. `Permission denied`)
 /// - stdout `<path>: Heuristics.Limits.Exceeded.<Limit> FOUND` (with `--alert-exceeds-max=yes`): over a limit.
+/// - stdout `Infected files: <n>` (scan summary; the other summary lines are ignored).
 /// - stdout `Scanning <path>` (`-v` progress) and informational `<path>: Empty file` / `Excluded` /
 ///   `Symbolic link`: ignored.
 ///
@@ -38,6 +42,7 @@ public enum ClamScanOutputParser {
     private static let cantOpenFile = "WARNING: Can't open file "
     /// The name family clamscan gives a file it skipped for its limits (MaxFileSize, MaxScanSize, MaxFiles, ...).
     private static let limitsExceeded = "Heuristics.Limits.Exceeded"
+    private static let infectedFiles = "Infected files: "
     private static let permissionMarkers = [
         "permission denied", "operation not permitted", "access denied", "can't open file or directory"
     ]
@@ -49,6 +54,9 @@ public enum ClamScanOutputParser {
         // `Scanning <path>` is -v progress, never a verdict, whatever the path ends with.
         if line.hasPrefix("Scanning ") {
             return .ignored
+        }
+        if line.hasPrefix(infectedFiles) {
+            return parseTotal(String(line.dropFirst(infectedFiles.count)))
         }
         // A FOUND line is parsed even when its path is not absolute: the caller must see it to account for a
         // detection whose line was mangled by a file name (a dropped detection is never silent).
@@ -74,13 +82,25 @@ public enum ClamScanOutputParser {
         return .ignored
     }
 
-    /// A limits alert is a file skipped for being too large, never a detection.
-    private static func parseFound(_ rest: String) -> ClamLine {
-        guard let parts = split(rest) else { return .ignored }
-        if isLimitsExceeded(parts.rest) {
-            return .tooLarge(path: parts.path)
+    /// A limits alert with a usable path is a file skipped for being too large. A FOUND line whose path is empty
+    /// or not absolute (a file name with a newline split it) is always a detection, limits alert or not, so the
+    /// caller counts it as one that could not be attributed: it can never vanish or explain away a detection.
+    private static func parseFound(_ text: String) -> ClamLine {
+        guard let range = text.range(of: separator, options: .backwards) else { return .ignored }
+        let path = String(text[..<range.lowerBound])
+        let signature = String(text[range.upperBound...])
+        guard !signature.isEmpty else { return .ignored }
+        if path.hasPrefix("/"), isLimitsExceeded(signature) {
+            return .tooLarge(path: path)
         }
-        return .found(path: parts.path, signature: parts.rest)
+        return .found(path: path, signature: signature)
+    }
+
+    private static func parseTotal(_ text: String) -> ClamLine {
+        guard !text.isEmpty, text.allSatisfy({ $0.isASCII && $0.isNumber }), let total = Int(text) else {
+            return .ignored
+        }
+        return .infectedTotal(total)
     }
 
     private static func parseCantOpen(_ rest: String) -> ClamLine {
