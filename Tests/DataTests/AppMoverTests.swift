@@ -58,6 +58,22 @@ struct AppMoverTests {
         #expect(fixture.exists(details.app.id))
     }
 
+    @Test("leftovers only: a running app refuses every leftover and the Trash is never called")
+    func leftoversOnlyRunning() async throws {
+        let fixture = try UninstallerFixture()
+        let details = try await setUp(fixture)
+        let trash = fixture.trash()
+        let outcome = await fixture.mover(trash, isRunning: { $0 == "com.example.app" }).moveToTrash(
+            app: details.app, appBytes: details.appBytes, leftovers: details.leftovers, includeApp: false
+        )
+        #expect(!outcome.appMoved)
+        #expect(outcome.movedLeftovers.isEmpty)
+        #expect(outcome.failedLeftovers.map(\.leftover) == details.leftovers)
+        #expect(outcome.failedLeftovers.allSatisfy { $0.reason == UninstallRefusal.running.text })
+        #expect(outcome.movedBytes == 0)
+        #expect(trash.calls.isEmpty)
+    }
+
     @Test("a running app is refused with 'Quit it first'; no leftover is tried and the Trash is never called")
     func runningSkipsEverything() async throws {
         let fixture = try UninstallerFixture()

@@ -19,7 +19,7 @@ import MainternanceDomain
 /// 4. it is on another volume than its folder;
 /// 5. the path is protected (`isProtected`: system places, the home folder itself, the running Mainternance
 ///    bundle); a link into a protected place gets its own reason;
-/// 6. for the app only: its `Info.plist`, read again now (`AppLister.readPlist`), names one of macOS's own apps
+/// 6. for the app only: its `Info.plist`, read again now (`AppLister.readPlist`), names one of Apple's apps
 ///    (`com.apple.`), names another identifier than when it was listed, or names an app that is running;
 /// 7. last, just before the move, the path is read again (`lstat`) and must name exactly the item checked in the
 ///    open folder.
@@ -102,6 +102,13 @@ struct AppMover: AppUninstalling {
                 )
             }
         }
+        // Without the app, its leftovers still must not move from under a running app.
+        if !includeApp, app.bundleID != nil, let running = runningRefusal(app) {
+            return UninstallOutcome(
+                appMoved: false, appFailure: nil, appBytes: appBytes, movedLeftovers: [],
+                failedLeftovers: leftovers.map { LeftoverFailure(leftover: $0, reason: running.text) }, skipped: []
+            )
+        }
         let folders = libraryFolderStates()
         var moved: [Leftover] = []
         var failed: [LeftoverFailure] = []
@@ -117,6 +124,19 @@ struct AppMover: AppUninstalling {
             appMoved: includeApp, appFailure: nil, appBytes: appBytes, movedLeftovers: moved,
             failedLeftovers: failed, skipped: []
         )
+    }
+
+    /// Leftovers only: the app's `Info.plist`, read now at its listed place, names an app that is running.
+    private func runningRefusal(_ app: InstalledApp) -> Refused? {
+        let raw = AppLister.readPlist(in: app.id)?["CFBundleIdentifier"] as? String
+        if let raw, !raw.isEmpty, isRunning(raw) {
+            return Refused(.running)
+        }
+        // A missing or unreadable plist falls back to the identifier from listing.
+        if raw == nil, let listed = app.bundleID, isRunning(listed) {
+            return Refused(.running)
+        }
+        return nil
     }
 
     // MARK: Allowed folders

@@ -32,7 +32,11 @@ struct LeftoverFinder: LeftoverFinding {
     static let libraryFolders = identifierRules.map(\.folder)
     static let minimumNameLength = 4
 
-    func details(for app: InstalledApp) async -> AppDetails {
+    /// The app is read again first (its folder may have been replaced by an update since it was listed): the result
+    /// carries the refreshed app (same path, current identity, name and identifier). An app that is gone, or no
+    /// longer a real folder, is returned as it was listed, so the mover reports it vanished or changed.
+    func details(for listed: InstalledApp) async -> AppDetails {
+        let app = AppLister.reread(listed)
         let (appBytes, appComplete) = Self.measureApp(app)
         let leftovers = candidates(for: app).compactMap(Self.measure)
         let ordered = leftovers.sorted { $0.bytes == $1.bytes ? $0.id < $1.id : $0.bytes > $1.bytes }

@@ -138,7 +138,7 @@ public struct UninstallOutcome: Sendable, Equatable {
 public enum UninstallRefusal: Error, Equatable, Sendable {
     /// The app is open.
     case running
-    /// One of macOS's own apps (identifier starting `com.apple.`).
+    /// One of Apple's apps (bundle identifier starting `com.apple.`).
     case appleApp
     /// Not a `.app` directly in an Applications folder, or not directly in one of the fixed `~/Library` folders.
     case notInUninstallerFolder
@@ -148,7 +148,7 @@ public enum UninstallRefusal: Error, Equatable, Sendable {
     public var text: String {
         switch self {
         case .running: "It is open. Quit it first."
-        case .appleApp: "It is part of macOS, and macOS apps are not removed."
+        case .appleApp: "It is one of Apple's apps (bundle identifier starting com.apple.), and those are not removed."
         case .notInUninstallerFolder: "It is not in one of the folders the Uninstaller looks at."
         case .otherVolume: "It is on another disk, so the Uninstaller leaves it alone."
         }

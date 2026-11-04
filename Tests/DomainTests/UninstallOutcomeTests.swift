@@ -32,7 +32,7 @@ struct UninstallOutcomeTests {
     @Test("the Uninstaller's own refusals read as plain sentences")
     func texts() {
         #expect(UninstallRefusal.running.text == "It is open. Quit it first.")
-        #expect(UninstallRefusal.appleApp.text == "It is part of macOS, and macOS apps are not removed.")
+        #expect(UninstallRefusal.appleApp.text == "It is one of Apple's apps (bundle identifier starting com.apple.), and those are not removed.")
         #expect(UninstallRefusal.notInUninstallerFolder.text
             == "It is not in one of the folders the Uninstaller looks at.")
         #expect(UninstallRefusal.otherVolume.text == "It is on another disk, so the Uninstaller leaves it alone.")

@@ -114,8 +114,8 @@ otherwise; both intervals are doubled in Low Power Mode.
 
 **Uninstaller** (Uninstaller screen):
 
-- Lists the apps directly inside `/Applications` and `~/Applications` (not deeper folders). macOS's own apps
-  (bundle identifier starting `com.apple.`) and Mainternance itself are not listed. The list loads when you open
+- Lists the apps directly inside `/Applications` and `~/Applications` (not deeper folders). Apple's apps
+  (bundle identifier starting `com.apple.`, which includes ones installed from the App Store) and Mainternance itself are not listed. The list loads when you open
   the screen, never at launch.
 - Choosing an app measures it and looks for its leftovers in a fixed set of `~/Library` folders (Application
   Support, Caches, Containers, Group Containers, Preferences, Saved Application State, HTTPStorages, WebKit,

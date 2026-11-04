@@ -8,8 +8,10 @@ Last updated: 2026-11-03.
 - Settings, weekly scan and notifications (plan `2026-11-02-schedule-notifications-settings.md`): merged to `main`. Live Settings saved to `preferences.json`, Launch at login through macOS, an opt-in weekly quick scan that runs only while the app is open (a missed slot runs once later; also checked on wake), and notifications with counts only, never file names.
 - Startup (plan `2026-11-02-startup-items.md`): merged to `main`. Real list of launch agents and daemons with launchd state, Reveal in Finder, switching your own agents off and on, "New" badges and the count on Home.
 - Cleanup (plan `2026-11-03-cleanup.md`): merged to `main`. Measures caches, logs, old installers and Xcode build caches, review sheet, move to the Trash (never a permanent delete), Home suggestion.
-- Uninstaller (plan `2026-11-03-uninstaller.md`): moves an app and its leftovers to the Trash after review (never permanent). Leftovers are found by exact identifier or name in fixed `~/Library` folders, so some can be missed or over-matched; name-only ones and launch agents are unticked. macOS's own apps are not listed. Apps in `/Applications` may need an administrator password.
 - Build, sign and install scripts (`scripts/build-app.sh`, `scripts/make-signing-cert.sh`), CI, SonarCloud and CodeRabbit.
+
+## Done on branch `feat/uninstaller` (plan `docs/superpowers/plans/2026-11-03-uninstaller.md`)
+- Uninstaller (plan `2026-11-03-uninstaller.md`): moves an app and its leftovers to the Trash after review (never permanent). Leftovers are found by exact identifier or name in fixed `~/Library` folders, so some can be missed or over-matched; name-only ones and launch agents are unticked. Apple's apps (bundle identifier starting com.apple.) are not listed. Apps in `/Applications` may need an administrator password.
 
 ## Remaining plans (not started)
 - File explorer

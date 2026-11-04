@@ -4,7 +4,7 @@ import MainternanceDomain
 /// Lists the apps in the Applications folders: direct children that are real `.app` folders (a link, or a file named
 /// `.app`, is skipped). Read-only; no sizes are measured, so the list stays fast.
 ///
-/// Not listed: macOS's own apps (identifier starting `com.apple.`) and the running Mainternance bundle. The name,
+/// Not listed: Apple's apps (bundle identifier starting `com.apple.`) and the running Mainternance bundle. The name,
 /// identifier and version come from `Contents/Info.plist`, read with `PropertyListSerialization` from a regular file
 /// of at most 1 MiB (never `Bundle(path:)`, which can follow links). An unreadable plist gives an app with its
 /// folder name and no identifier.
@@ -43,7 +43,7 @@ struct AppLister: AppListing {
         }
     }
 
-    /// Whether the raw (not yet validated) `CFBundleIdentifier` is one of macOS's own (`com.apple.`, any case, even
+    /// Whether the raw (not yet validated) `CFBundleIdentifier` is one of Apple's apps (`com.apple.`, any case, even
     /// with spaces before it). Task 2 reuses it at move time.
     static func isAppleIdentifier(_ raw: String?) -> Bool {
         raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("com.apple.") == true
@@ -69,6 +69,11 @@ struct AppLister: AppListing {
         }
         guard let lhs = CleanupRules.resolve(path), let rhs = CleanupRules.resolve(own) else { return false }
         return lhs == rhs
+    }
+
+    /// The app as it is now on disk (same path), or `listed` itself when it is gone or no longer a real folder.
+    static func reread(_ listed: InstalledApp) -> InstalledApp {
+        app(at: listed.id)?.0 ?? listed
     }
 
     /// The app at `path`, or nil when it is not a real folder.

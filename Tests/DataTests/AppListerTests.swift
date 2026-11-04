@@ -27,7 +27,7 @@ struct AppListerTests {
         #expect(apps.allSatisfy { $0.identity != nil })
     }
 
-    @Test("macOS's own apps and the running bundle are not listed")
+    @Test("Apple's apps and the running bundle are not listed")
     func exclusions() async throws {
         let fixture = try UninstallerFixture()
         try fixture.app("Safari.app", plist: ["CFBundleIdentifier": "com.apple.Safari"])
