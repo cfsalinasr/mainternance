@@ -39,10 +39,10 @@ struct LeftoverFinderMatchTests {
             try fixture.library(path + "/a.bin", bytes: 10)
         }
         for id in ["app", "Notes", "x"] {
-            let app = InstalledApp(path: "/Applications/Z.app", name: "Z", bundleID: id, version: nil)
+            let app = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: "Z", bundleID: id, version: nil)
             #expect(await found(fixture, app).isEmpty)
         }
-        let dotted = InstalledApp(path: "/Applications/Z.app", name: "Z", bundleID: "x.app", version: nil)
+        let dotted = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: "Z", bundleID: "x.app", version: nil)
         #expect(await found(fixture, dotted).map(\.name) == ["ABCDE12345.x.app"])
     }
 
@@ -51,7 +51,7 @@ struct LeftoverFinderMatchTests {
         let fixture = try UninstallerFixture()
         try fixture.library("Application Support/Google/a.bin", bytes: 10)
         try fixture.library("Caches/Google/a.bin", bytes: 10)
-        let app = InstalledApp(path: "/Applications/Z.app", name: "Z", bundleID: "Google", version: nil)
+        let app = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: "Z", bundleID: "Google", version: nil)
         #expect(await found(fixture, app).filter { $0.match == .identifier }.isEmpty)
     }
 
@@ -75,9 +75,9 @@ struct LeftoverFinderMatchTests {
         let invisible = "\u{200B}\u{200B}\u{200B}\u{200B}"
         try fixture.library("Caches/\(invisible)/a.bin", bytes: 10)
         try fixture.library("Caches/Ab/a.bin", bytes: 10)
-        let app = InstalledApp(path: "/Applications/Z.app", name: invisible + "Ab", bundleID: nil, version: nil)
+        let app = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: invisible + "Ab", bundleID: nil, version: nil)
         #expect(await found(fixture, app).isEmpty)
-        let hidden = InstalledApp(path: "/Applications/Z.app", name: invisible, bundleID: nil, version: nil)
+        let hidden = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: invisible, bundleID: nil, version: nil)
         #expect(await found(fixture, hidden).isEmpty)
     }
 }
