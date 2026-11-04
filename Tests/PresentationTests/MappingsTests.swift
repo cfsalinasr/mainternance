@@ -8,16 +8,15 @@ import Testing
 @MainActor
 struct MappingsTests {
     @Test func fileKindLabelsAndSymbols() {
-        let expected: [SampleFileKind: (String, String)] = [
+        let expected: [FileKind: (String, String)] = [
             .document: ("Documents", "doc.text"), .image: ("Images", "photo"), .video: ("Videos", "film"),
             .audio: ("Audio", "waveform"), .archive: ("Archives", "archivebox"),
             .code: ("Code", "chevron.left.forwardslash.chevron.right"), .other: ("Other", "doc")
         ]
-        #expect(expected.count == SampleFileKind.allCases.count)
-        for kind in SampleFileKind.allCases {
+        #expect(expected.count == FileKind.allCases.count)
+        for kind in FileKind.allCases {
             #expect(kind.title == expected[kind]?.0)
             #expect(kind.symbol == expected[kind]?.1)
-            #expect(kind.id == kind.rawValue)
         }
     }
 

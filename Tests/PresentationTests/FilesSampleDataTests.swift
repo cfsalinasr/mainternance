@@ -4,10 +4,7 @@ import Testing
 
 struct FilesSampleDataTests {
     @Test func sampleDataIsNonEmpty() {
-        #expect(!FilesSampleData.files.isEmpty)
         #expect(!FilesSampleData.duplicates.isEmpty)
-        #expect(!FilesSampleData.largest.isEmpty)
-        #expect(FilesSampleData.treemap.size > 0)
     }
 
     @Test func duplicateGroupsHaveTwoOrMoreEqualSizedFiles() {
@@ -17,62 +14,10 @@ struct FilesSampleDataTests {
         }
     }
 
-    @Test func largestIsSortedDescending() {
-        let sizes = FilesSampleData.largest.map(\.size)
-        #expect(sizes == sizes.sorted(by: >))
-    }
-
     @Test func fileSizeTextHandlesZero() {
         #expect(formatFileSize(0) == "Empty")
         #expect(formatFileSize(-5) == "Empty")
         #expect(formatFileSize(1_000_000) != "Empty")
-    }
-}
-
-struct FileSearchTests {
-    private let now = Date(timeIntervalSince1970: 2_000_000_000)
-    private func file(
-        _ path: String, size: Int64 = 10, daysAgo: Double = 1, kind: SampleFileKind = .document
-    ) -> SampleFile {
-        SampleFile(
-            name: (path as NSString).lastPathComponent, path: path, size: size,
-            modified: now.addingTimeInterval(-daysAgo * 86400), kind: kind
-        )
-    }
-
-    private func names(_ files: [SampleFile], _ criteria: FileSearchCriteria) -> [String] {
-        FileSearch.filter(files, criteria: criteria, now: now).map(\.name)
-    }
-
-    @Test func emptyQueryReturnsEverything() {
-        let files = [file("/a/b.txt"), file("/c/d.txt")]
-        #expect(names(files, FileSearchCriteria()).count == 2)
-    }
-
-    @Test func matchesNameAndPathCaseInsensitively() {
-        let files = [file("/Users/Report.PDF"), file("/projects/alpha/x.txt"), file("/other/y.txt")]
-        #expect(names(files, FileSearchCriteria(text: "report")) == ["Report.PDF"])
-        #expect(names(files, FileSearchCriteria(text: "ALPHA")) == ["x.txt"])
-        #expect(names(files, FileSearchCriteria(text: "zzz")).isEmpty)
-    }
-
-    @Test func kindSizeAndDateFiltersApply() {
-        let files = [
-            file("/a/img.png", size: 5_000_000, daysAgo: 2, kind: .image),
-            file("/a/doc.txt", size: 10, daysAgo: 2, kind: .document),
-            file("/a/old.png", size: 5_000_000, daysAgo: 400, kind: .image)
-        ]
-        #expect(names(files, FileSearchCriteria(kind: .image)) == ["img.png", "old.png"])
-        #expect(names(files, FileSearchCriteria(size: .over1MB)) == ["img.png", "old.png"])
-        #expect(names(files, FileSearchCriteria(date: .pastMonth)) == ["img.png", "doc.txt"])
-        #expect(names(files, FileSearchCriteria(kind: .image, size: .over1MB, date: .pastWeek)) == ["img.png"])
-    }
-
-    @Test func sampleFiltersActuallyNarrowSampleData() {
-        let all = FilesSampleData.files
-        #expect(FileSearch.filter(all, criteria: FileSearchCriteria(size: .over1GB)).count < all.count)
-        #expect(FileSearch.filter(all, criteria: FileSearchCriteria(kind: .video)).count == 2)
-        #expect(FileSearch.filter(all, criteria: FileSearchCriteria(date: .pastDay)).count < all.count)
     }
 }
 
@@ -204,35 +149,5 @@ struct TreemapLayoutTests {
         let tiles = TreemapLayout.layout([TreemapItem(id: "only", size: 1)], in: container)
         #expect(tiles.count == 1)
         expectRect(tiles[0].rect, container)
-    }
-}
-
-@MainActor
-struct FilesViewStateTests {
-    @Test func liveSearchUpdatesResults() {
-        let state = FilesViewState()
-        let all = state.results.count
-        state.criteria.text = "wedding"
-        #expect(state.results.count == 1)
-        state.criteria.text = "nothing-matches-this"
-        #expect(state.results.isEmpty)
-        state.criteria.text = ""
-        #expect(state.results.count == all)
-    }
-
-    @Test func drillDownAndUp() {
-        let state = FilesViewState()
-        #expect(state.currentNode.id == "root")
-        state.drillInto("users")
-        state.drillInto("movies")
-        #expect(state.breadcrumb.map(\.id) == ["root", "users", "movies"])
-        state.drillInto("wedding") // leaf: ignored
-        #expect(state.currentNode.id == "movies")
-        state.goUp()
-        #expect(state.currentNode.id == "users")
-        state.jump(toDepth: 0)
-        #expect(state.currentNode.id == "root")
-        state.goUp() // already at root: safe
-        #expect(state.currentNode.id == "root")
     }
 }

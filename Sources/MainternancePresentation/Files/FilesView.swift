@@ -13,9 +13,8 @@ public struct FilesView: View {
     public var body: some View {
         @Bindable var state = state
         VStack(alignment: .leading, spacing: 12) {
-            SampleDataBadge()
             Picker("Section", selection: $state.segment) {
-                ForEach(FilesSegment.allCases) { Text($0.title).tag($0) }
+                ForEach(FilesSegment.shown) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -31,23 +30,36 @@ public struct FilesView: View {
             }
         }
         .padding(20)
+        .task(id: state.segment) { await state.appear() }
+        .onDisappear { state.cancelWork() }
     }
 
     private func searchPane(_ state: FilesViewState) -> some View {
-        let results = state.results
-        return VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             FileSearchBar(state: state)
-            if results.isEmpty {
-                ContentUnavailableView.search(text: state.criteria.text)
+            Text(FilesText.spotlightNote).font(.system(size: 12)).foregroundStyle(.secondary)
+            if state.isSearching {
+                ProgressView(FilesText.searching).controlSize(.small)
+            }
+            if let note = state.searchTruncatedText {
+                Text(note).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            if let status = state.searchStatusText {
+                ContentUnavailableView(status, systemImage: "magnifyingglass")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(results) { FileResultRow(file: $0) }
+                        ForEach(state.searchResults) { file in
+                            FileResultRow(
+                                file: file, quickLook: { state.quickLook(file) }, reveal: { state.reveal(file) }
+                            )
+                        }
                     }
                 }
             }
         }
+        .task(id: state.criteria) { await state.searchChanged() }
     }
 
     private func duplicatesPane(_ state: FilesViewState) -> some View {

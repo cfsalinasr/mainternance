@@ -1,3 +1,4 @@
+import MainternanceDomain
 import SwiftUI
 
 struct FileSearchBar: View {
@@ -8,7 +9,7 @@ struct FileSearchBar: View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-                TextField("Search by name or path", text: $state.criteria.text)
+                TextField(FilesText.searchPrompt, text: $state.criteria.text)
                     .textFieldStyle(.plain)
                     .accessibilityLabel("Search files")
                 if !state.criteria.text.isEmpty {
@@ -24,9 +25,9 @@ struct FileSearchBar: View {
 
             Menu {
                 Picker("Type", selection: $state.criteria.kind) {
-                    Text("Any type").tag(SampleFileKind?.none)
-                    ForEach(SampleFileKind.allCases) {
-                        Label($0.title, systemImage: $0.symbol).tag(SampleFileKind?.some($0))
+                    Text(FilesText.typeAny).tag(FileKind?.none)
+                    ForEach(FileKind.allCases, id: \.self) {
+                        Label($0.title, systemImage: $0.symbol).tag(FileKind?.some($0))
                     }
                 }
             } label: {

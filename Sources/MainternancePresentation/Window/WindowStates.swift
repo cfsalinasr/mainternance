@@ -10,9 +10,9 @@ public final class WindowStates {
 
     public init(
         scanner: ScannerViewModel, settings: SettingsViewState, startup: StartupViewState, cleanup: CleanupViewState,
-        uninstaller: UninstallerViewState
+        uninstaller: UninstallerViewState, files: FilesViewState
     ) {
-        files = FilesViewState()
+        self.files = files
         self.scanner = scanner
         self.cleanup = cleanup
         self.startup = startup
