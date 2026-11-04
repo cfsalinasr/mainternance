@@ -39,24 +39,28 @@ struct NavigationTests {
     }
 
     @Test func openingAHiddenDestinationRoutesToHome() {
-        for hidden in AppDestination.allCases where !hidden.isAvailable {
-            let fromHome = Navigation()
+        let hide: @Sendable (AppDestination) -> Bool = { $0 != .files && $0 != .startup }
+        for hidden: AppDestination in [.files, .startup] {
+            let fromHome = Navigation(isAvailable: hide)
             fromHome.open(hidden)
             #expect(fromHome.selection == .home)
 
-            let fromSettings = Navigation()
+            let fromSettings = Navigation(isAvailable: hide)
             fromSettings.open(.settings)
             fromSettings.open(hidden)
             #expect(fromSettings.selection == .home)
-            #expect(fromSettings.selection.isAvailable)
         }
+        let shown = Navigation(isAvailable: hide)
+        shown.open(.cleanup)
+        #expect(shown.selection == .cleanup)
     }
 
-    @Test func constructingWithAHiddenDestinationYieldsAVisibleSelection() {
+    @Test func constructingWithAHiddenDestinationYieldsHome() {
+        let hide: @Sendable (AppDestination) -> Bool = { $0 != .files }
+        #expect(Navigation(selection: .files, isAvailable: hide).selection == .home)
+        #expect(Navigation(selection: .scanner, isAvailable: hide).selection == .scanner)
         for destination in AppDestination.allCases {
-            let navigation = Navigation(selection: destination)
-            #expect(navigation.selection.isAvailable)
-            #expect(navigation.selection == (destination.isAvailable ? destination : .home))
+            #expect(Navigation(selection: destination).selection == destination)
         }
     }
 

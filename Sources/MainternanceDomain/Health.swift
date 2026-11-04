@@ -16,7 +16,7 @@ public enum AppDestination: String, Sendable, CaseIterable {
     case home, cleanup, files, scanner, startup, uninstaller, settings
 
     /// Whether the screen is backed by a working engine. A screen without one stays hidden from the sidebar and
-    /// unreachable by links; today every screen is real.
+    /// unreachable by links.
     public var isAvailable: Bool {
         switch self {
         case .home, .settings, .scanner, .startup, .cleanup, .uninstaller, .files: true

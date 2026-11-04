@@ -9,14 +9,21 @@ public final class Navigation {
     /// Popover rows and metrics carry no destinations (only Home links do), so they need no such rule.
     public private(set) var selection: AppDestination = .home
 
-    /// A hidden initial destination (for example a restored one) becomes Home.
-    public init(selection: AppDestination = .home) {
-        self.selection = selection.isAvailable ? selection : .home
+    @ObservationIgnored private let isAvailable: @Sendable (AppDestination) -> Bool
+
+    /// A hidden initial destination (for example a restored one) becomes Home. The availability rule is
+    /// injectable so tests can hide a screen.
+    public init(
+        selection: AppDestination = .home,
+        isAvailable: @escaping @Sendable (AppDestination) -> Bool = { $0.isAvailable }
+    ) {
+        self.isAvailable = isAvailable
+        self.selection = isAvailable(selection) ? selection : .home
     }
 
     /// A destination without a working engine is never selected: opening one routes to Home.
     public func open(_ destination: AppDestination) {
-        let target = destination.isAvailable ? destination : .home
+        let target = isAvailable(destination) ? destination : .home
         guard target != selection else { return }
         selection = target
     }
