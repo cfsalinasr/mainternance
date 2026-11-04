@@ -10,10 +10,10 @@ public struct UninstallerServices: Sendable {
 
     /// `/Applications` and the owner's `~/Applications`.
     public static var standardApplicationFolders: [URL] {
-        [
-            URL(fileURLWithPath: "/Applications", isDirectory: true),
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
-        ]
+        // macOS names the folders: the system-wide Applications folder, then the owner's own.
+        let manager = FileManager.default
+        return manager.urls(for: .applicationDirectory, in: .localDomainMask)
+            + manager.urls(for: .applicationDirectory, in: .userDomainMask)
     }
 
     /// `home` is the owner's home folder. Tests pass a temp home, a temp Applications folder, their own running check
