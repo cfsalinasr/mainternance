@@ -39,10 +39,10 @@ struct LeftoverFinderMatchTests {
             try fixture.library(path + "/a.bin", bytes: 10)
         }
         for id in ["app", "Notes", "x"] {
-            let app = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: "Z", bundleID: id, version: nil)
+            let app = zApp(fixture, name: "Z", bundleID: id)
             #expect(await found(fixture, app).isEmpty)
         }
-        let dotted = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: "Z", bundleID: "x.app", version: nil)
+        let dotted = zApp(fixture, name: "Z", bundleID: "x.app")
         #expect(await found(fixture, dotted).map(\.name) == ["ABCDE12345.x.app"])
     }
 
@@ -51,7 +51,7 @@ struct LeftoverFinderMatchTests {
         let fixture = try UninstallerFixture()
         try fixture.library("Application Support/Google/a.bin", bytes: 10)
         try fixture.library("Caches/Google/a.bin", bytes: 10)
-        let app = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: "Z", bundleID: "Google", version: nil)
+        let app = zApp(fixture, name: "Z", bundleID: "Google")
         #expect(await found(fixture, app).filter { $0.match == .identifier }.isEmpty)
     }
 
@@ -75,9 +75,16 @@ struct LeftoverFinderMatchTests {
         let invisible = "\u{200B}\u{200B}\u{200B}\u{200B}"
         try fixture.library("Caches/\(invisible)/a.bin", bytes: 10)
         try fixture.library("Caches/Ab/a.bin", bytes: 10)
-        let app = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: invisible + "Ab", bundleID: nil, version: nil)
+        let app = zApp(fixture, name: invisible + "Ab", bundleID: nil)
         #expect(await found(fixture, app).isEmpty)
-        let hidden = InstalledApp(path: fixture.applications.appendingPathComponent("Z.app").path, name: invisible, bundleID: nil, version: nil)
+        let hidden = zApp(fixture, name: invisible, bundleID: nil)
         #expect(await found(fixture, hidden).isEmpty)
     }
+}
+
+/// A hand-built app inside the fixture's own Applications folder (never the real `/Applications`).
+private func zApp(_ fixture: UninstallerFixture, name: String = "Z", bundleID: String?) -> InstalledApp {
+    InstalledApp(
+        path: fixture.applications.appendingPathComponent("Z.app").path, name: name, bundleID: bundleID, version: nil
+    )
 }
