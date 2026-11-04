@@ -11,7 +11,7 @@ struct SpotlightSearcherTests {
     ) -> SpotlightSearcher {
         SpotlightSearcher(home: fixture.home) { _, _, limit in
             seen?.add(limit)
-            return paths()
+            return SpotlightAnswer(paths: paths())
         }
     }
 
@@ -38,7 +38,7 @@ struct SpotlightSearcherTests {
         let found = SpotlightSearcher(home: fixture.home) { predicate, home, _ in
             seen.add(((predicate as? NSComparisonPredicate)?.rightExpression.constantValue as? String) ?? "?")
             seen.add(home.path)
-            return []
+            return SpotlightAnswer(paths: [])
         }
         _ = await found.search(FileSearchQuery(text: "tax"))
         #expect(seen.values == ["tax", fixture.home.path])
@@ -134,7 +134,7 @@ struct SpotlightSearcherTests {
         let alias = fixture.temp.url.appendingPathComponent("alias")
         try FileManager.default.createSymbolicLink(atPath: alias.path, withDestinationPath: fixture.home.path)
         let viaAlias = alias.appendingPathComponent("Documents/a.txt").path
-        let found = SpotlightSearcher(home: alias) { _, _, _ in [viaAlias, file.path] }
+        let found = SpotlightSearcher(home: alias) { _, _, _ in SpotlightAnswer(paths: [viaAlias, file.path]) }
         let result = await found.search(FileSearchQuery(text: "a"))
         #expect(result.files.map(\.id) == [file.path])
     }
@@ -196,11 +196,72 @@ struct SpotlightSearcherTests {
             while !Task.isCancelled {
                 await Task.yield()
             }
-            return [file.path]
+            return SpotlightAnswer(paths: [file.path])
         }
         let task = Task { await found.search(FileSearchQuery(text: "a")) }
         task.cancel()
         let result = await task.value
         #expect(result.files.isEmpty)
+    }
+
+    @Test("a run that could not answer gives no files and says so; an ordinary empty answer does not")
+    func unavailable() async throws {
+        let fixture = try FilesFixture()
+        let file = try fixture.file("Documents/a.txt")
+        let down = SpotlightSearcher(home: fixture.home) { _, _, _ in
+            SpotlightAnswer(paths: [file.path], isUnavailable: true)
+        }
+        let failed = await down.search(FileSearchQuery(text: "a"))
+        #expect(failed.files.isEmpty)
+        #expect(failed.isUnavailable)
+        let empty = await searcher(fixture, paths: { [] }).search(FileSearchQuery(text: "a"))
+        #expect(!empty.isUnavailable)
+        let none = await searcher(fixture, paths: { [] }).search(FileSearchQuery())
+        #expect(!none.isUnavailable)
+    }
+}
+
+/// The timeout logic of the real run, with a fake clock: no Spotlight query is made.
+@Suite("Spotlight deadline")
+struct SpotlightDeadlineTests {
+    @Test("work that finishes first gives its value")
+    func finishesFirst() async {
+        let value = await SpotlightDeadline.race(
+            seconds: 30, sleep: { _ in try await Task.sleep(for: .seconds(60)) }, work: { 7 }
+        )
+        #expect(value == 7)
+    }
+
+    @Test("a deadline that passes first gives nil and cancels the work")
+    func timesOut() async {
+        let cancelled = Received<Bool>()
+        let value: Int? = await SpotlightDeadline.race(seconds: 30, sleep: { _ in }, work: {
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            cancelled.add(true)
+            return 1
+        })
+        #expect(value == nil)
+        #expect(cancelled.values == [true])
+    }
+
+    @Test("the real deadline is 30 seconds")
+    func thirty() {
+        #expect(SpotlightSearcher.timeoutSeconds == 30)
+    }
+
+    @Test("cancelling the caller gives the work's own answer, not a timeout")
+    func callerCancelled() async {
+        let task = Task {
+            await SpotlightDeadline.race(seconds: 30, sleep: { _ in try await Task.sleep(for: .seconds(60)) }, work: {
+                while !Task.isCancelled {
+                    await Task.yield()
+                }
+                return 5
+            })
+        }
+        task.cancel()
+        #expect(await task.value == 5)
     }
 }

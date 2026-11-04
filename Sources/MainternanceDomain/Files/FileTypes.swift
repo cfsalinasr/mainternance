@@ -35,6 +35,11 @@ public enum FileKind: String, Sendable, CaseIterable {
         return table
     }()
 
+    /// Every extension in the table for `kind`, lowercased, without the dot, sorted. Empty for `.other`.
+    public static func extensions(for kind: FileKind) -> [String] {
+        table.filter { $0.value == kind }.keys.sorted()
+    }
+
     /// The kind for a file extension (without the dot), ignoring case; anything not in the table is `.other`.
     public static func kind(forExtension pathExtension: String) -> FileKind {
         table[pathExtension.lowercased()] ?? .other
@@ -209,9 +214,12 @@ public struct FileSearchResult: Sendable, Equatable {
     public let files: [FileItem]
     /// There were more matches than `files` holds.
     public let isTruncated: Bool
+    /// Spotlight did not answer (could not start, or took too long). Never set for an ordinary empty result.
+    public let isUnavailable: Bool
 
-    public init(files: [FileItem], isTruncated: Bool) {
+    public init(files: [FileItem], isTruncated: Bool, isUnavailable: Bool = false) {
         self.files = files
         self.isTruncated = isTruncated
+        self.isUnavailable = isUnavailable
     }
 }

@@ -11,14 +11,16 @@ struct SpotlightSearcher: FileSearching {
     static let maxResults = 500
     /// How many paths one query asks Spotlight for (results are dropped after, so ask for more than the cap).
     static let fetchLimit = 2000
+    /// How long the real query may take before the search is reported as unavailable.
+    static let timeoutSeconds = 30
 
     let home: URL
     /// Runs the query for a predicate in a folder, returning at most the given number of paths, newest change first.
-    let runQuery: @Sendable (NSPredicate, URL, Int) async -> [String]
+    let runQuery: @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer
 
     init(
         home: URL,
-        runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> [String] = SpotlightSearcher.runSpotlight
+        runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer = SpotlightSearcher.runSpotlight
     ) {
         self.home = home
         self.runQuery = runQuery
@@ -28,7 +30,11 @@ struct SpotlightSearcher: FileSearching {
         guard let predicate = SpotlightPredicate.make(query) else {
             return FileSearchResult(files: [], isTruncated: false)
         }
-        let paths = await runQuery(predicate, home, Self.fetchLimit)
+        let answer = await runQuery(predicate, home, Self.fetchLimit)
+        if answer.isUnavailable {
+            return FileSearchResult(files: [], isTruncated: false, isUnavailable: true)
+        }
+        let paths = answer.paths
         if Task.isCancelled {
             return FileSearchResult(files: [], isTruncated: false)
         }
@@ -70,9 +76,68 @@ struct SpotlightSearcher: FileSearching {
     /// cancelled. Automated tests never call it (they inject a fake `runQuery`, and Spotlight is never queried from
     /// tests); it is exercised only by the manual check listed in docs/STATUS.md.
     @Sendable
-    static func runSpotlight(_ predicate: NSPredicate, _ home: URL, _ limit: Int) async -> [String] {
+    static func runSpotlight(_ predicate: NSPredicate, _ home: URL, _ limit: Int) async -> SpotlightAnswer {
         nonisolated(unsafe) let predicate = predicate
-        return await SpotlightRun().run(predicate: predicate, home: home, limit: limit)
+        let answer = await SpotlightDeadline.race(seconds: timeoutSeconds, work: {
+            await SpotlightRun().run(predicate: predicate, home: home, limit: limit)
+        })
+        return answer ?? SpotlightAnswer(paths: [], isUnavailable: true)
+    }
+}
+
+/// What one Spotlight run gave back.
+struct SpotlightAnswer: Sendable, ExpressibleByArrayLiteral {
+    let paths: [String]
+    /// Spotlight could not start or did not finish in time.
+    let isUnavailable: Bool
+
+    init(paths: [String], isUnavailable: Bool = false) {
+        self.paths = paths
+        self.isUnavailable = isUnavailable
+    }
+
+    init(arrayLiteral elements: String...) {
+        self.init(paths: elements)
+    }
+}
+
+/// Races work against a deadline. Pure and clock-injectable so the timeout is testable without Spotlight.
+enum SpotlightDeadline {
+    private enum Outcome<Value: Sendable>: Sendable {
+        case finished(Value), timedOut, cancelled
+    }
+
+    /// The work's value, or nil if `seconds` passed first (the work is then cancelled and waited for). If the caller
+    /// is cancelled instead, the work (which sees the cancellation) still gives its own value.
+    static func race<Value: Sendable>(
+        seconds: Int,
+        sleep: @escaping @Sendable (Int) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+        work: @escaping @Sendable () async -> Value
+    ) async -> Value? {
+        await withTaskGroup(of: Outcome<Value>.self) { group in
+            group.addTask { await .finished(work()) }
+            group.addTask {
+                do {
+                    try await sleep(seconds)
+                    return .timedOut
+                } catch {
+                    return .cancelled
+                }
+            }
+            for await outcome in group {
+                switch outcome {
+                case let .finished(value):
+                    group.cancelAll()
+                    return value
+                case .timedOut:
+                    group.cancelAll()
+                    return nil
+                case .cancelled:
+                    continue
+                }
+            }
+            return nil
+        }
     }
 }
 
@@ -81,13 +146,13 @@ struct SpotlightSearcher: FileSearching {
 private final class SpotlightRun {
     private let query = NSMetadataQuery()
     private var observer: NSObjectProtocol?
-    private var continuation: CheckedContinuation<[String], Never>?
+    private var continuation: CheckedContinuation<SpotlightAnswer, Never>?
 
-    func run(predicate: NSPredicate, home: URL, limit: Int) async -> [String] {
+    func run(predicate: NSPredicate, home: URL, limit: Int) async -> SpotlightAnswer {
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if Task.isCancelled {
-                    continuation.resume(returning: [])
+                    continuation.resume(returning: SpotlightAnswer(paths: []))
                     return
                 }
                 self.continuation = continuation
@@ -97,26 +162,31 @@ private final class SpotlightRun {
                 observer = NotificationCenter.default.addObserver(
                     forName: .NSMetadataQueryDidFinishGathering, object: query, queue: .main
                 ) { _ in
-                    MainActor.assumeIsolated { self.finish(limit: limit, cancelled: false) }
+                    MainActor.assumeIsolated { self.finish(limit: limit, outcome: .gathered) }
                 }
-                query.start()
+                if !query.start() {
+                    finish(limit: limit, outcome: .unavailable)
+                }
             }
         } onCancel: {
-            Task { @MainActor in self.finish(limit: limit, cancelled: true) }
+            Task { @MainActor in self.finish(limit: limit, outcome: .cancelled) }
         }
     }
 
-    private func finish(limit: Int, cancelled: Bool) {
+    private enum Outcome {
+        case gathered, cancelled, unavailable
+    }
+
+    private func finish(limit: Int, outcome: Outcome) {
         guard let continuation else { return }
         self.continuation = nil
-        query.disableUpdates()
-        query.stop()
         if let observer {
             NotificationCenter.default.removeObserver(observer)
         }
         observer = nil
         var paths: [String] = []
-        if !cancelled {
+        if outcome == .gathered {
+            query.disableUpdates()
             for index in 0 ..< min(query.resultCount, limit) {
                 let item = query.result(at: index) as? NSMetadataItem
                 if let path = item?.value(forAttribute: NSMetadataItemPathKey) as? String {
@@ -124,6 +194,7 @@ private final class SpotlightRun {
                 }
             }
         }
-        continuation.resume(returning: paths)
+        query.stop()
+        continuation.resume(returning: SpotlightAnswer(paths: paths, isUnavailable: outcome == .unavailable))
     }
 }

@@ -6,20 +6,6 @@ import MainternanceDomain
 /// Every value is a constant expression, never part of a format string, so quotes, `*`, `\`, `%` and `@` in the
 /// owner's text cannot change what the predicate means.
 enum SpotlightPredicate {
-    /// Spotlight's content types per kind (matched against the whole type tree, so subtypes count). `.other` has
-    /// none: it is built as "none of the others".
-    static func contentTypes(for kind: FileKind) -> [String] {
-        switch kind {
-        case .document: ["com.adobe.pdf", "public.composite-content", "public.presentation", "public.spreadsheet"]
-        case .image: ["public.image"]
-        case .video: ["public.movie"]
-        case .audio: ["public.audio"]
-        case .archive: ["public.archive", "public.disk-image"]
-        case .code: ["public.source-code", "public.script", "public.json", "public.xml"]
-        case .other: []
-        }
-    }
-
     /// nil for an empty query.
     static func make(_ query: FileSearchQuery) -> NSPredicate? {
         var parts: [NSPredicate] = []
@@ -47,19 +33,25 @@ enum SpotlightPredicate {
         }
     }
 
+    /// A kind is the file names ending in one of its extensions, from the `FileKind` table: the same table that
+    /// labels each result, so the filter and the label cannot disagree. `.other` is none of the known extensions.
     private static func kindPredicate(_ kind: FileKind) -> NSPredicate {
         if kind == .other {
-            let named = FileKind.allCases.filter { $0 != .other }.flatMap(contentTypes(for:)).map(treeMatch)
+            let known = FileKind.allCases.filter { $0 != .other }.flatMap(FileKind.extensions(for:)).map(nameEnding)
             return NSCompoundPredicate(notPredicateWithSubpredicate: NSCompoundPredicate(
-                orPredicateWithSubpredicates: named
+                orPredicateWithSubpredicates: known
             ))
         }
-        let matches = contentTypes(for: kind).map(treeMatch)
+        let matches = FileKind.extensions(for: kind).map(nameEnding)
         return matches.count == 1 ? matches[0] : NSCompoundPredicate(orPredicateWithSubpredicates: matches)
     }
 
-    private static func treeMatch(_ type: String) -> NSPredicate {
-        comparison("kMDItemContentTypeTree", .equalTo, type)
+    private static func nameEnding(_ pathExtension: String) -> NSPredicate {
+        NSComparisonPredicate(
+            leftExpression: NSExpression(forKeyPath: "kMDItemFSName"),
+            rightExpression: NSExpression(forConstantValue: "." + pathExtension),
+            modifier: .direct, type: .endsWith, options: [.caseInsensitive]
+        )
     }
 
     private static func comparison(
