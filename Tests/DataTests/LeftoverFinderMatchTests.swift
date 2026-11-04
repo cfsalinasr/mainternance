@@ -46,6 +46,15 @@ struct LeftoverFinderMatchTests {
         #expect(await found(fixture, dotted).map(\.name) == ["ABCDE12345.x.app"])
     }
 
+    @Test("an identifier without dots never ticks a folder that merely shares its name")
+    func undottedIdentifierSharesNoFolder() async throws {
+        let fixture = try UninstallerFixture()
+        try fixture.library("Application Support/Google/a.bin", bytes: 10)
+        try fixture.library("Caches/Google/a.bin", bytes: 10)
+        let app = InstalledApp(path: "/Applications/Z.app", name: "Z", bundleID: "Google", version: nil)
+        #expect(await found(fixture, app).filter { $0.match == .identifier }.isEmpty)
+    }
+
     @Test("Group Containers take exactly one capital team segment before the identifier")
     func teamPrefix() async throws {
         let fixture = try UninstallerFixture()

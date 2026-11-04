@@ -79,7 +79,7 @@ struct LeftoverFinder: LeftoverFinding {
         let library = home.appendingPathComponent("Library", isDirectory: true)
         guard Self.isRealFolder(library.path) else { return [] }
         // `InstalledApp` accepts any text, so the identifier is validated again here.
-        let id = AppLister.validIdentifier(app.bundleID)
+        let id = AppLister.validIdentifier(app.bundleID).flatMap { Self.isDotted($0) ? $0 : nil }
         let shown = DisplayText.clean(app.name)
         let name = shown.count >= Self.minimumNameLength ? shown.lowercased() : nil
         var found: [Candidate] = []

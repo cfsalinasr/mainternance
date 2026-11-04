@@ -176,7 +176,7 @@ struct UninstallerResultCard: View {
                     Text(result).font(.system(size: 13, weight: .medium))
                     Text(UninstallerText.trashNote).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                ForEach(state.failureLines, id: \.self) { line in
+                ForEach(Array(state.failureLines.enumerated()), id: \.offset) { _, line in
                     Text(line).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
