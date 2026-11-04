@@ -50,6 +50,9 @@ public final class ScannerViewModel {
     public internal(set) var isQuarantining = false
     /// Called after a scan that ended with a summary was recorded (completed, cancelled, or failed late).
     @ObservationIgnored public var onScanCompleted: (@MainActor (ScanCompletion) -> Void)?
+    /// Called after a scan that started and then failed without a summary (clamscan crashed, a fatal error) was
+    /// recorded. Never for a scan the engine refused before it started, and never together with `onScanCompleted`.
+    @ObservationIgnored public var onScanFailed: (@MainActor (ScanFailure) -> Void)?
     /// Set by the weekly scheduler right before it calls `startScan` and cleared right after; `startScan` reads it
     /// when the scan starts, so the scan is reported as scheduled and every other scan as started by hand.
     @ObservationIgnored var startingScheduledScan = false
@@ -96,6 +99,14 @@ public final class ScannerViewModel {
         case .ready, .updateNeeded(definitionsAge: .some): return true
         default: return false
         }
+    }
+
+    /// The definitions' age in whole days when the engine says they need an update (older than a week) and knows
+    /// their age; nil when they are fresh or the status is not known.
+    public var staleDefinitionsDays: Int? {
+        guard case let .updateNeeded(definitionsAge: age?) = engine, age.isFinite else { return nil }
+        let days = (max(0, age) / 86400).rounded(.down)
+        return days >= Double(Int.max) ? Int.max : Int(days)
     }
 
     public var canInstall: Bool {
@@ -156,11 +167,17 @@ public final class ScannerViewModel {
 
     public func refreshStatus() async {
         await restoreLastScanOnce()
+        await refreshEngineStatus()
+        await reloadQuarantine()
+    }
+
+    /// Only the engine's status (installed, definitions age), for the weekly scheduler: cheap, and reads no saved
+    /// results or quarantine. Left alone while the engine works, which reports its own status at the end.
+    func refreshEngineStatus() async {
         let latest = await scanner.status()
         if !run.isWorking {
             engine = latest
         }
-        await reloadQuarantine()
     }
 
     /// Loads what was saved the first time the screen opens. The flag is set only after the load came back (an empty

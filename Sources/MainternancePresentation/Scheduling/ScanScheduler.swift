@@ -5,9 +5,14 @@ import MainternanceDomain
 ///
 /// Rules: nothing happens while the weekly scan is off; a slot runs at most once (`ScanSchedule.isDue`), and its
 /// run is recorded (in memory and on disk) BEFORE the scan starts, so a crash during the scan cannot make it run
-/// again in a loop; when the scanner cannot start (engine not ready, or a scan, install or quarantine working) the
-/// tick is skipped without recording, nothing is queued, and the next tick tries again. A run missed while the app
-/// was closed or the Mac asleep is made up once, at the first tick that finds the slot due.
+/// again in a loop. Each due tick first re-reads the engine's status (the Scanner screen may never have opened, as
+/// after a launch at login, or ClamAV may have changed since it did); when the scanner cannot start (engine not
+/// ready, or a scan, install or quarantine working) the tick is skipped without recording, nothing is queued, and
+/// the next tick tries again. Definitions older than a week are updated first; if that fails the scan still runs
+/// and its result says how old they are. A scan the engine refused before it started gives its slot back once (in
+/// memory: the record on disk stays, so a restart does not retry), so the next tick retries and a scanner that
+/// always refuses cannot start a scan every minute. A run missed while the app was closed or the Mac asleep is made
+/// up once, at the first tick that finds the slot due.
 ///
 /// A timer ticks every 60 s, at `start()`, and when preferences change; the App target also calls `tick()` when
 /// the Mac wakes.
@@ -27,6 +32,11 @@ public final class ScanScheduler {
     private let sleep: @Sendable (Duration) async throws -> Void
     /// Off until the first `update`.
     private var current: AppPreferences = .defaults
+    /// False until the first `update`: `weeklyPreferences` reads the store until then.
+    private var hasPreferences = false
+    /// A recorded run given back after a scan that never started, and the slot it was in: values pushed later
+    /// that carry it (Settings writes through the same store) do not take the slot away again.
+    private var withdrawn: (run: Date, slot: Date)?
     private var isTicking = false
     private(set) var loop: Task<Void, Never>?
     /// Test seam: how many ticks were asked for.
@@ -50,10 +60,13 @@ public final class ScanScheduler {
     /// While the timer runs, checks at once.
     public func update(_ preferences: AppPreferences) {
         var next = preferences
-        next.lastScheduledRun = ScanSchedule.laterRun(
-            preferences.lastScheduledRun, current.lastScheduledRun, now: now()
-        )
+        var incoming = preferences.lastScheduledRun
+        if let withdrawn, incoming == withdrawn.run {
+            incoming = nil
+        }
+        next.lastScheduledRun = ScanSchedule.laterRun(incoming, current.lastScheduledRun, now: now())
         current = next
+        hasPreferences = true
         if loop != nil {
             Task { await tick() }
         }
@@ -81,29 +94,55 @@ public final class ScanScheduler {
         loop = nil
     }
 
+    /// The values the schedule follows, including the run it recorded: what it holds once Settings reported them,
+    /// and until then what the store has saved (the defaults would say the weekly scan is off).
+    public func weeklyPreferences() async -> AppPreferences {
+        hasPreferences ? current : await preferences.load()
+    }
+
     /// Starts the scheduled scan when its slot is due and the scanner can start; otherwise does nothing.
     public func tick() async {
         tickCount += 1
         guard !isTicking, current.weeklyScanEnabled else { return }
         let moment = now()
-        guard current.schedule.isDue(now: moment, lastRun: current.lastScheduledRun, calendar: calendar),
-              scanner.canStartScan
-        else { return }
+        guard current.schedule.isDue(now: moment, lastRun: current.lastScheduledRun, calendar: calendar) else { return }
         isTicking = true
         defer { isTicking = false }
+        await scanner.refreshEngineStatus()
+        guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+        let previousRun = current.lastScheduledRun
+        await record(moment)
+        // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
+        guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+        if scanner.staleDefinitionsDays != nil {
+            await scanner.updateDefinitions()
+            guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+        }
+        scanner.startingScheduledScan = true
+        let result = await scanner.runScan(.quick)
+        scanner.startingScheduledScan = false
+        if !result.began {
+            giveBack(moment, previousRun: previousRun)
+        }
+        guard let summary = result.summary else { return }
+        lastScheduledScanFinished = summary
+        onScheduledScanFinished?(summary)
+    }
+
+    /// Only the run is written (one locked read-modify-write): Settings owns every other field in the file.
+    private func record(_ moment: Date) async {
         current.lastScheduledRun = moment
-        // Only the run is written (one locked read-modify-write): Settings owns every other field in the file.
         let written = await preferences.update { $0.lastScheduledRun = moment }
         current.lastScheduledRun = ScanSchedule.laterRun(
             current.lastScheduledRun, written.lastScheduledRun, now: moment
         )
-        // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
-        guard current.weeklyScanEnabled, scanner.canStartScan else { return }
-        scanner.startingScheduledScan = true
-        let result = await scanner.startScan(.quick)
-        scanner.startingScheduledScan = false
-        guard let summary = result else { return }
-        lastScheduledScanFinished = summary
-        onScheduledScanFinished?(summary)
+    }
+
+    /// Once per slot: a second refusal in the same slot keeps the run, so the next try is next week.
+    private func giveBack(_ run: Date, previousRun: Date?) {
+        let slot = current.schedule.slotStart(containing: run, calendar: calendar)
+        guard withdrawn?.slot != slot, current.lastScheduledRun == run else { return }
+        withdrawn = (run, slot)
+        current.lastScheduledRun = previousRun
     }
 }

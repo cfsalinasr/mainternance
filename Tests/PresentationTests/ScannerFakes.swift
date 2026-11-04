@@ -88,7 +88,8 @@ final class FakeEngine: ScannerEngine {
     }
 
     func updateDefinitions() -> AsyncStream<InstallEvent> {
-        replay(state.withLock { ($0.updateEvents, $0.statusAfterUpdate) })
+        log.add("update")
+        return replay(state.withLock { ($0.updateEvents, $0.statusAfterUpdate) })
     }
 
     private func replay(_ script: ([InstallEvent], EngineStatus?)) -> AsyncStream<InstallEvent> {
