@@ -66,11 +66,17 @@ public struct ScanSummary: Sendable, Equatable {
     /// clean." and count them as unresolved findings for the health status. The count is also appended to the
     /// message of a `.failed` that ends a scan after findings.
     public let unattributedDetections: Int
+    /// Files the engine skipped because they are over its size or scan limits (very large files, archives with too
+    /// many entries). They were NOT scanned (only partly, at most) and are never "clean", and never a finding.
+    public let tooLarge: Int
+    /// Folders the engine could not open (usually macOS privacy protection). Nothing inside them was scanned, so
+    /// one of these can hide any number of files. Not part of `unreadable` (which counts files).
+    public let unreadableFolders: Int
 
     public init(
         scope: ScanScope, scanned: Int, unreadable: Int, findings: Int,
         startedAt: Date, endedAt: Date, cancelled: Bool, definitionsDate: Date?, permissionDenied: Int = 0,
-        unattributedDetections: Int = 0
+        unattributedDetections: Int = 0, tooLarge: Int = 0, unreadableFolders: Int = 0
     ) {
         self.scope = scope
         self.scanned = scanned
@@ -82,6 +88,8 @@ public struct ScanSummary: Sendable, Equatable {
         self.cancelled = cancelled
         self.definitionsDate = definitionsDate
         self.unattributedDetections = max(0, unattributedDetections)
+        self.tooLarge = max(0, tooLarge)
+        self.unreadableFolders = max(0, unreadableFolders)
     }
 
     /// True only when the scan ran to the end and found nothing, attributed or not. A clean scan can still be
@@ -90,11 +98,11 @@ public struct ScanSummary: Sendable, Equatable {
         findings == 0 && unattributedDetections == 0 && !cancelled
     }
 
-    /// True when the scan was not cancelled and everything was readable. Unaffected by unattributed detections
-    /// (use `isClean` for "clean"). `unreadable > 0` makes it a PARTIAL scan
-    /// (those files were not scanned and are never reported as clean).
+    /// True when the scan was not cancelled and everything was read. Unaffected by unattributed detections
+    /// (use `isClean` for "clean"). Unreadable files, files too large to scan and folders that could not be opened
+    /// make it a PARTIAL scan (they were not scanned and are never reported as clean).
     public var isComplete: Bool {
-        unreadable == 0 && !cancelled
+        unreadable == 0 && tooLarge == 0 && unreadableFolders == 0 && !cancelled
     }
 }
 

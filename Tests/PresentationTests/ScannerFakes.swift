@@ -293,12 +293,14 @@ func makeFinding(_ index: Int, signature: String = "Win.Test.EICAR_HDB-1", path:
 
 func makeSummary(
     scope: ScanScope = .quick, scanned: Int = 100, unreadable: Int = 0, denied: Int = 0, findings: Int = 0,
-    unattributed: Int = 0, cancelled: Bool = false, definitions: Date? = Date(timeIntervalSince1970: 1_799_900_000)
+    unattributed: Int = 0, cancelled: Bool = false, definitions: Date? = Date(timeIntervalSince1970: 1_799_900_000),
+    tooLarge: Int = 0, folders: Int = 0
 ) -> ScanSummary {
     ScanSummary(
         scope: scope, scanned: scanned, unreadable: unreadable, findings: findings,
         startedAt: testNow, endedAt: testNow.addingTimeInterval(30), cancelled: cancelled,
-        definitionsDate: definitions, permissionDenied: denied, unattributedDetections: unattributed
+        definitionsDate: definitions, permissionDenied: denied, unattributedDetections: unattributed,
+        tooLarge: tooLarge, unreadableFolders: folders
     )
 }
 

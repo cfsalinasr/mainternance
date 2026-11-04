@@ -124,7 +124,7 @@ extension ScannerViewModel {
     /// as full, so only a full scan resets them.
     private func resolve(_ summary: ScanSummary, _ coverage: ScanCoverage, refound: Set<String>) {
         let readEverything = summary.unreadable == 0 && summary.permissionDenied == 0
-            && summary.unattributedDetections == 0
+            && summary.unreadableFolders == 0 && summary.tooLarge == 0 && summary.unattributedDetections == 0
         findings = findings.filter { finding in
             guard !refound.contains(Self.key(finding)), coverage.covers(finding.path) else { return true }
             return !readEverything && fileExists(finding.path)

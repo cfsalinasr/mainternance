@@ -46,7 +46,7 @@ struct ClamScanOutputParserTests {
         ("WARNING: Can't open file : Permission denied", .ignored),
         ("/p/priv.txt: Access denied", .unreadable(path: "/p/priv.txt", isPermission: true)),
         ("/p/a: OK: Access denied", .unreadable(path: "/p/a: OK", isPermission: true)),
-        ("/p/Library/Safari: Can't open directory.", .unreadable(path: "/p/Library/Safari", isPermission: true)),
+        ("/p/Library/Safari: Can't open directory.", .unreadableFolder(path: "/p/Library/Safari")),
         (
             "/p/x: lstat() failed: Permission denied. ERROR",
             .unreadable(path: "/p/x: lstat() failed", isPermission: true)

@@ -159,8 +159,7 @@ public final class ClamAVScanner: ScannerEngine {
         let startedAt = now()
         continuation.yield(.started(scope: scope))
         let excluded = ScanExclusions.directories(for: scope, home: home, paths: paths)
-        let arguments = ["--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive"]
-            + ScanExclusions.arguments(for: excluded) + ["--"] + roots
+        let arguments = Self.scanArguments(database: paths.databaseDirectory.path, excluded: excluded, roots: roots)
         let context = Context(
             scope: scope,
             startedAt: startedAt,
@@ -189,14 +188,17 @@ public final class ClamAVScanner: ScannerEngine {
     }
 
     /// Starts the child inside the same critical section that checks the quit and cancel flags and records the
-    /// process, so `terminateNow()` / `cancelScan()` can never slip between the check and the start.
+    /// process, so `terminateNow()` / `cancelScan()` can never slip between the check and the start. The child is
+    /// started with downloads of online-only (iCloud) files turned off, see `DatalessPolicy`.
     /// `runner.run` therefore executes WITH the lock held: a concurrent `terminateNow()` (the quit hook) or
     /// `cancelScan()` may block for the duration of the spawn (milliseconds), and a runner must never call back
     /// into the scanner.
     func launch(_ clamscan: String, _ arguments: [String]) -> RunningProcess? {
         state.withLock { current -> RunningProcess? in
             guard !current.quitRequested, !current.cancelRequested, !Task.isCancelled else { return nil }
-            let process = runner.run(clamscan, arguments: arguments, environment: nil, lowPriority: true)
+            let process = DatalessPolicy.withMaterializationOff {
+                runner.run(clamscan, arguments: arguments, environment: nil, lowPriority: true)
+            }
             current.current = process
             return process
         }
@@ -263,7 +265,8 @@ public final class ClamAVScanner: ScannerEngine {
         let path: String
         switch line {
         case .ignored: return line
-        case let .scanned(value), let .found(value, _), let .unreadable(value, _): path = value
+        case let .scanned(value), let .found(value, _), let .unreadable(value, _), let .unreadableFolder(value),
+             let .tooLarge(value): path = value
         }
         let isFound = if case .found = line {
             true
@@ -313,7 +316,8 @@ public final class ClamAVScanner: ScannerEngine {
             scope: context.scope, scanned: tally.scanned, unreadable: tally.unreadable,
             findings: tally.findings, startedAt: context.startedAt, endedAt: now(), cancelled: cancelled,
             definitionsDate: context.definitionsDate, permissionDenied: tally.permissionDenied,
-            unattributedDetections: tally.unattributedDetections
+            unattributedDetections: tally.unattributedDetections, tooLarge: tally.tooLarge,
+            unreadableFolders: tally.unreadableFolders
         )
     }
 }

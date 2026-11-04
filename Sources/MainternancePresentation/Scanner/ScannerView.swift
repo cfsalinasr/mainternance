@@ -49,9 +49,8 @@ public struct ScannerView: View {
                 Spacer()
             }
             .disabled(!model.canStartScan)
-            Text(ScannerText.quickScope).font(.system(size: 12)).foregroundStyle(.secondary)
-            Text("\(ScannerText.fullScope) \(ScannerText.cloudAdvisory)")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(ScannerText.quickScopeNote).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(ScannerText.fullScopeNote).font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
 

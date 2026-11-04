@@ -13,13 +13,32 @@ enum ScannerText {
     static let fullDiskAccessButton = "Open Full Disk Access settings"
     static let homebrewURL = "https://brew.sh"
     static let notMovedNote = "could not be moved; still in its original place"
+    /// What happens to files stored only in iCloud. The scanner asks macOS not to download them (best effort), so
+    /// this never claims they are skipped for sure.
+    private static let onlineOnlyFiles = [
+        "The scan asks macOS not to download files that are stored only in iCloud, so those are not checked and are",
+        "counted as files that could not be read. If macOS downloads one anyway, it is checked and takes up space",
+        "on this Mac."
+    ].joined(separator: " ")
+    /// A quick scan covers the Desktop, which iCloud "Desktop & Documents" can keep online.
+    static let quickCloudAdvisory = "Your Desktop may hold iCloud Drive files. \(onlineOnlyFiles)"
+    /// A full scan covers Desktop and Documents, and skips the iCloud Drive and cloud storage folders.
     static let cloudAdvisory = [
+        "Your Desktop and Documents may hold iCloud Drive files. \(onlineOnlyFiles)",
         "A full scan skips your iCloud Drive (~/Library/Mobile Documents) and cloud storage",
         "(~/Library/CloudStorage) folders, so files that only live there are not checked."
+    ].joined(separator: " ")
+    /// Shown for a scan of a chosen folder only when some files could not be read: they may be online-only files.
+    static let customCloudAdvisory = [
+        "Some of these may be files stored only in iCloud or other cloud storage: the scan asks macOS not to",
+        "download them, so they are not checked."
     ].joined(separator: " ")
     static let quickScope =
         "Quick scan: Downloads, Desktop, Applications and the Launch Agents and Launch Daemons folders."
     static let fullScope = "Full scan: your home folder and Applications."
+    /// The scope texts under the scan buttons.
+    static let quickScopeNote = "\(quickScope) \(quickCloudAdvisory)"
+    static let fullScopeNote = "\(fullScope) \(cloudAdvisory)"
     static let installStarting = "Starting the install…"
     static let updateStarting = "Downloading definitions…"
     static let checkingFile = "Checking the file again before moving it…"
@@ -77,6 +96,25 @@ enum ScannerText {
         return "\(value.formatted(.number.locale(locale))) \(value == 1 ? "file" : "files")"
     }
 
+    static func folders(_ count: Int, locale: Locale = .current) -> String {
+        let value = max(0, count)
+        return "\(value.formatted(.number.locale(locale))) \(value == 1 ? "folder" : "folders")"
+    }
+
+    /// "1 file was too large to scan and was not checked." / "3 files were too large ...".
+    static func tooLarge(_ count: Int, locale: Locale = .current) -> String {
+        let verb = count == 1 ? "was" : "were"
+        return "\(files(count, locale: locale)) \(verb) too large to scan and \(verb) not checked."
+    }
+
+    /// "1 folder (and everything in it) could not be opened and was not scanned." / "12 folders (and everything in
+    /// them) ... were not scanned."
+    static func unreadableFolders(_ count: Int, locale: Locale = .current) -> String {
+        let (inside, verb) = count == 1 ? ("it", "was") : ("them", "were")
+        return "\(folders(count, locale: locale)) (and everything in \(inside)) could not be opened and \(verb) "
+            + "not scanned."
+    }
+
     /// Plural-aware: "1 detection could not be attributed to a file (unusual file names). The scan is not clean."
     /// and "3 detections could ...".
     static func unattributed(_ count: Int) -> String {
@@ -100,12 +138,41 @@ enum ScannerText {
             + "(unusual file names). It stays counted until \(clearedBy) finishes without such detections."
     }
 
-    static func permissionExplanation(_ count: Int, locale: Locale = .current) -> String {
-        [
-            "\(files(count, locale: locale)) could not be read because macOS denied access.",
-            "This usually means Mainternance does not have Full Disk Access. "
-                + (count == 1 ? "That file was not scanned." : "Those files were not scanned.")
-        ].joined(separator: " ")
+    /// Why macOS denied access, for `count` files and `folders` folders (everything in a folder was skipped).
+    static func permissionExplanation(_ count: Int, folders: Int = 0, locale: Locale = .current) -> String {
+        let cause = "This usually means Mainternance does not have Full Disk Access."
+        switch (max(0, count), max(0, folders)) {
+        case (_, 0):
+            return [
+                "\(files(count, locale: locale)) could not be read because macOS denied access.", cause,
+                count == 1 ? "That file was not scanned." : "Those files were not scanned."
+            ].joined(separator: " ")
+        case let (0, folderCount):
+            return [
+                "\(self.folders(folderCount, locale: locale)) could not be opened because macOS denied access.", cause,
+                folderCount == 1 ? "Nothing in that folder was scanned." : "Nothing in those folders was scanned."
+            ].joined(separator: " ")
+        case let (fileCount, folderCount):
+            let both = "\(files(fileCount, locale: locale)) and \(self.folders(folderCount, locale: locale))"
+            return [
+                "\(both) could not be opened because macOS denied access.", cause,
+                "\(fileCount == 1 ? "That file" : "Those files") and everything in "
+                    + "\(folderCount == 1 ? "that folder was" : "those folders were") not scanned."
+            ].joined(separator: " ")
+        }
+    }
+
+    // MARK: - Names
+
+    /// A path as shown on screen: control, bidi and zero-width characters removed (a right-to-left override can
+    /// disguise `invoice\u{202E}gpj.app` as `invoiceppa.jpg`). Never used for an action: actions keep the raw path.
+    static func shownPath(_ path: String) -> String {
+        DisplayText.clean(path)
+    }
+
+    /// The file name of `path`, cleaned like `shownPath`.
+    static func shownName(_ path: String) -> String {
+        DisplayText.clean((path as NSString).lastPathComponent)
     }
 
     // MARK: - Engine

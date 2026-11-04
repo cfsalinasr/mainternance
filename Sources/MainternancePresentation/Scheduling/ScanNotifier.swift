@@ -63,9 +63,15 @@ enum ScanNotices {
         }
         var body = "Scanned \(files(max(0, summary.scanned)))"
         body += completion.ranToTheEnd ? "." : " before it stopped."
-        // `unreadable` counts files.
+        // `unreadable` counts files; folders and files too large to scan are counted on their own.
         if summary.unreadable > 0 {
             body += " \(files(summary.unreadable)) could not be read."
+        }
+        if summary.unreadableFolders > 0 {
+            body += " \(counted(summary.unreadableFolders, "folder")) could not be opened."
+        }
+        if summary.tooLarge > 0 {
+            body += " \(files(summary.tooLarge)) \(summary.tooLarge == 1 ? "was" : "were") too large to scan."
         }
         if count > 0 {
             body += " \(reviewHint)"

@@ -2,6 +2,17 @@ import Foundation
 import MainternanceDomain
 
 extension ClamAVScanner {
+    /// Without it clamscan silently skips a file over its size or scan limits (`--max-filesize` and friends) and
+    /// still prints `OK`. With it each such file is reported as `Heuristics.Limits.Exceeded.* FOUND`, which the
+    /// parser counts as "too large to scan", never as scanned and never as a finding.
+    static let alertExceedsMax = "--alert-exceeds-max=yes"
+
+    /// The argv of a scan: options first, then `--`, then the roots (so a folder named like an option is data).
+    static func scanArguments(database: String, excluded: [String], roots: [String]) -> [String] {
+        ["--database=\(database)", "-v", "--no-summary", alertExceedsMax, "--recursive"]
+            + ScanExclusions.arguments(for: excluded) + ["--"] + roots
+    }
+
     /// Pure exit-code mapping, see the type documentation.
     static func outcome(
         status: Int32,

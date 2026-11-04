@@ -7,12 +7,17 @@ struct ScanTally {
     private(set) var unreadable = 0
     private(set) var permissionDenied = 0
     private(set) var findings = 0
+    /// Files skipped for clamscan's size and scan limits; never scanned, never findings.
+    private(set) var tooLarge = 0
+    /// Folders clamscan could not open; nothing inside them was scanned. Not part of `unreadable` (files).
+    private(set) var unreadableFolders = 0
     private(set) var current = ""
     /// Lines dropped because their path was not plausible (forged by a file name, outside the roots). Debug only.
     private(set) var ignoredSuspicious = 0
     /// A stderr `ERROR:` line (clamscan's fatal messages, for example a database problem) was seen.
     private(set) var fatalSeen = false
-    private var unreadablePaths = Set<String>()
+    /// Every path counted as not scanned (unreadable file, unreadable folder, too large), so each counts once.
+    private var notScannedPaths = Set<String>()
     private var reportedScanned = 0
     private var lastProgressAt: Date?
 
@@ -26,9 +31,10 @@ struct ScanTally {
     }
 
     /// clamscan exited 1 (infected files found) but no finding was accepted: a detection exists that could not be
-    /// attributed (for example its line was mangled by a file name), so the scan must not look clean.
+    /// attributed (for example its line was mangled by a file name), so the scan must not look clean. With
+    /// `--alert-exceeds-max` a file over a limit also makes clamscan exit 1, so a limits alert explains the exit.
     mutating func noteExitOne() {
-        if findings == 0 {
+        if findings == 0, tooLarge == 0 {
             unattributedDetections = max(unattributedDetections, 1)
         }
     }
@@ -54,13 +60,13 @@ struct ScanTally {
     /// a fatal start-up problem, so a scan that exits 2 never reports zero unreadable files. When no line named
     /// the failing file (for example an allocation failure), one unattributed error is recorded.
     mutating func noteExitTwo() {
-        if unreadable == 0 {
+        if unreadable == 0, unreadableFolders == 0 {
             unreadable = 1
         }
     }
 
     /// Counts the line and returns the finding, if the line was one. FOUND files count as scanned; unreadable
-    /// files are never scanned and never clean.
+    /// files and folders and files too large to scan are never scanned and never clean.
     mutating func consume(_ line: ClamLine) -> (path: String, signature: String)? {
         switch line {
         case let .scanned(path):
@@ -72,22 +78,34 @@ struct ScanTally {
             current = path
             return (path, signature)
         case let .unreadable(path, isPermission):
-            // One entry per path, whatever number of messages clamscan printed for it. Past the cap the set stops
-            // growing (bounded memory) and every further line is counted.
-            if unreadablePaths.contains(path) {
-                break
-            }
-            if unreadablePaths.count < Self.maxTrackedPaths {
-                unreadablePaths.insert(path)
-            }
+            guard isFirstReport(of: path) else { break }
             unreadable += 1
             if isPermission {
                 permissionDenied += 1
             }
+        case let .unreadableFolder(path):
+            guard isFirstReport(of: path) else { break }
+            unreadableFolders += 1
+        case let .tooLarge(path):
+            guard isFirstReport(of: path) else { break }
+            tooLarge += 1
+            current = path
         case .ignored:
             break
         }
         return nil
+    }
+
+    /// One entry per path, whatever number of messages clamscan printed for it. Past the cap the set stops growing
+    /// (bounded memory) and every further line is counted.
+    private mutating func isFirstReport(of path: String) -> Bool {
+        if notScannedPaths.contains(path) {
+            return false
+        }
+        if notScannedPaths.count < Self.maxTrackedPaths {
+            notScannedPaths.insert(path)
+        }
+        return true
     }
 
     /// A progress event when at least `interval` seconds passed since the last one (the first is immediate).

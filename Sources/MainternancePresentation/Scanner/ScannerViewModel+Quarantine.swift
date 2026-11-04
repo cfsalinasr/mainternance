@@ -94,7 +94,8 @@ public extension ScannerViewModel {
         await statusStore.remember(memory)
     }
 
+    /// The file name as shown in messages (cleaned of control and bidi characters).
     internal static func name(of path: String) -> String {
-        (path as NSString).lastPathComponent
+        ScannerText.shownName(path)
     }
 }

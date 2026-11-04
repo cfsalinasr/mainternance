@@ -6,8 +6,13 @@ public enum ClamLine: Equatable, Sendable {
     case scanned(path: String)
     /// `<path>: <Signature> FOUND`
     case found(path: String, signature: String)
-    /// A file or directory clamscan could not read; `isPermission` for permission-type reasons.
+    /// A file clamscan could not read; `isPermission` for permission-type reasons.
     case unreadable(path: String, isPermission: Bool)
+    /// `<dir>: Can't open directory.`: a folder clamscan could not enter, so nothing inside it was scanned.
+    case unreadableFolder(path: String)
+    /// `<path>: Heuristics.Limits.Exceeded[.<limit>] FOUND` (printed with `--alert-exceeds-max=yes`): the file is
+    /// over a size or scan limit and was skipped or only partly read. Never a finding, never clean.
+    case tooLarge(path: String)
     /// Anything else: `Scanning <path>` progress lines, informational lines (`Empty file`, `Excluded`), noise.
     case ignored
 }
@@ -18,6 +23,7 @@ public enum ClamLine: Equatable, Sendable {
 /// - stdout `<path>: OK`, `<path>: <Signature> FOUND`, `<path>: <cl_strerror> ERROR`
 /// - stdout `<path>: Access denied` (a file the user cannot read), `<dir>: Can't open directory.`
 /// - stderr `WARNING: Can't open file <path>: <strerror>` (open failed, e.g. `Permission denied`)
+/// - stdout `<path>: Heuristics.Limits.Exceeded.<Limit> FOUND` (with `--alert-exceeds-max=yes`): over a limit.
 /// - stdout `Scanning <path>` (`-v` progress) and informational `<path>: Empty file` / `Excluded` /
 ///   `Symbolic link`: ignored.
 ///
@@ -30,6 +36,8 @@ public enum ClamLine: Equatable, Sendable {
 public enum ClamScanOutputParser {
     private static let separator = ": "
     private static let cantOpenFile = "WARNING: Can't open file "
+    /// The name family clamscan gives a file it skipped for its limits (MaxFileSize, MaxScanSize, MaxFiles, ...).
+    private static let limitsExceeded = "Heuristics.Limits.Exceeded"
     private static let permissionMarkers = [
         "permission denied", "operation not permitted", "access denied", "can't open file or directory"
     ]
@@ -45,7 +53,7 @@ public enum ClamScanOutputParser {
         // A FOUND line is parsed even when its path is not absolute: the caller must see it to account for a
         // detection whose line was mangled by a file name (a dropped detection is never silent).
         if line.hasSuffix(" FOUND") {
-            return split(String(line.dropLast(6))).map { .found(path: $0.path, signature: $0.rest) } ?? .ignored
+            return parseFound(String(line.dropLast(6)))
         }
         guard line.hasPrefix("/") else { return .ignored }
         if line.hasSuffix(": OK") {
@@ -60,15 +68,28 @@ public enum ClamScanOutputParser {
         }
         if line.hasSuffix(": Can't open directory.") {
             // The reason is not printed. opendir() on a listed directory fails for permissions in practice
-            // (macOS privacy protection), so it is counted as a permission problem.
-            return .unreadable(path: String(line.dropLast(23)), isPermission: true)
+            // (macOS privacy protection), so callers treat it as a permission problem.
+            return .unreadableFolder(path: String(line.dropLast(23)))
         }
         return .ignored
+    }
+
+    /// A limits alert is a file skipped for being too large, never a detection.
+    private static func parseFound(_ rest: String) -> ClamLine {
+        guard let parts = split(rest) else { return .ignored }
+        if isLimitsExceeded(parts.rest) {
+            return .tooLarge(path: parts.path)
+        }
+        return .found(path: parts.path, signature: parts.rest)
     }
 
     private static func parseCantOpen(_ rest: String) -> ClamLine {
         guard let parts = split(rest) else { return .ignored }
         return .unreadable(path: parts.path, isPermission: isPermission(parts.rest))
+    }
+
+    private static func isLimitsExceeded(_ signature: String) -> Bool {
+        signature == limitsExceeded || signature.hasPrefix(limitsExceeded + ".")
     }
 
     private static func isPermission(_ message: String) -> Bool {

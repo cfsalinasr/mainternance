@@ -134,8 +134,16 @@ public final class ScannerViewModel {
         return 0
     }
 
+    /// Folders the last scan could not open; in practice macOS privacy protection, so Full Disk Access helps.
+    public var permissionDeniedFolders: Int {
+        if case let .finished(summary) = run {
+            return summary.unreadableFolders
+        }
+        return 0
+    }
+
     public var needsFullDiskAccess: Bool {
-        permissionDeniedCount > 0
+        permissionDeniedCount > 0 || permissionDeniedFolders > 0
     }
 
     public func openFullDiskAccessSettings() {

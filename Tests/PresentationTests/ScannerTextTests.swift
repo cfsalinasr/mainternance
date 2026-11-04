@@ -20,8 +20,16 @@ struct ScannerTextTests {
         #expect(ScannerText.fullDiskAccessButton == "Open Full Disk Access settings")
         #expect(ScannerText.notMovedNote == "could not be moved; still in its original place")
         #expect(ScannerText.cloudAdvisory == [
-            "A full scan skips your iCloud Drive (~/Library/Mobile Documents) and cloud storage",
-            "(~/Library/CloudStorage) folders, so files that only live there are not checked."
+            "Your Desktop and Documents may hold iCloud Drive files. The scan asks macOS not to download files that",
+            "are stored only in iCloud, so those are not checked and are counted as files that could not be read. If",
+            "macOS downloads one anyway, it is checked and takes up space on this Mac. A full scan skips your iCloud",
+            "Drive (~/Library/Mobile Documents) and cloud storage (~/Library/CloudStorage) folders, so files that only",
+            "live there are not checked."
+        ].joined(separator: " "))
+        #expect(ScannerText.quickCloudAdvisory == [
+            "Your Desktop may hold iCloud Drive files. The scan asks macOS not to download files that are stored only",
+            "in iCloud, so those are not checked and are counted as files that could not be read. If macOS downloads",
+            "one anyway, it is checked and takes up space on this Mac."
         ].joined(separator: " "))
     }
 
@@ -40,7 +48,8 @@ struct ScannerTextTests {
             .contains("Quick scan: Downloads, Desktop, Applications and the Launch Agents and Launch Daemons folders."))
         #expect(result.lines.contains("1,234 files scanned."))
         #expect(result.lines.contains("Virus definitions from 14 Jan 2027."))
-        #expect(!result.lines.contains { $0.contains("iCloud") })
+        // A quick scan covers the Desktop, which iCloud can keep online: it says so, and never claims a skip.
+        #expect(result.lines.filter { $0.contains("iCloud") } == [ScannerText.quickCloudAdvisory])
         let words = (result.lines + [result.title]).joined(separator: " ").lowercased()
         for banned in ["safe", "protected", "your mac looks clean"] {
             #expect(!words.contains(banned), Comment(rawValue: banned))

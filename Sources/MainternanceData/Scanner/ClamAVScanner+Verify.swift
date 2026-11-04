@@ -2,12 +2,14 @@ import Foundation
 import MainternanceDomain
 
 extension ClamAVScanner {
-    /// Re-scans exactly one file with `[clamscan, --database=<dir>, -v, --no-summary, --, <path>]` (low priority).
+    /// Re-scans exactly one file with `[clamscan, --database=<dir>, -v, --no-summary, --alert-exceeds-max=yes, --,
+    /// <path>]` (low priority).
     ///
     /// Shares the single-flight slot with scans (refused while one runs), is cancelled by `cancelScan()` and by
     /// cancelling the calling task, and obeys `terminateNow()`. `.confirmed` only for a FOUND line whose path is
     /// EXACTLY the requested path (a forged line cannot equal it: output lines never contain a newline, and a path
     /// with a newline can therefore never be confirmed), `.clean` for its OK line with exit 0, otherwise `.failed`.
+    /// A file over the engine's size or scan limits was not (fully) checked, so it is `.failed`, never `.clean`.
     /// Only an absolute path of a regular file is accepted: clamscan does not follow symlinks and a directory would
     /// start a recursive scan.
     public func verifyFinding(path: String) async -> VerifyResult {
@@ -30,7 +32,9 @@ extension ClamAVScanner {
         guard let clamscan = locator.path(for: "clamscan") else {
             return .failed(message: "Scanning engine is not ready: ClamAV is not installed")
         }
-        let arguments = ["--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", "--", path]
+        let arguments = [
+            "--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", Self.alertExceedsMax, "--", path
+        ]
         guard let process = launch(clamscan, arguments) else {
             return .failed(message: "The check was stopped")
         }
@@ -55,6 +59,8 @@ extension ClamAVScanner {
 
 /// Picks the one verdict that names the requested path out of a verification's output.
 struct VerifyCollector {
+    static let tooLargeMessage = "The file is too large for the scanner to check fully."
+
     private let path: String
     private var verdict: ClamLine?
     private var tail = StderrTail()
@@ -67,6 +73,12 @@ struct VerifyCollector {
         let parsed = ClamScanOutputParser.parse(text)
         switch parsed {
         case let .found(found, _) where found == path:
+            if case .found? = verdict {
+                return
+            }
+            verdict = parsed
+        case let .tooLarge(skipped) where skipped == path:
+            // Beats an OK line for the same file (the file was not fully read), never a real detection.
             if case .found? = verdict {
                 return
             }
@@ -88,6 +100,8 @@ struct VerifyCollector {
             .confirmed(signature: signature)
         case .scanned? where status == 0:
             .clean
+        case .tooLarge?:
+            .failed(message: Self.tooLargeMessage)
         default:
             .failed(message: tail.failureMessage(prefix: "The file could not be checked (exit \(status))"))
         }
