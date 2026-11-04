@@ -29,12 +29,20 @@ public final class UninstallerViewState {
     /// Why a leftover that is still listed could not be moved last time.
     private(set) var failures: [String: String] = [:]
     /// The app and its measured state the last outcome was about, for the result card.
-    private var lastApp: (name: String, isLowerBound: Bool)?
+    private var lastApp: LastApp?
+
+    private struct LastApp {
+        let id: String
+        let name: String
+        let isLowerBound: Bool
+    }
 
     @ObservationIgnored private let lister: any AppListing
     @ObservationIgnored private let finder: any LeftoverFinding
     @ObservationIgnored private let mover: any AppUninstalling
     @ObservationIgnored private var generation = 0
+    /// The newest lookup started by `startSelect`.
+    @ObservationIgnored private var lookup: Task<Void, Never>?
 
     public init(lister: any AppListing, finder: any LeftoverFinding, mover: any AppUninstalling) {
         self.lister = lister
@@ -123,6 +131,12 @@ public final class UninstallerViewState {
         }
     }
 
+    /// What the list calls: starts `select` as a task and cancels the previous lookup (which then applies nothing).
+    func startSelect(_ id: String?) {
+        lookup?.cancel()
+        lookup = Task { await select(id) }
+    }
+
     /// Selects an app and loads its leftovers. An id that is not listed (or nil) clears the selection. Ignored while
     /// moving or reviewing. A lookup that was overtaken by a newer one, or cancelled, is dropped.
     func select(_ id: String?) async {
@@ -132,6 +146,11 @@ public final class UninstallerViewState {
         guard let id, let app = apps.first(where: { $0.id == id }) else {
             clearSelection()
             return
+        }
+        if lastApp?.id != id {
+            // A result never sits beside another app's details.
+            lastOutcome = nil
+            lastApp = nil
         }
         selectedID = id
         details = nil
@@ -190,6 +209,8 @@ public final class UninstallerViewState {
     }
 
     private func clearSelection() {
+        // Overtakes a lookup still in flight, so it cannot set details for an app no longer selected.
+        generation += 1
         isLoadingDetails = false
         selectedID = nil
         details = nil
@@ -200,7 +221,7 @@ public final class UninstallerViewState {
 
     private func apply(_ outcome: UninstallOutcome, to moved: AppDetails) {
         lastOutcome = outcome
-        lastApp = (moved.app.displayName, moved.appIsLowerBound)
+        lastApp = LastApp(id: moved.app.id, name: moved.app.displayName, isLowerBound: moved.appIsLowerBound)
         failures = Dictionary(
             outcome.failedLeftovers.map { ($0.leftover.id, $0.reason) }, uniquingKeysWith: { first, _ in first }
         )

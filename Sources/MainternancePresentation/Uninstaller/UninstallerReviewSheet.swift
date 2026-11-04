@@ -14,7 +14,8 @@ struct UninstallerReviewSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if state.includesApp, let details = state.details {
                         PreviewListRow(
-                            title: UninstallerText.appTitle(details.app), subtitle: details.app.id,
+                            title: UninstallerText.appTitle(details.app),
+                            subtitle: UninstallerText.appPath(details.app),
                             trailing: UninstallerText.size(details)
                         )
                     }

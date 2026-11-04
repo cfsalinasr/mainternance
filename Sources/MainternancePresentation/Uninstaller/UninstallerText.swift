@@ -53,6 +53,11 @@ enum UninstallerText {
         return "\(app.displayName) \(version)"
     }
 
+    /// The app's folder as shown (the review's second line): cleaned, never the raw path.
+    static func appPath(_ app: InstalledApp) -> String {
+        DisplayText.clean(app.id)
+    }
+
     static func selected(_ bytes: Int64, lowerBound: Bool) -> String {
         "Selected: \(size(bytes, lowerBound: lowerBound))"
     }

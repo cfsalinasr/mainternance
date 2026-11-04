@@ -43,7 +43,7 @@ public struct UninstallerView: View {
                 Text(UninstallerText.noMatch).font(.system(size: 12)).foregroundStyle(.secondary).padding()
                 Spacer()
             } else {
-                List(selection: Binding(get: { state.selectedID }, set: { id in Task { await state.select(id) } })) {
+                List(selection: Binding(get: { state.selectedID }, set: { id in state.startSelect(id) })) {
                     ForEach(state.visibleApps) { app in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(app.displayName).font(.system(size: 13, weight: .medium))
