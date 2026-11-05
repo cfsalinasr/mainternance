@@ -25,6 +25,10 @@ public final class ScanScheduler {
     /// come from `ScannerViewModel.onScanCompleted` (which says whether the scan was scheduled), not from here, so
     /// one scan never notifies twice.
     public var onScheduledScanFinished: (@MainActor (ScanSummary) -> Void)?
+    /// Called after each run is recorded with whether it reached the disk. A run that could not be saved still
+    /// counts for this session (it is held in memory, so the slot never runs twice while the app runs), but it may
+    /// run again after a restart: Settings says so.
+    public var onRunRecorded: (@MainActor (_ saved: Bool) -> Void)?
 
     private let scanner: ScannerViewModel
     private let preferences: any PreferencesStoring
@@ -145,8 +149,9 @@ public final class ScanScheduler {
         current.lastScheduledRun = moment
         let written = await preferences.update { $0.lastScheduledRun = moment }
         current.lastScheduledRun = ScanSchedule.laterRun(
-            current.lastScheduledRun, written.lastScheduledRun, now: moment
+            current.lastScheduledRun, written.preferences.lastScheduledRun, now: moment
         )
+        onRunRecorded?(written.saved)
     }
 
     /// Once per slot: a second refusal in the same slot keeps the run, so the next try is next week.

@@ -43,7 +43,7 @@ struct QuarantineRestoreBindingTests {
         #expect(permissions(landed) == 0o640)
         #expect(names(other).isEmpty)
         #expect(names(moved) == ["a.txt"])
-        #expect(await store.records().isEmpty)
+        #expect(try await store.records().isEmpty)
     }
 
     @Test("a destination folder swapped for a symlink between the check and the open is refused")
@@ -62,7 +62,7 @@ struct QuarantineRestoreBindingTests {
         #expect(names(other).isEmpty)
         #expect(names(moved).isEmpty)
         #expect(fix.exists(fix.vault.appendingPathComponent(record.id.uuidString)))
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 
     @Test("a folder higher up swapped so the opened folder lies in the quarantine folder is refused")
@@ -86,7 +86,7 @@ struct QuarantineRestoreBindingTests {
         await #expect(throws: QuarantineError.protectedPath) { try await store.restore(record.id) }
         #expect(names(trap).isEmpty)
         #expect(fix.exists(vault.appendingPathComponent(record.id.uuidString)))
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 
     @Test("a destination folder that became a symlink into the quarantine folder is refused")
@@ -97,7 +97,7 @@ struct QuarantineRestoreBindingTests {
         swapForSymlink(fix.area, aside: fix.temp.url.appendingPathComponent("files-moved"), decoy: fix.vault)
         await #expect(throws: QuarantineError.protectedPath) { try await fix.store.restore(record.id) }
         #expect(!names(fix.vault).contains("a.txt"))
-        #expect(await fix.store.records() == [record])
+        #expect(try await fix.store.records() == [record])
     }
 
     @Test("a destination folder that became a symlink to a file is a missing target")
@@ -110,7 +110,7 @@ struct QuarantineRestoreBindingTests {
         swapForSymlink(fix.area, aside: fix.temp.url.appendingPathComponent("files-moved"), decoy: plain)
         await #expect(throws: QuarantineError.restoreTargetMissing) { try await fix.store.restore(record.id) }
         #expect(try String(contentsOf: plain, encoding: .utf8) == "plain")
-        #expect(await fix.store.records() == [record])
+        #expect(try await fix.store.records() == [record])
     }
 }
 
@@ -125,8 +125,8 @@ struct QuarantineKeepsCopyTests {
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fix.area.path) }
         await #expect(throws: QuarantineError.self) { try await store.quarantine(path: file.path, signature: "S") }
         #expect(try String(contentsOf: file, encoding: .utf8) == "keep")
-        #expect(await store.records().isEmpty)
-        let flagged = await store.stillInPlace()
+        #expect(try await store.records().isEmpty)
+        let flagged = try await store.stillInPlace()
         #expect(flagged.map(\.originalPath) == [file.path])
         let copy = try fix.vault.appendingPathComponent(#require(flagged.first).id.uuidString)
         #expect(try String(contentsOf: copy, encoding: .utf8) == "keep")
@@ -146,10 +146,10 @@ struct QuarantineKeepsCopyTests {
             try await store.quarantine(path: file.path, signature: "S")
         }
         #expect(try String(contentsOf: file, encoding: .utf8) == "new")
-        let records = await store.records()
+        let records = try await store.records()
         #expect(records.map(\.originalPath) == [file.path])
         let copy = try fix.vault.appendingPathComponent(#require(records.first).id.uuidString)
         #expect(try String(contentsOf: copy, encoding: .utf8) == "old")
-        #expect(await store.stillInPlace().isEmpty)
+        #expect(try await store.stillInPlace().isEmpty)
     }
 }

@@ -143,7 +143,8 @@ struct PreferencesStoreTests: PreferencesStoreFixture {
         let result = await store(temp).update { $0.weeklyDigest = false }
         var expected = sample
         expected.weeklyDigest = false
-        #expect(result == expected)
+        #expect(result.preferences == expected)
+        #expect(result.saved)
         #expect(await store(temp).load() == expected)
     }
 
@@ -153,7 +154,8 @@ struct PreferencesStoreTests: PreferencesStoreFixture {
         let result = await store(temp).update { $0.weeklyScanEnabled = true }
         var expected = AppPreferences.defaults
         expected.weeklyScanEnabled = true
-        #expect(result == expected)
+        #expect(result.preferences == expected)
+        #expect(result.saved)
         #expect(await store(temp).load() == expected)
     }
 
@@ -163,10 +165,10 @@ struct PreferencesStoreTests: PreferencesStoreFixture {
         let prefs = store(temp)
         _ = await prefs.update { $0.lastScheduledRun = Self.now }
         let back = await prefs.update { $0.lastScheduledRun = Self.now.addingTimeInterval(-86400) }
-        #expect(back.lastScheduledRun == Self.now)
+        #expect(back.preferences.lastScheduledRun == Self.now)
         try writeRaw(#"{"lastScheduledRun":1802592000}"#, temp) // 30 days after `now`
         let fixed = await prefs.update { $0.lastScheduledRun = Self.now }
-        #expect(fixed.lastScheduledRun == Self.now)
+        #expect(fixed.preferences.lastScheduledRun == Self.now)
     }
 
     @Test("a slow update holds the lock: a concurrent update waits and both changes survive")
@@ -184,7 +186,7 @@ struct PreferencesStoreTests: PreferencesStoreFixture {
         _ = await waiting.next()
         let fast = Task.detached { await prefs.update { $0.problemAlerts = false } }
         _ = await slow.value
-        let final = await fast.value
+        let final = await fast.value.preferences
         #expect(final.lastScheduledRun == Self.now)
         #expect(!final.problemAlerts)
         #expect(await store(temp).load() == final)
@@ -214,7 +216,8 @@ struct PreferencesStoreTests: PreferencesStoreFixture {
         let prefs = store(temp)
         prefs.failMovingAside = true
         let result = await prefs.update { $0.weeklyDigest = false }
-        #expect(!result.weeklyDigest)
+        #expect(!result.preferences.weeklyDigest)
+        #expect(!result.saved)
         #expect(try String(contentsOf: fileURL(temp), encoding: .utf8) == "garbage")
     }
 }

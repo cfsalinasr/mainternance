@@ -37,6 +37,9 @@ public final class ScanAutomation {
             scheduler.update(preferences)
             notifier.update(preferences)
         }
+        scheduler.onRunRecorded = { [weak settings] saved in
+            settings?.scheduledRunRecorded(saved: saved)
+        }
         scanner.onScanCompleted = { [weak self, notifier] completion in
             self?.lastNotification = Task { await notifier.scanCompleted(completion) }
         }

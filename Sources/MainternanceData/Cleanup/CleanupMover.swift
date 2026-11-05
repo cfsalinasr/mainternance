@@ -26,9 +26,8 @@ import MainternanceDomain
 /// whatever is at that path at that instant; it only ever goes to the Trash, where the owner can put it back, and
 /// it is never a permanent delete. No program running as someone else can do this in the owner's home folder.
 ///
-/// Tests replace `trash` with a fake that moves into a temp folder. The real `FileManager.trashItem` (in
-/// `CleanupServices`) is not exercised by any automated test, links included: that it moves a link as the link
-/// itself rests on the manual check listed in `docs/STATUS.md`.
+/// Tests replace `trash` with a fake that moves into a temp folder. The real move (`SystemTrash.move`) is pinned by
+/// `SystemTrashIntegrationTests` on a temporary disk image: a link goes to the Trash as the link, its target stays.
 struct CleanupMover: CleanupMoving {
     let rules: CleanupRules
     let trash: @Sendable (URL) throws -> Void

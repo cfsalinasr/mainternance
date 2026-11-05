@@ -57,6 +57,12 @@ enum SettingsText {
         "Notifications are off for Mainternance.",
         "To get them, allow them in System Settings > Notifications > Mainternance."
     ].joined(separator: " ")
+    static let notSaved =
+        "Your setting could not be saved. It applies only until Mainternance quits; change it again to retry."
+    static let scheduledRunNotSaved = [
+        "The weekly scan could not save that it ran,",
+        "so it may run again the next time Mainternance opens."
+    ].joined(separator: " ")
     static let notificationsUnavailable =
         "Notifications are not available here: they work when Mainternance runs as an app."
 }
@@ -79,6 +85,10 @@ public final class SettingsViewState {
     public private(set) var notificationAuthorization: NotificationAuthorization = .notDetermined
     /// The result of the last action when it needs words (an error, or where to approve something).
     public private(set) var message: String?
+    /// True after a change could not be written to disk, until a later change is.
+    public private(set) var saveFailed = false
+    /// True after the scheduler could not write the run it recorded, until a later record is written.
+    public private(set) var scheduledRunSaveFailed = false
     /// Called with the new values after each load and at each change, before it is saved (the scheduler and the
     /// notifier listen).
     @ObservationIgnored public var onChange: (@MainActor (AppPreferences) -> Void)?
@@ -87,7 +97,7 @@ public final class SettingsViewState {
     @ObservationIgnored private let loginItem: any LoginItemControlling
     @ObservationIgnored private let notifications: any NotificationPosting
     @ObservationIgnored private let now: @Sendable () -> Date
-    @ObservationIgnored private var pendingSave: Task<Date?, Never>?
+    @ObservationIgnored private var pendingSave: Task<PreferencesUpdate, Never>?
     @ObservationIgnored private var askedForPermission = false
     /// False until the permission was read once, so nothing is claimed about it before.
     private var authorizationKnown = false
@@ -158,7 +168,10 @@ public final class SettingsViewState {
     /// The lines shown under the controls, each once.
     var notes: [String] {
         var seen: [String] = []
-        for note in [loginWarning, notificationWarning, message].compactMap(\.self) where !seen.contains(note) {
+        let saving = saveFailed ? SettingsText.notSaved : nil
+        let recording = scheduledRunSaveFailed ? SettingsText.scheduledRunNotSaved : nil
+        let all = [loginWarning, notificationWarning, message, saving, recording].compactMap(\.self)
+        for note in all where !seen.contains(note) {
             seen.append(note)
         }
         return seen
@@ -289,19 +302,28 @@ public final class SettingsViewState {
 
     /// Applies `change` to the shown values and reports them at once (the scheduler and the notifier must hold
     /// them before anything is written), then writes the same change through `update` after every earlier write
-    /// finished. A run the scheduler recorded meanwhile comes back with the result and is kept.
+    /// finished. A run the scheduler recorded meanwhile comes back with the result and is kept. A write that did
+    /// not reach the disk shows `SettingsText.notSaved` until a later one does.
     private func commit(_ change: @escaping @Sendable (inout AppPreferences) -> Void) async {
         change(&current)
         onChange?(current)
         let previous = pendingSave
         let store = preferences
-        let write = Task<Date?, Never> {
+        let write = Task<PreferencesUpdate, Never> {
             _ = await previous?.value
-            return await store.update(change).lastScheduledRun
+            return await store.update(change)
         }
         pendingSave = write
-        let recorded = await write.value
-        current.lastScheduledRun = ScanSchedule.laterRun(current.lastScheduledRun, recorded, now: now())
+        let result = await write.value
+        saveFailed = !result.saved
+        current.lastScheduledRun = ScanSchedule.laterRun(
+            current.lastScheduledRun, result.preferences.lastScheduledRun, now: now()
+        )
+    }
+
+    /// The scheduler says whether the run it recorded reached the disk (see `ScanScheduler.onRunRecorded`).
+    public func scheduledRunRecorded(saved: Bool) {
+        scheduledRunSaveFailed = !saved
     }
 
     // MARK: - Text

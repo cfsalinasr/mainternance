@@ -21,7 +21,13 @@ struct StartupReviewStoreTests {
         #expect(!snapshot.baselineEstablished)
         #expect(snapshot.newCount == nil)
         #expect(snapshot.items.allSatisfy { !$0.isNew })
-        #expect(try savedKeys(fixture) == ["label:com.example.a", "path:\(unlabeled)"])
+        let labeled = fixture.userFolder.appendingPathComponent("com.example.a.plist").path
+        let expected = [
+            LaunchItemReader.item(at: labeled, kind: .userAgent).reviewKey,
+            LaunchItemReader.item(at: unlabeled, kind: .systemDaemon).reviewKey
+        ]
+        #expect(try savedKeys(fixture) == expected.sorted())
+        #expect(expected.allSatisfy { $0.hasPrefix("item\u{0}") && !$0.hasSuffix("\u{0}") }) // program included
         #expect(permissions(fixture.reviewFile) == 0o600)
     }
 
@@ -123,25 +129,18 @@ struct StartupReviewStoreTests {
         ])
     }
 
-    @Test("an item keyed by its path while unreadable is not new once it reads with its label")
+    @Test("an item reviewed while unreadable is changed, not new, once it reads with a label and a program")
     func unreadableThenLabeled() async throws {
         let fixture = try StartupFixture()
         let services = fixture.services()
         let path = try fixture.raw("com.example.a.plist", in: fixture.userFolder, Data("garbage".utf8))
-        _ = await services.lister.list() // baseline: the path, since there was no label to read
-        #expect(try savedKeys(fixture) == ["path:\(path)"])
+        _ = await services.lister.list() // baseline: the path only, since there was no label or program to read
+        #expect(try savedKeys(fixture) == ["item\u{0}\u{0}\(path)\u{0}"])
         try fixture.job("com.example.a", in: fixture.userFolder)
         let later = await services.lister.list()
-        #expect(later.newCount == 0)
+        #expect(later.newCount == 1)
+        #expect(later.items.map(\.isChanged) == [true])
         #expect(later.items.allSatisfy { !$0.isNew })
-    }
-
-    @Test("an invalid label is remembered by path")
-    func invalidLabelByPath() async throws {
-        let fixture = try StartupFixture()
-        let path = try fixture.job("--version", in: fixture.userFolder, file: "odd.plist")
-        _ = await fixture.services().lister.list()
-        #expect(try savedKeys(fixture) == ["path:\(path)"])
     }
 
     @Test("marking as reviewed while a launchd folder cannot be opened keeps what was known for that folder")
@@ -151,7 +150,8 @@ struct StartupReviewStoreTests {
         try fixture.job("com.allusers.a", in: fixture.agentFolder)
         try fixture.job("com.user.a", in: fixture.userFolder)
         try fixture.job("com.user.gone", in: fixture.userFolder, file: "gone.plist")
-        _ = await services.lister.list()
+        let first = await services.lister.list()
+        let kept = first.items.filter { $0.label != "com.user.gone" }.map(\.reviewKey).sorted()
         let manager = FileManager.default
         try manager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fixture.agentFolder.path)
         defer { try? manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.agentFolder.path) }
@@ -160,7 +160,7 @@ struct StartupReviewStoreTests {
         var moved = blind
         moved.items.removeAll { $0.label == "com.user.gone" } // not part of what was reviewed
         #expect(await services.reviewer.markReviewed(moved))
-        #expect(try savedKeys(fixture) == ["label:com.allusers.a", "label:com.user.a"])
+        #expect(try savedKeys(fixture) == kept)
         try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.agentFolder.path)
         let seen = await services.lister.list()
         #expect(seen.items.first { $0.label == "com.allusers.a" }?.isNew == false)

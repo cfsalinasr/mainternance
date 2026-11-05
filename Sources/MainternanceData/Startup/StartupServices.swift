@@ -1,7 +1,7 @@
 import Foundation
 import MainternanceDomain
 
-/// Lists the launchd jobs, adds launchd's on/off state and what is new since the owner's last review.
+/// Lists the launchd jobs, adds launchd's on/off state and what is new or changed since the owner's last review.
 ///
 /// `readsState` false (Home's counter) skips `launchctl` (every state stays unknown) and never writes the baseline.
 /// With `invalidates`, every listing marks Home's cached count as stale (the screen just read everything again).
@@ -35,12 +35,10 @@ struct StartupLister: StartupListing {
             // the baseline was read, so the count is a known zero, not unknown.
             let readOnly = !review.canWrite()
             if !readOnly {
-                for index in items.indices where !items[index].isReviewed(in: seen) {
-                    items[index].isNew = true
-                }
+                mark(&items, against: StartupReviewBaseline(seen))
             }
             snapshot.baselineEstablished = true
-            snapshot.newCount = items.count(where: \.isNew)
+            snapshot.newCount = items.count(where: \.needsReview)
             snapshot.reviewReadOnly = readsState && readOnly
         case let .missing(saved):
             snapshot.reviewReadOnly = readsState && !saved
@@ -54,6 +52,24 @@ struct StartupLister: StartupListing {
         snapshot.duplicateLabels = Set(seenLabels.filter { $0.value > 1 }.keys)
         snapshot.items = items
         return snapshot
+    }
+
+    /// Marks new and changed items. Items matched only by a key saved before programs were part of the review
+    /// count as reviewed this once; the Startup screen's listing then saves their current keys in place of the old
+    /// ones (Home's counter never writes), so from then on a change of their program is flagged.
+    private func mark(_ items: inout [StartupItem], against baseline: StartupReviewBaseline) {
+        var upgraded: [StartupItem] = []
+        for index in items.indices {
+            switch baseline.match(items[index]) {
+            case .reviewed: break
+            case .reviewedBeforeUpgrade: upgraded.append(items[index])
+            case .changed: items[index].isChanged = true
+            case .new: items[index].isNew = true
+            }
+        }
+        if readsState, !upgraded.isEmpty {
+            _ = review.upgrade(upgraded)
+        }
     }
 }
 

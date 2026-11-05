@@ -36,7 +36,7 @@ public final class StartupReviewStore: Sendable {
     public init(
         directory: URL,
         now: @escaping @Sendable () -> Date = Date.init,
-        trash: @escaping @Sendable (URL) throws -> Void = PreferencesStore.moveToTrash,
+        trash: @escaping @Sendable (URL) throws -> Void = SystemTrash.move,
         isProtected: @escaping @Sendable (String) -> Bool = { ProtectedPaths.isProtected($0) }
     ) {
         self.directory = directory
@@ -87,6 +87,22 @@ public final class StartupReviewStore: Sendable {
                 }
             }
             return write(next)
+        }
+    }
+
+    /// Saves the current keys of `items` (each reviewed under a key from before programs were part of the review)
+    /// in place of their old keys. False when nothing could be saved; the old keys then stay and the upgrade is
+    /// tried again at the next listing.
+    func upgrade(_ items: [StartupItem]) -> Bool {
+        lock.withLock { _ in
+            guard case var .readable(saved) = readFile() else { return false }
+            for item in items {
+                let old = Set(StartupReviewBaseline.legacyKeys(of: item))
+                saved.byKind[item.kind, default: []].subtract(old)
+                saved.byKind[item.kind, default: []].insert(item.reviewKey)
+                saved.legacy.subtract(old)
+            }
+            return write(saved)
         }
     }
 

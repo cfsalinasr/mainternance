@@ -1,15 +1,30 @@
 import Foundation
 
+/// What one `PreferencesStoring.update` produced: the values after the change, and whether they reached the disk.
+/// `saved` is false when the file could not be read, a damaged file could not be moved aside, or the write itself
+/// failed (a full disk, a folder that cannot be written): the values then exist only in memory.
+public struct PreferencesUpdate: Sendable, Equatable {
+    public let preferences: AppPreferences
+    public let saved: Bool
+
+    public init(preferences: AppPreferences, saved: Bool) {
+        self.preferences = preferences
+        self.saved = saved
+    }
+}
+
 /// Saves and loads the Settings. `load` never fails: a missing or damaged file gives defaults.
 public protocol PreferencesStoring: Sendable {
     func load() async -> AppPreferences
-    /// Replaces every saved value. Two writers (Settings and the weekly scheduler) must use `update` instead, or
-    /// one can write back values the other changed meanwhile.
-    func save(_ preferences: AppPreferences) async
+    /// Replaces every saved value and says whether they reached the disk. Two writers (Settings and the weekly
+    /// scheduler) must use `update` instead, or one can write back values the other changed meanwhile.
+    @discardableResult
+    func save(_ preferences: AppPreferences) async -> Bool
     /// Reads, changes and writes the saved values as one step that no other `update` or `save` can interleave
-    /// with, following `AppPreferences.updated(now:_:)` (a recorded run is never moved back). Returns what was
-    /// written (or, when a damaged file could not be moved aside, what would have been).
-    func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> AppPreferences
+    /// with, following `AppPreferences.updated(now:_:)` (a recorded run is never moved back). Returns the values
+    /// after the change and whether they were written.
+    @discardableResult
+    func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> PreferencesUpdate
 }
 
 /// The real state of "Launch at login", as macOS reports it.

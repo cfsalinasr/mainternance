@@ -75,16 +75,32 @@ public extension ScannerViewModel {
         await reloadQuarantine()
     }
 
+    /// A list that cannot be read is never shown as an empty quarantine: the lists keep what the last good read
+    /// showed, `quarantineUnreadable` makes the screen say so, and no finding link is dropped.
     internal func reloadQuarantine() async {
-        quarantined = await quarantine.records()
-        notMoved = await quarantine.stillInPlace()
-        unclaimedCount = await quarantine.unclaimedFiles().count
+        do {
+            let records = try await quarantine.records()
+            let inPlace = try await quarantine.stillInPlace()
+            let unclaimed = try await quarantine.unclaimedFiles().count
+            quarantined = records
+            notMoved = inPlace
+            unclaimedCount = unclaimed
+            quarantineUnreadable = false
+        } catch {
+            quarantineUnreadable = true
+            return
+        }
         await dropLinksOfRecordsThatAreGone()
     }
 
+    /// The Quarantine section shows while it holds anything, or while its list cannot be read.
+    var showsQuarantineSection: Bool {
+        quarantineUnreadable || !quarantined.isEmpty || !notMoved.isEmpty || unclaimedCount > 0
+    }
+
     /// A link whose quarantine record no longer exists can never be restored. Only a non-empty answer proves a
-    /// record is gone (`records()` also answers empty when the manifest cannot be read), so an empty one removes
-    /// nothing. A scan never removes a link: it cannot see a file that is in quarantine.
+    /// record is gone (an empty quarantine is also what a store that lost its folder reports), so an empty one
+    /// removes nothing. A scan never removes a link: it cannot see a file that is in quarantine.
     private func dropLinksOfRecordsThatAreGone() async {
         let known = Set((quarantined + notMoved).map(\.id))
         guard !known.isEmpty else { return }

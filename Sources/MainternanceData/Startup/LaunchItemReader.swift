@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 import MainternanceDomain
@@ -74,10 +75,29 @@ struct LaunchItemReader: Sendable {
         }
         let label = (job["Label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let program = (job["Program"] as? String) ?? ((job["ProgramArguments"] as? [Any])?.first as? String)
-        return StartupItem(
+        var item = StartupItem(
             kind: kind, plistPath: path, label: label, program: program, runsAtLoad: job["RunAtLoad"] as? Bool,
             disabledInFile: (job["Disabled"] as? Bool) == true
         )
+        item.programFingerprint = programFingerprint(job)
+        return item
+    }
+
+    /// SHA-256 (hex) of `Program` and every `ProgramArguments` entry, each tagged and NUL-separated so no two
+    /// different jobs give the same text; nil when the file names neither. An entry that is not text is hashed by
+    /// its description, so it still counts.
+    static func programFingerprint(_ job: [String: Any]) -> String? {
+        let program = job["Program"]
+        let arguments = job["ProgramArguments"] as? [Any]
+        guard program != nil || arguments != nil else { return nil }
+        var parts = ["program", program.map(describe) ?? "", "arguments", arguments.map { String($0.count) } ?? "-"]
+        parts += (arguments ?? []).map(describe)
+        let digest = SHA256.hash(data: Data(parts.joined(separator: "\u{0}").utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func describe(_ value: Any) -> String {
+        (value as? String).map { "s:" + $0 } ?? "o:\(value)"
     }
 
     enum ReadProblem: Error, Equatable {

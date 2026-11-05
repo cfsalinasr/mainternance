@@ -185,7 +185,7 @@ struct LiveSystemSnapshotProviderTests {
         )
         let check = try #require(await load().report.checks.first { $0.id == .startupItems })
         #expect(check.state == .needsAttention)
-        #expect(check.reason == "2 new startup items")
+        #expect(check.reason == "2 new or changed startup items")
         #expect(check.destination == .startup)
         #expect(AppDestination.startup.isAvailable)
     }

@@ -1,6 +1,7 @@
 import Foundation
 import MainternanceDomain
 import Synchronization
+import Testing
 
 func makeSnapshot(
     diskFreeBytes: Int64 = 41_000_000_000,
@@ -58,16 +59,28 @@ struct FakeActions: SuggestedActionsProviding {
 }
 
 /// Fake clock: records each requested sleep and suspends until the test releases it.
+///
+/// A sleep registers (so `waitForSleeps` sees it) and then suspends in a second step; `releaseAll()` also releases
+/// sleeps that registered but have not suspended yet, so a release that lands between the two steps is never lost.
+/// `waitForSleeps` gives up after `timeout` and records an issue, so a sleep that never comes fails the test
+/// instead of hanging the run.
 actor FakeSleeper {
     private(set) var durations: [Duration] = []
     private var pending: [Int: CheckedContinuation<Void, any Error>] = [:]
     private var cancelled: Set<Int> = []
+    /// Registered but not suspended yet.
+    private var registered: Set<Int> = []
+    /// Released by `releaseAll()` before they suspended: they return as soon as they do.
+    private var released: Set<Int> = []
     private var nextID = 0
-    private var waiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var waiters: [Int: (count: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
+    private var nextWaiter = 0
     private let honorsCancellation: Bool
+    private let timeout: Duration
 
-    init(honorsCancellation: Bool = true) {
+    init(honorsCancellation: Bool = true, timeout: Duration = .seconds(10)) {
         self.honorsCancellation = honorsCancellation
+        self.timeout = timeout
     }
 
     nonisolated func sleep(_ duration: Duration) async throws {
@@ -83,21 +96,28 @@ actor FakeSleeper {
         }
     }
 
-    private func register(_ duration: Duration) -> Int {
+    /// The first step of `sleep`; internal so a test can stop between the two steps.
+    func register(_ duration: Duration) -> Int {
         durations.append(duration)
-        let ready = waiters.filter { durations.count >= $0.count }
-        waiters.removeAll { durations.count >= $0.count }
-        for waiter in ready {
+        let id = nextID
+        nextID += 1
+        registered.insert(id)
+        let ready = waiters.filter { durations.count >= $0.value.count }
+        for (key, waiter) in ready {
+            waiters.removeValue(forKey: key)
             waiter.continuation.resume()
         }
-        defer { nextID += 1 }
-        return nextID
+        return id
     }
 
-    private func suspend(_ id: Int) async throws {
+    /// The second step of `sleep`.
+    func suspend(_ id: Int) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            registered.remove(id)
             if cancelled.contains(id) {
                 continuation.resume(throwing: CancellationError())
+            } else if released.remove(id) != nil {
+                continuation.resume()
             } else {
                 pending[id] = continuation
             }
@@ -109,8 +129,10 @@ actor FakeSleeper {
         pending.removeValue(forKey: id)?.resume(throwing: CancellationError())
     }
 
-    /// Lets every suspended sleep return normally.
+    /// Lets every requested sleep return normally: those suspended now, and those registered but not yet
+    /// suspended (they return at once when they do).
     func releaseAll() {
+        released.formUnion(registered)
         let all = pending
         pending.removeAll()
         for continuation in all.values {
@@ -118,12 +140,29 @@ actor FakeSleeper {
         }
     }
 
-    /// Suspends until at least `count` sleeps have been requested.
-    func waitForSleeps(_ count: Int) async {
+    /// Suspends until at least `count` sleeps have been requested, or records an issue after `timeout`.
+    func waitForSleeps(_ count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
         if durations.count >= count {
             return
         }
-        await withCheckedContinuation { waiters.append((count, $0)) }
+        let key = nextWaiter
+        nextWaiter += 1
+        let limit = timeout
+        let expiry = Task { [weak self] in
+            try? await Task.sleep(for: limit)
+            await self?.expire(key, sourceLocation: sourceLocation)
+        }
+        await withCheckedContinuation { waiters[key] = (count, $0) }
+        expiry.cancel()
+    }
+
+    private func expire(_ key: Int, sourceLocation: SourceLocation) {
+        guard let waiter = waiters.removeValue(forKey: key) else { return }
+        Issue.record(
+            "timed out waiting for \(waiter.count) sleeps (got \(durations.count))",
+            sourceLocation: sourceLocation
+        )
+        waiter.continuation.resume()
     }
 }
 

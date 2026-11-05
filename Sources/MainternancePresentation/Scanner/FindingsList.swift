@@ -75,9 +75,14 @@ struct QuarantineSection: View {
     let model: ScannerViewModel
 
     var body: some View {
-        if !model.quarantined.isEmpty || !model.notMoved.isEmpty || model.unclaimedCount > 0 {
+        if model.showsQuarantineSection {
             VStack(alignment: .leading, spacing: 8) {
                 Text(ScannerText.quarantineHeading).font(.headline)
+                if model.quarantineUnreadable {
+                    Label(ScannerText.quarantineUnreadable, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                }
                 ForEach(model.quarantined) { record in
                     contained(record)
                 }

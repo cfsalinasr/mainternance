@@ -165,9 +165,9 @@ public struct HealthEvaluator: Sendable {
 
     private func startup(_ count: Int) -> HealthCheck {
         let reason = switch count {
-        case ...0: "No new items"
-        case 1: "1 new startup item"
-        default: "\(count) new startup items"
+        case ...0: "Nothing new or changed"
+        case 1: "1 new or changed startup item"
+        default: "\(count) new or changed startup items"
         }
         return HealthCheck(
             id: .startupItems, state: count > 0 ? .needsAttention : .good,

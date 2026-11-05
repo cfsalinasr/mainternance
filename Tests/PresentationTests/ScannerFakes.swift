@@ -183,6 +183,8 @@ final class FakeQuarantine: QuarantineStoring {
         var restoredIDs: [UUID] = []
         /// When true `restore` waits until `releaseRestore()`.
         var holdRestore = false
+        /// When set, the three listing calls throw it (a quarantine list that cannot be read).
+        var listError: QuarantineError?
     }
 
     let state = Mutex(State())
@@ -241,16 +243,25 @@ final class FakeQuarantine: QuarantineStoring {
         }
     }
 
-    func records() async -> [QuarantineRecord] {
-        state.withLock { $0.stored }
+    func records() async throws -> [QuarantineRecord] {
+        try throwIfUnreadable()
+        return state.withLock { $0.stored }
     }
 
-    func stillInPlace() async -> [QuarantineRecord] {
-        state.withLock { $0.inPlace }
+    func stillInPlace() async throws -> [QuarantineRecord] {
+        try throwIfUnreadable()
+        return state.withLock { $0.inPlace }
     }
 
-    func unclaimedFiles() async -> [String] {
-        state.withLock { $0.unclaimed }
+    func unclaimedFiles() async throws -> [String] {
+        try throwIfUnreadable()
+        return state.withLock { $0.unclaimed }
+    }
+
+    private func throwIfUnreadable() throws {
+        if let error = state.withLock({ $0.listError }) {
+            throw error
+        }
     }
 
     var calls: [(path: String, signature: String)] {

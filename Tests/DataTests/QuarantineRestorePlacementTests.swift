@@ -44,7 +44,7 @@ struct QuarantineRestorePlacementTests {
         await #expect(throws: QuarantineError.changedSinceScan) { try await store.restore(record.id) }
         #expect(names(fix.area).isEmpty)
         #expect(text(fix.vault.appendingPathComponent(record.id.uuidString)) == "evil")
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 
     @Test("same volume: a vault entry swapped after the check is moved back, and nothing stays at the destination")
@@ -68,7 +68,7 @@ struct QuarantineRestorePlacementTests {
         #expect(names(fix.area).isEmpty)
         #expect(text(fix.vault.appendingPathComponent(record.id.uuidString)) == "mine")
         #expect(text(fix.vault.appendingPathComponent("stolen")) == "mine")
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 
     @Test("copy path: a partial swapped before the rename keeps the vault copy and removes nothing it did not create")
@@ -91,7 +91,7 @@ struct QuarantineRestorePlacementTests {
         // The foreign file the rename placed and our moved copy are both left alone.
         #expect(names(fix.area) == ["a.txt", "ours-moved"])
         #expect(text(fix.vault.appendingPathComponent(record.id.uuidString)) == "mine")
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 
     @Test("same volume: an unchanged vault copy still restores")
@@ -103,7 +103,7 @@ struct QuarantineRestorePlacementTests {
         #expect(restored == file.path)
         #expect(text(file) == "mine")
         #expect(!fix.exists(fix.vault.appendingPathComponent(record.id.uuidString)))
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
     }
 }
 

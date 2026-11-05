@@ -18,7 +18,7 @@ public struct FilesServices: Sendable {
     public init(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer = FilesServices.runSpotlight,
-        trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash,
+        trash: @escaping @Sendable (URL) throws -> Void = SystemTrash.move,
         isProtected given: (@Sendable (String) -> Bool)? = nil
     ) {
         let guards = given.map { Guards(walk: $0, move: $0) } ?? Self.guards(ProtectedPaths.Resolved())

@@ -44,6 +44,7 @@ enum ScannerText {
     static let checkingFile = "Checking the file again before moving it…"
     static let quarantineTitle = "Quarantine this file?"
     static let quarantineHeading = "Quarantine"
+    static let quarantineUnreadable = "The quarantine list could not be read; nothing in it was changed."
     static let scanning = "Scanning…"
     static let detectedBadge = "Detected"
     static let notMovedBadge = "Not moved"

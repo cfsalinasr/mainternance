@@ -35,7 +35,7 @@ struct QuarantineRestorePartialTests {
         #expect(names(fix.area).isEmpty)
         let copy = fix.vault.appendingPathComponent(record.id.uuidString)
         #expect(try String(contentsOf: copy, encoding: .utf8) == "evil")
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 
     @Test("a partial left by an earlier crashed copy restore is cleared and the restore succeeds")
@@ -50,7 +50,7 @@ struct QuarantineRestorePartialTests {
         #expect(restored == file.path)
         #expect(try String(contentsOf: file, encoding: .utf8) == "mine")
         #expect(names(fix.area) == ["a.txt"])
-        #expect(await store.records().isEmpty)
+        #expect(try await store.records().isEmpty)
     }
 
     @Test("a failed move that created no partial does not delete a partial already in the folder")
@@ -71,7 +71,7 @@ struct QuarantineRestorePartialTests {
         await #expect(throws: QuarantineError.self) { try await store.restore(record.id) }
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: vault.path)
         #expect(try String(contentsOf: partial, encoding: .utf8) == "not ours")
-        #expect(await store.records() == [record])
+        #expect(try await store.records() == [record])
     }
 }
 

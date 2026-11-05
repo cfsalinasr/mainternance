@@ -58,13 +58,13 @@ public struct StartupView: View {
                     Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            if item.isNew {
-                // Text badge: new items are never marked by color alone.
-                Text(StartupText.newBadge)
+            if let badge = state.badge(item) {
+                // Text badge: new and changed items are never marked by color alone.
+                Text(badge.text)
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .overlay(Capsule().stroke(.secondary))
-                    .accessibilityLabel(StartupText.newBadgeAccessibility)
+                    .accessibilityLabel(badge.accessibility)
             }
             Button(StartupText.reveal) { state.reveal(item.id) }
                 .accessibilityLabel("Reveal \(item.name) in Finder")

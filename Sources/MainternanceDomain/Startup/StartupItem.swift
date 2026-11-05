@@ -32,6 +32,11 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
     public var isEnabled: Bool?
     /// Not present at the owner's last review.
     public var isNew: Bool
+    /// Present at the last review under the same label or file, but its file, label or program changed since.
+    public var isChanged = false
+    /// A hash of the job's `Program` and every `ProgramArguments` entry (set by the reader); nil when the file names
+    /// neither or could not be read. Part of `reviewKey`, so a reviewed job that now runs something else is flagged.
+    public var programFingerprint: String?
     /// Why the file could not be read; nil when it was read.
     public let readProblem: String?
     /// The plist's own `Disabled` key is true. launchd uses it when it has no override of its own for the label.
@@ -70,23 +75,27 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
         kind == .userAgent && readProblem == nil && label.map(Self.isValidLabel) == true
     }
 
-    /// What the review baseline remembers: the label when it is valid, or else the file path. The prefixes keep a
-    /// label from ever matching a path.
+    /// New or changed since the last review: what Home counts and the screen marks.
+    public var needsReview: Bool {
+        isNew || isChanged
+    }
+
+    /// What the review baseline remembers: the label (when valid), the file's path and the program's fingerprint,
+    /// so a reviewed job whose plist was rewritten to run something else, or replaced by another file with the same
+    /// label, no longer matches. The parts are joined with NUL, which no path and no valid label holds.
     public var reviewKey: String {
-        if let label, Self.isValidLabel(label) {
-            return "label:\(label)"
-        }
-        return pathReviewKey
+        [StartupReviewBaseline.itemPrefix, validLabel ?? "", plistPath, programFingerprint ?? ""]
+            .joined(separator: StartupReviewBaseline.separator)
     }
 
-    var pathReviewKey: String {
-        "path:\(plistPath)"
+    /// Keys from before the program was part of the review: the label when valid, or the file path.
+    var legacyReviewKeys: [String] {
+        let path = "path:\(plistPath)"
+        return validLabel.map { ["label:\($0)", path] } ?? [path]
     }
 
-    /// Present at the review that saved `seen`: under its key, or under its path (it was keyed by path then, for
-    /// example because the file could not be read).
-    public func isReviewed(in seen: Set<String>) -> Bool {
-        seen.contains(reviewKey) || seen.contains(pathReviewKey)
+    var validLabel: String? {
+        label.flatMap { Self.isValidLabel($0) ? $0 : nil }
     }
 
     /// A label may be passed to `launchctl` only when it is non-empty, at most 255 bytes, has no `/`, does not
@@ -121,7 +130,8 @@ public struct StartupSnapshot: Sendable, Equatable {
     public var items: [StartupItem]
     /// False until a review baseline existed before this reading (the first reading only creates it).
     public var baselineEstablished: Bool
-    /// How many items are new since the last review; nil while there is no baseline or it could not be read.
+    /// How many items are new or changed since the last review (`needsReview`); nil while there is no baseline or it
+    /// could not be read.
     public var newCount: Int?
     /// Labels registered by more than one file.
     public var duplicateLabels: Set<String>

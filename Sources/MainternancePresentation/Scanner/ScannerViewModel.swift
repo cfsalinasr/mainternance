@@ -31,6 +31,9 @@ public final class ScannerViewModel {
     public internal(set) var notMoved: [QuarantineRecord] = []
     /// Files in the quarantine folder that no record describes (left untouched).
     public internal(set) var unclaimedCount = 0
+    /// True when the last read of the quarantine list failed (the lists above then keep what the last good read
+    /// showed); the Scanner screen says so instead of hiding the section.
+    public internal(set) var quarantineUnreadable = false
     public internal(set) var pendingQuarantine: ScanFinding?
     public internal(set) var errorMessage: String?
     public internal(set) var notice: String?
