@@ -39,10 +39,11 @@ public struct LiveSystemSnapshotProvider: SystemSnapshotProviding {
     public func currentSnapshot() async -> SystemSnapshot {
         let volume = disk.read()
         var startupCount: Int?
+        var startupUnavailable = false
         if let startup {
-            startupCount = await Self.newCount(startup)
+            (startupCount, startupUnavailable) = await Self.newCount(startup)
         }
-        return SystemSnapshot(
+        var snapshot = SystemSnapshot(
             diskTotalBytes: volume?.total ?? 0,
             diskFreeBytes: volume?.free ?? 0,
             memoryPressure: memory.read(),
@@ -54,11 +55,16 @@ public struct LiveSystemSnapshotProvider: SystemSnapshotProviding {
             newStartupItemCount: startupCount,
             osUpdateAvailable: nil
         )
+        snapshot.startupCheckUnavailable = startupUnavailable
+        return snapshot
     }
 
-    private static func newCount(_ lister: any StartupListing) async -> Int? {
+    /// The count, or nil with `unavailable` when a baseline exists but cannot be read or saved (then nothing is
+    /// marked, and a zero would claim "nothing new").
+    private static func newCount(_ lister: any StartupListing) async -> (count: Int?, unavailable: Bool) {
         let snapshot = await lister.list()
-        guard snapshot.baselineEstablished, !snapshot.reviewUnreadable else { return nil }
-        return snapshot.newCount
+        guard snapshot.baselineEstablished || snapshot.reviewUnreadable else { return (nil, false) }
+        guard !snapshot.reviewUnreadable, !snapshot.reviewReadOnly else { return (nil, true) }
+        return (snapshot.newCount, false)
     }
 }

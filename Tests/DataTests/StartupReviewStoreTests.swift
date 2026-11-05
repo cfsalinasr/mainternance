@@ -27,7 +27,7 @@ struct StartupReviewStoreTests {
             LaunchItemReader.item(at: unlabeled, kind: .systemDaemon).reviewKey
         ]
         #expect(try savedKeys(fixture) == expected.sorted())
-        #expect(expected.allSatisfy { $0.hasPrefix("item\u{0}") && !$0.hasSuffix("\u{0}") }) // program included
+        #expect(expected.allSatisfy { $0.hasPrefix("item2\u{0}") && !$0.hasSuffix("\u{0}") }) // program included
         #expect(permissions(fixture.reviewFile) == 0o600)
     }
 
@@ -135,7 +135,7 @@ struct StartupReviewStoreTests {
         let services = fixture.services()
         let path = try fixture.raw("com.example.a.plist", in: fixture.userFolder, Data("garbage".utf8))
         _ = await services.lister.list() // baseline: the path only, since there was no label or program to read
-        #expect(try savedKeys(fixture) == ["item\u{0}\u{0}\(path)\u{0}"])
+        #expect(try savedKeys(fixture) == ["item2\u{0}\u{0}\(path)\u{0}"])
         try fixture.job("com.example.a", in: fixture.userFolder)
         let later = await services.lister.list()
         #expect(later.newCount == 1)
@@ -222,6 +222,7 @@ struct StartupReviewStoreTests {
         #expect(later.items.allSatisfy { !$0.isNew })
         let counted = await services.newItemCounter.list()
         #expect(counted.newCount == 0)
+        #expect(counted.reviewReadOnly) // so Home says it could not check
         #expect(counted.items.allSatisfy { !$0.isNew })
         try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.reviewFolder.path)
         let writable = await services.lister.list()

@@ -109,19 +109,31 @@ enum ScanNotices {
         return UserNotice(id: findingsID, title: title, body: body)
     }
 
+    private static func skippedSome(_ summary: ScanSummary) -> Bool {
+        summary.tooLarge > 0 || summary.unreadableFolders > 0 || summary.unreadable > 0
+    }
+
+    private static func digestTitle(_ completion: ScanCompletion, count: Int, found: String, stale: String?) -> String {
+        if count > 0 {
+            return completion.ranToTheEnd
+                ? "Weekly scan finished: \(found) to review" : "Weekly scan did not finish: \(found) to review"
+        }
+        guard completion.ranToTheEnd else { return "Weekly scan did not finish" }
+        // Old definitions can miss what newer ones catch: "nothing found" would claim more than the scan can.
+        if stale != nil {
+            return "Weekly scan finished with old virus definitions"
+        }
+        // Files too large to scan, and files or folders that could not be read, were not checked at all.
+        return skippedSome(completion.summary)
+            ? "Weekly scan finished: nothing found in what it could check" : "Weekly scan finished: nothing found"
+    }
+
     private static func digest(_ completion: ScanCompletion, id: String = digestID) -> UserNotice {
         let summary = completion.summary
         let count = toReview(summary)
         let found = toReviewText(summary)
         let stale = staleText(completion.staleDefinitionsDays)
-        let title = switch (completion.ranToTheEnd, count) {
-        // Old definitions can miss what newer ones catch: "nothing found" would claim more than the scan can.
-        case (true, 0) where stale != nil: "Weekly scan finished with old virus definitions"
-        case (true, 0): "Weekly scan finished: nothing found"
-        case (true, _): "Weekly scan finished: \(found) to review"
-        case (false, 0): "Weekly scan did not finish"
-        case (false, _): "Weekly scan did not finish: \(found) to review"
-        }
+        let title = digestTitle(completion, count: count, found: found, stale: stale)
         var body = "Scanned \(files(max(0, summary.scanned)))"
         body += completion.ranToTheEnd ? "." : " before it stopped."
         // `unreadable` counts files; folders and files too large to scan are counted on their own.

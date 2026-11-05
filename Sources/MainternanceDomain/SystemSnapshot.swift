@@ -35,6 +35,9 @@ public struct SystemSnapshot: Sendable, Equatable {
     public var battery: BatterySnapshot?
     /// Nil when unknown (never shown as 0).
     public var newStartupItemCount: Int?
+    /// A review baseline exists but cannot be read or saved, so new or changed items cannot be told apart: Home
+    /// says it could not check (never "nothing new"). Only meaningful while `newStartupItemCount` is nil.
+    public var startupCheckUnavailable = false
     /// Nil when unknown (never shown as up to date).
     public var osUpdateAvailable: Bool?
 

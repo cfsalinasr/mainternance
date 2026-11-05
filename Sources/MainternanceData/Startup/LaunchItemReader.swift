@@ -80,18 +80,44 @@ struct LaunchItemReader: Sendable {
             disabledInFile: (job["Disabled"] as? Bool) == true
         )
         item.programFingerprint = programFingerprint(job)
+        item.previousFingerprint = programOnlyFingerprint(job)
         return item
     }
 
-    /// SHA-256 (hex) of `Program` and every `ProgramArguments` entry, each tagged and NUL-separated so no two
-    /// different jobs give the same text; nil when the file names neither. An entry that is not text is hashed by
-    /// its description, so it still counts.
+    /// SHA-256 (hex) of what decides what the job runs: `Program`, every `ProgramArguments` entry,
+    /// `EnvironmentVariables` (sorted by name, so it is stable), `BundleProgram` and `WorkingDirectory`. Each part is
+    /// tagged and NUL-separated so no two different jobs give the same text; nil when the file names none of them.
+    /// A value that is not text is hashed by its description, so it still counts.
     static func programFingerprint(_ job: [String: Any]) -> String? {
+        let fields = ["Program", "ProgramArguments", "EnvironmentVariables", "BundleProgram", "WorkingDirectory"]
+        guard fields.contains(where: { job[$0] != nil }) else { return nil }
+        var parts = programParts(job)
+        let environment = job["EnvironmentVariables"] as? [String: Any]
+        parts += [
+            "environment",
+            environment.map { String($0.count) } ?? job["EnvironmentVariables"].map(describe) ?? "-"
+        ]
+        parts += (environment ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=" + describe($0.value) }
+        parts += ["bundle", job["BundleProgram"].map(describe) ?? "-"]
+        parts += ["directory", job["WorkingDirectory"].map(describe) ?? "-"]
+        return hash(["v2"] + parts)
+    }
+
+    /// The fingerprint of reviews saved before the environment, bundle program and working directory counted
+    /// (`Program` and `ProgramArguments` only). Only used to upgrade such a review once.
+    static func programOnlyFingerprint(_ job: [String: Any]) -> String? {
+        guard job["Program"] != nil || job["ProgramArguments"] != nil else { return nil }
+        return hash(programParts(job))
+    }
+
+    private static func programParts(_ job: [String: Any]) -> [String] {
         let program = job["Program"]
         let arguments = job["ProgramArguments"] as? [Any]
-        guard program != nil || arguments != nil else { return nil }
-        var parts = ["program", program.map(describe) ?? "", "arguments", arguments.map { String($0.count) } ?? "-"]
-        parts += (arguments ?? []).map(describe)
+        let head = ["program", program.map(describe) ?? "", "arguments", arguments.map { String($0.count) } ?? "-"]
+        return head + (arguments ?? []).map(describe)
+    }
+
+    private static func hash(_ parts: [String]) -> String {
         let digest = SHA256.hash(data: Data(parts.joined(separator: "\u{0}").utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }

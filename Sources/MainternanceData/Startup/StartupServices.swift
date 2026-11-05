@@ -40,7 +40,7 @@ struct StartupLister: StartupListing {
             }
             snapshot.baselineEstablished = true
             snapshot.newCount = items.count(where: \.needsReview)
-            snapshot.reviewReadOnly = readsState && readOnly
+            snapshot.reviewReadOnly = readOnly // Home must then say it could not check, not "nothing new"
         case let .missing(saved):
             snapshot.reviewReadOnly = readsState && !saved
         case .unreadable:

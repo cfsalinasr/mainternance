@@ -60,9 +60,9 @@ struct StartupItemTests {
     @Test("the review key holds the valid label, the file path and the program, so changing any one changes it")
     func reviewKeys() {
         let base = item()
-        #expect(base.reviewKey == "item\u{0}com.a\u{0}/x/a.plist\u{0}p1")
+        #expect(base.reviewKey == "item2\u{0}com.a\u{0}/x/a.plist\u{0}p1")
         #expect(item(label: "/x/a.plist")
-            .reviewKey == "item\u{0}\u{0}/x/a.plist\u{0}p1") // an invalid label is left out
+            .reviewKey == "item2\u{0}\u{0}/x/a.plist\u{0}p1") // an invalid label is left out
         #expect(base.reviewKey != item(fingerprint: "p2").reviewKey)
         #expect(base.reviewKey != item("/x/b.plist").reviewKey)
         #expect(base.reviewKey != item(label: "com.b").reviewKey)
@@ -91,7 +91,11 @@ struct StartupItemTests {
         // Upgraded, with the old key left behind: a new program is still flagged.
         let upgraded = StartupReviewBaseline(["label:com.a", now.reviewKey])
         #expect(upgraded.match(item(fingerprint: "evil")) == .changed)
-        #expect(StartupReviewBaseline.legacyKeys(of: now) == ["label:com.a", "path:/x/a.plist"])
+        #expect(StartupReviewBaseline.legacyKeys(of: now) == [
+            "label:com.a",
+            "path:/x/a.plist",
+            "item\u{0}com.a\u{0}/x/a.plist\u{0}"
+        ])
     }
 
     @Test("old keys match only within the item's kind, and one old label key matched twice makes both changed")

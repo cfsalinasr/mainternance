@@ -15,7 +15,10 @@ public enum StartupReviewMatch: Sendable, Equatable {
 
 /// The saved review keys, indexed so an item can be told apart as reviewed, changed or new.
 public struct StartupReviewBaseline: Sendable, Equatable {
-    static let itemPrefix = "item"
+    /// v2: the fingerprint covers environment, bundle program and working directory too.
+    static let itemPrefix = "item2"
+    /// Keys from before that (program and arguments only): upgraded once, never evidence of a change.
+    static let previousItemPrefix = "item"
     static let separator = "\u{0}"
 
     private let keys: Set<String>
@@ -61,7 +64,7 @@ public struct StartupReviewBaseline: Sendable, Equatable {
 
     /// `match` for a whole listing, plus one rule only a listing can apply: an old label key that more than one
     /// item matches (another file took a reviewed label) cannot say which one was reviewed, so those items are
-    /// changed. An item matched by its own old path key stays reviewed.
+    /// changed. An item matched by an old key naming its own file stays reviewed.
     public func matches(_ items: [StartupItem]) -> [StartupReviewMatch] {
         var results = items.map(match)
         var uses: [String: Int] = [:]
@@ -72,7 +75,7 @@ public struct StartupReviewBaseline: Sendable, Equatable {
         }
         for index in items.indices where results[index] == .reviewedBeforeUpgrade {
             let matched = oldKeys(of: items[index])
-            let byPath = matched.contains(items[index].legacyPathKey)
+            let byPath = matched.contains { !$0.hasPrefix("label:") }
             if !byPath, matched.contains(where: { (uses[$0] ?? 0) > 1 }) {
                 results[index] = .changed
             }

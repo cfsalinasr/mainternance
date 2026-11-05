@@ -99,6 +99,25 @@ public final class CleanupEstimate: SuggestedActionsProviding, Sendable {
         }
     }
 
+    /// The ticked categories that hold something, named in Cleanup's order: "Caches", "Caches and logs",
+    /// "Caches, logs and build caches".
+    static func present(_ categories: [CleanupCategory]) -> String {
+        let names = categories.filter { $0.bytes > 0 }.compactMap { category -> String? in
+            switch category.kind {
+            case .caches: "caches"
+            case .logs: "logs"
+            case .developer: "build caches"
+            case .installers: nil
+            }
+        }
+        let text = switch names.count {
+        case 0: "Files"
+        case 1: names[0]
+        default: names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+        }
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
     /// The headline is what a default Review moves (caches, logs and build caches); old installers, never ticked by
     /// default, are mentioned on their own. Nothing is suggested when neither part reaches `threshold`.
     static func action(_ measurement: CleanupMeasurement) -> SuggestedAction? {
@@ -113,8 +132,7 @@ public final class CleanupEstimate: SuggestedActionsProviding, Sendable {
             return SuggestedAction(
                 id: "cleanup",
                 title: "Free \(size(tickedBytes, lowerBound: ticked.contains(where: \.isLowerBound))) in Cleanup",
-                detail: "Caches, logs and build caches to review. They move to the Trash, never deleted."
-                    + alsoInstallers,
+                detail: "\(present(ticked)) to review. They move to the Trash, never deleted." + alsoInstallers,
                 symbol: "trash",
                 destination: .cleanup
             )

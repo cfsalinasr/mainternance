@@ -140,11 +140,26 @@ struct CleanupEstimateTests {
         #expect(action.title == "Free about 12 GB in Cleanup")
         #expect(action.destination == .cleanup)
         #expect(action.id == "cleanup")
-        #expect(action.detail == "Caches, logs and build caches to review. They move to the Trash, never deleted.")
+        #expect(action.detail == "Caches to review. They move to the Trash, never deleted.") // only caches here
         estimate.record(Self.measurement(500_000_000))
         #expect(await estimate.suggestedActions().count == 1)
         estimate.record(Self.measurement(499_999_999))
         #expect(await estimate.suggestedActions().isEmpty)
+    }
+
+    @Test("the detail names only the categories that hold something")
+    func detailNamesPresentCategories() {
+        func category(_ kind: CleanupKind, _ bytes: Int64) -> CleanupCategory {
+            CleanupCategory(kind: kind, entries: [CleanupEntry(
+                path: "/Users/me/x/\(kind.rawValue)", bytes: bytes, isLowerBound: false, type: .directory, modified: nil
+            )])
+        }
+        #expect(CleanupEstimate.present([category(.caches, 1)]) == "Caches")
+        #expect(CleanupEstimate.present([category(.logs, 1), category(.developer, 1)]) == "Logs and build caches")
+        #expect(CleanupEstimate.present([category(.caches, 1), category(.logs, 0), category(.developer, 1)])
+            == "Caches and build caches")
+        #expect(CleanupEstimate.present([category(.caches, 1), category(.logs, 1), category(.developer, 1)])
+            == "Caches, logs and build caches")
     }
 
     @Test("old installers (never ticked by default) are not in the headline, only mentioned on their own")
@@ -158,7 +173,7 @@ struct CleanupEstimateTests {
         estimate.record(measurement)
         let action = try #require(await estimate.suggestedActions().first)
         #expect(action.title == "Free about 1 GB in Cleanup")
-        #expect(action.detail == "Caches, logs and build caches to review. They move to the Trash, never deleted."
+        #expect(action.detail == "Caches to review. They move to the Trash, never deleted."
             + " Also about 6 GB of old installers, not selected until you tick them.")
         // Only installers worth mentioning: the suggestion says to review them, never "free".
         var onlyInstallers = Self.measurement(100_000_000)

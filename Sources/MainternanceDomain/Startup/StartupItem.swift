@@ -37,6 +37,9 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
     /// A hash of the job's `Program` and every `ProgramArguments` entry (set by the reader); nil when the file names
     /// neither or could not be read. Part of `reviewKey`, so a reviewed job that now runs something else is flagged.
     public var programFingerprint: String?
+    /// The fingerprint an earlier version of the review used (`Program` and `ProgramArguments` only); a review
+    /// saved with it is upgraded once, like the label-only keys before it.
+    public var previousFingerprint: String?
     /// Why the file could not be read; nil when it was read.
     public let readProblem: String?
     /// The plist's own `Disabled` key is true. launchd uses it when it has no override of its own for the label.
@@ -84,13 +87,19 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
     /// so a reviewed job whose plist was rewritten to run something else, or replaced by another file with the same
     /// label, no longer matches. The parts are joined with NUL, which no path and no valid label holds.
     public var reviewKey: String {
-        [StartupReviewBaseline.itemPrefix, validLabel ?? "", plistPath, programFingerprint ?? ""]
-            .joined(separator: StartupReviewBaseline.separator)
+        key(StartupReviewBaseline.itemPrefix, fingerprint: programFingerprint)
+    }
+
+    private func key(_ prefix: String, fingerprint: String?) -> String {
+        [prefix, validLabel ?? "", plistPath, fingerprint ?? ""].joined(separator: StartupReviewBaseline.separator)
     }
 
     /// Keys from before the program was part of the review: the label when valid, or the file path.
+    /// Keys of earlier review formats: the label when valid, the file path, and the key with the earlier
+    /// fingerprint. Only the label key can be shared by two files; the others name this file.
     var legacyReviewKeys: [String] {
-        validLabel.map { ["label:\($0)", legacyPathKey] } ?? [legacyPathKey]
+        let previous = key(StartupReviewBaseline.previousItemPrefix, fingerprint: previousFingerprint)
+        return (validLabel.map { ["label:\($0)"] } ?? []) + [legacyPathKey, previous]
     }
 
     var legacyPathKey: String {

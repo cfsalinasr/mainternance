@@ -70,6 +70,11 @@ public struct HealthEvaluator: Sendable {
         }
         if let count = snapshot.newStartupItemCount {
             checks.append(startup(count))
+        } else if snapshot.startupCheckUnavailable {
+            checks.append(HealthCheck(
+                id: .startupItems, state: .needsAttention, title: "Startup items",
+                reason: "Could not check for new or changed items", destination: .startup
+            ))
         }
         if let scan {
             checks.append(lastScan(scan, now: now))

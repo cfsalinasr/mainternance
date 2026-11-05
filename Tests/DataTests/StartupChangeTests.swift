@@ -96,7 +96,7 @@ struct StartupChangeTests {
         let path = try fixture.job("--version", in: fixture.userFolder, file: "odd.plist")
         let item = LaunchItemReader.item(at: path, kind: .userAgent)
         _ = await fixture.services().lister.list()
-        #expect(try savedKeys(fixture) == ["item\u{0}\u{0}\(path)\u{0}\(#require(item.programFingerprint))"])
+        #expect(try savedKeys(fixture) == ["item2\u{0}\u{0}\(path)\u{0}\(#require(item.programFingerprint))"])
     }
 
     // MARK: Baselines saved before programs were part of the review
@@ -180,6 +180,39 @@ struct StartupChangeTests {
         #expect(listed.newCount == 2)
     }
 
+    @Test("a reviewed agent that gains DYLD_INSERT_LIBRARIES in EnvironmentVariables is changed and counted")
+    func environmentIsPartOfTheProgram() async throws {
+        let fixture = try StartupFixture()
+        let services = fixture.services()
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        _ = await services.lister.list()
+        try fixture.plist("com.example.a.plist", in: fixture.userFolder, [
+            "Label": "com.example.a", "ProgramArguments": ["/bin/true"],
+            "EnvironmentVariables": ["DYLD_INSERT_LIBRARIES": dropped(fixture)]
+        ])
+        let later = await services.lister.list()
+        #expect(later.items.map(\.isChanged) == [true])
+        #expect(later.newCount == 1)
+    }
+
+    @Test("a review saved with the earlier fingerprint (program and arguments only) is trusted once and upgraded")
+    func earlierFingerprintIsUpgraded() async throws {
+        let fixture = try StartupFixture()
+        let services = fixture.services()
+        let path = try fixture.job("com.example.a", in: fixture.userFolder)
+        let job: [String: Any] = ["Label": "com.example.a", "ProgramArguments": ["/bin/true"]]
+        let previous = try #require(LaunchItemReader.programOnlyFingerprint(job))
+        let earlier = "item\u{0}com.example.a\u{0}\(path)\u{0}\(previous)"
+        try writeOldBaseline(fixture, [earlier])
+        let first = await services.lister.list()
+        #expect(first.newCount == 0) // no mass "Changed" after the format change
+        #expect(try savedKeys(fixture) == [LaunchItemReader.item(at: path, kind: .userAgent).reviewKey])
+        try fixture.plist("com.example.a.plist", in: fixture.userFolder, [
+            "Label": "com.example.a", "ProgramArguments": ["/bin/true"], "WorkingDirectory": dropped(fixture)
+        ])
+        #expect(await services.lister.list().items.map(\.isChanged) == [true])
+    }
+
     @Test("the program fingerprint covers Program and every argument, and is nil when the file names neither")
     func fingerprint() {
         let plain = LaunchItemReader.programFingerprint(["ProgramArguments": ["/bin/true"]])
@@ -189,5 +222,20 @@ struct StartupChangeTests {
         #expect(plain != LaunchItemReader.programFingerprint(["ProgramArguments": ["/bin/true", ""]]))
         #expect(LaunchItemReader.programFingerprint(["Label": "com.a"]) == nil)
         #expect(plain == LaunchItemReader.programFingerprint(["ProgramArguments": ["/bin/true"], "RunAtLoad": true]))
+        let env = LaunchItemReader.programFingerprint([
+            "ProgramArguments": ["/bin/true"],
+            "EnvironmentVariables": ["A": "1", "B": "2"]
+        ])
+        #expect(env != plain)
+        #expect(env == LaunchItemReader.programFingerprint([
+            "EnvironmentVariables": ["B": "2", "A": "1"],
+            "ProgramArguments": ["/bin/true"]
+        ]))
+        #expect(plain != LaunchItemReader.programFingerprint(["ProgramArguments": ["/bin/true"], "BundleProgram": "x"]))
+        #expect(plain != LaunchItemReader.programFingerprint([
+            "ProgramArguments": ["/bin/true"],
+            "WorkingDirectory": "/"
+        ]))
+        #expect(LaunchItemReader.programFingerprint(["WorkingDirectory": "/"]) != nil)
     }
 }
