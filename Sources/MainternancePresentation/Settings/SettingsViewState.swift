@@ -304,6 +304,10 @@ public final class SettingsViewState {
     /// them before anything is written), then writes the same change through `update` after every earlier write
     /// finished. A run the scheduler recorded meanwhile comes back with the result and is kept. A write that did
     /// not reach the disk shows `SettingsText.notSaved` until a later one does.
+    ///
+    /// When the write was saved and no later one is queued, the screen takes what is now on disk: after a read
+    /// error at launch the shown values were defaults, while `update` applied the change to the real file, so
+    /// the screen, the scheduler and the notifier must follow the file, not the defaults.
     private func commit(_ change: @escaping @Sendable (inout AppPreferences) -> Void) async {
         change(&current)
         onChange?(current)
@@ -319,6 +323,18 @@ public final class SettingsViewState {
         current.lastScheduledRun = ScanSchedule.laterRun(
             current.lastScheduledRun, result.preferences.lastScheduledRun, now: now()
         )
+        guard result.saved, pendingSave == write else { return }
+        adoptSaved(result.preferences)
+    }
+
+    /// Shows the saved values; "Launch at login" stays what macOS reports. Reports them only when they differ.
+    private func adoptSaved(_ saved: AppPreferences) {
+        var next = saved
+        next.launchAtLogin = launchAtLogin
+        next.lastScheduledRun = ScanSchedule.laterRun(current.lastScheduledRun, saved.lastScheduledRun, now: now())
+        guard next != current else { return }
+        current = next
+        onChange?(current)
     }
 
     /// The scheduler says whether the run it recorded reached the disk (see `ScanScheduler.onRunRecorded`).

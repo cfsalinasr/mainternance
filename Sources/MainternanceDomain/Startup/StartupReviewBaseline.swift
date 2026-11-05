@@ -14,16 +14,21 @@ public enum StartupReviewMatch: Sendable, Equatable {
 }
 
 /// The saved review keys, indexed so an item can be told apart as reviewed, changed or new.
-public struct StartupReviewBaseline: Sendable {
+public struct StartupReviewBaseline: Sendable, Equatable {
     static let itemPrefix = "item"
     static let separator = "\u{0}"
 
     private let keys: Set<String>
     private let labels: Set<String>
     private let paths: Set<String>
+    /// The keys the review saved for each kind (plus those saved without a kind); old-style keys match only here.
+    /// Nil: a review saved without kinds, whose keys apply to every kind.
+    private let byKind: [StartupKind: Set<String>]?
 
-    public init(_ keys: Set<String>) {
+    /// `byKind` holds, for each kind, the keys saved for it plus those saved under no kind.
+    public init(_ keys: Set<String>, byKind: [StartupKind: Set<String>]? = nil) {
         self.keys = keys
+        self.byKind = byKind
         var labels: Set<String> = []
         var paths: Set<String> = []
         for key in keys {
@@ -39,7 +44,8 @@ public struct StartupReviewBaseline: Sendable {
     }
 
     /// A current key wins; then a label or file the review saw in another form (changed) wins over an old-style
-    /// key, so an old key left behind can never hide a change once the item was upgraded.
+    /// key, so an old key left behind can never hide a change once the item was upgraded. Old-style keys match only
+    /// within the item's own kind: a daemon reusing a reviewed agent's label is not reviewed.
     public func match(_ item: StartupItem) -> StartupReviewMatch {
         if keys.contains(item.reviewKey) {
             return .reviewed
@@ -47,10 +53,36 @@ public struct StartupReviewBaseline: Sendable {
         if paths.contains(item.plistPath) || item.validLabel.map(labels.contains) == true {
             return .changed
         }
-        if item.legacyReviewKeys.contains(where: keys.contains) {
+        if !oldKeys(of: item).isEmpty {
             return .reviewedBeforeUpgrade
         }
         return .new
+    }
+
+    /// `match` for a whole listing, plus one rule only a listing can apply: an old label key that more than one
+    /// item matches (another file took a reviewed label) cannot say which one was reviewed, so those items are
+    /// changed. An item matched by its own old path key stays reviewed.
+    public func matches(_ items: [StartupItem]) -> [StartupReviewMatch] {
+        var results = items.map(match)
+        var uses: [String: Int] = [:]
+        for (item, result) in zip(items, results) where result == .reviewedBeforeUpgrade {
+            for key in oldKeys(of: item) {
+                uses[key, default: 0] += 1
+            }
+        }
+        for index in items.indices where results[index] == .reviewedBeforeUpgrade {
+            let matched = oldKeys(of: items[index])
+            let byPath = matched.contains(items[index].legacyPathKey)
+            if !byPath, matched.contains(where: { (uses[$0] ?? 0) > 1 }) {
+                results[index] = .changed
+            }
+        }
+        return results
+    }
+
+    private func oldKeys(of item: StartupItem) -> [String] {
+        let saved = byKind.map { $0[item.kind] ?? [] } ?? keys
+        return item.legacyReviewKeys.filter(saved.contains)
     }
 
     /// The old-style keys an upgraded item replaces.

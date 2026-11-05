@@ -94,6 +94,20 @@ struct StartupItemTests {
         #expect(StartupReviewBaseline.legacyKeys(of: now) == ["label:com.a", "path:/x/a.plist"])
     }
 
+    @Test("old keys match only within the item's kind, and one old label key matched twice makes both changed")
+    func legacyKeysAreScoped() {
+        let agent = item()
+        let daemon = StartupItem(kind: .systemDaemon, plistPath: "/y/a.plist", label: "com.a")
+        let scoped = StartupReviewBaseline(["label:com.a"], byKind: [.userAgent: ["label:com.a"]])
+        #expect(scoped.match(agent) == .reviewedBeforeUpgrade)
+        #expect(scoped.match(daemon) == .new)
+        let twin = item("/x/twin.plist")
+        #expect(scoped.matches([agent, twin]) == [.changed, .changed])
+        #expect(scoped.matches([agent, daemon]) == [.reviewedBeforeUpgrade, .new])
+        let byPath = StartupReviewBaseline(["label:com.a", "path:/x/a.plist"])
+        #expect(byPath.matches([agent, twin]) == [.reviewedBeforeUpgrade, .changed]) // its own path key decides
+    }
+
     @Test("text shown from a plist has no bidi, zero-width or control characters; the label itself is untouched")
     func displayTextIsSanitized() {
         let label = "com.evil.\u{202E}gpj\u{200B}up\u{0007}date"

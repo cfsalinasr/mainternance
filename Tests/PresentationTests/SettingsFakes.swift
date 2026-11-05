@@ -12,6 +12,8 @@ final class FakePreferencesStore: PreferencesStoring {
         var holdNextSave = false
         /// Every write fails (nothing is stored), as a full disk would.
         var failWrites = false
+        /// `load` gives the defaults, as the real store does after a read error.
+        var failLoads = false
     }
 
     let state: Mutex<State>
@@ -45,7 +47,7 @@ final class FakePreferencesStore: PreferencesStoring {
     }
 
     func load() async -> AppPreferences {
-        state.withLock { $0.stored }
+        state.withLock { $0.failLoads ? .defaults : $0.stored }
     }
 
     func save(_ preferences: AppPreferences) async -> Bool {

@@ -29,9 +29,13 @@ final class TrashDiskImage {
         let mount = temp.url.appendingPathComponent("mount", isDirectory: true)
         let image = temp.url.appendingPathComponent("trash-test.dmg").path
         guard (try? FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)) != nil,
-              run(["create", "-quiet", "-size", "8m", "-fs", "APFS", "-volname", "MainternanceTrashTest", image]),
-              run(["attach", "-quiet", "-nobrowse", "-noautoopen", "-mountpoint", mount.path, image])
+              run(["create", "-quiet", "-size", "8m", "-fs", "APFS", "-volname", "MainternanceTrashTest", image])
         else {
+            return nil
+        }
+        guard run(["attach", "-quiet", "-nobrowse", "-noautoopen", "-mountpoint", mount.path, image]) else {
+            // A failed or timed-out attach may still have mounted the image: never leave it behind.
+            _ = run(["detach", "-quiet", "-force", mount.path])
             return nil
         }
         // From here deinit detaches, also when the checks below give up.
@@ -55,6 +59,28 @@ final class TrashDiskImage {
 
     private static func text(_ bytes: UnsafeRawBufferPointer) -> String {
         String(bytes: bytes.prefix { $0 != 0 }, encoding: .utf8) ?? ""
+    }
+
+    /// The Trash macOS picks for items on the image, when it lies inside the mount point; nil otherwise (for
+    /// example the owner's own Trash), and then the test must not move anything.
+    var trashOnImage: URL? {
+        let manager = FileManager.default
+        guard let trash = try? manager.url(
+                  for: .trashDirectory,
+                  in: .userDomainMask,
+                  appropriateFor: mount,
+                  create: true
+              ),
+              let root = Self.realPath(mount.path), let picked = Self.realPath(trash.path),
+              picked.hasPrefix(root + "/")
+        else { return nil }
+        return trash
+    }
+
+    private static func realPath(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     /// The volume's own Trash folder for this user.
@@ -84,9 +110,14 @@ final class TrashDiskImage {
 /// Skipped when `hdiutil` cannot attach an image here; never touches the owner's Trash.
 @Suite("System Trash (real trashItem on a disk image)", .serialized)
 struct SystemTrashIntegrationTests {
+    /// Cancels the test unless the image is attached AND macOS would put its items in the image's own Trash, so
+    /// nothing can ever reach the owner's Trash.
     private func image() throws -> TrashDiskImage {
         guard let image = TrashDiskImage.attach() else {
             try Test.cancel("hdiutil could not attach a temporary disk image here")
+        }
+        guard image.trashOnImage != nil else {
+            try Test.cancel("the Trash for the disk image is not on the image")
         }
         return image
     }

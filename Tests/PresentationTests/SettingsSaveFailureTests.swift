@@ -63,6 +63,31 @@ struct SettingsSaveFailureTests {
         #expect(!rig.settings.notes.contains(SettingsText.scheduledRunNotSaved))
     }
 
+    @Test func afterAReadErrorAtLaunchTheScreenFollowsWhatWasSaved() async {
+        var onDisk = AppPreferences.defaults
+        onDisk.weeklyScanEnabled = true
+        onDisk.schedule = ScanSchedule(weekday: 5, hour: 21, minute: 45)
+        onDisk.weeklyDigest = false
+        let rig = SettingsRig(stored: onDisk)
+        rig.store.configure { $0.failLoads = true }
+        await rig.state.load()
+        #expect(rig.state.current == .defaults) // the launch read failed
+        await rig.state.setProblemAlerts(false)
+        var expected = onDisk
+        expected.problemAlerts = false
+        #expect(rig.store.stored == expected) // the change went on top of the real file
+        #expect(rig.state.current == expected) // and the screen now shows it, not the defaults
+        #expect(rig.changed.last == expected) // the scheduler and the notifier follow it too
+        #expect(rig.state.scheduleControlsEnabled)
+    }
+
+    @Test func aWriteThatSavedWhatIsShownReportsNothingMore() async {
+        let rig = SettingsRig()
+        await rig.state.load()
+        await rig.state.setProblemAlerts(false)
+        #expect(rig.changed.count == 2) // the load and the change; adopting equal values says nothing new
+    }
+
     @Test func theSaveNotesAreWorded() {
         #expect(SettingsText.notSaved.hasPrefix("Your setting could not be saved."))
         #expect(SettingsText.scheduledRunNotSaved.contains("may run again"))

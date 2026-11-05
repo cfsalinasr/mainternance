@@ -22,7 +22,7 @@ public final class StartupReviewStore: Sendable {
     enum Baseline: Equatable {
         /// No baseline yet (or one was just created by this call); `saved` says whether that creation was written.
         case missing(saved: Bool)
-        case reviewed(Set<String>)
+        case reviewed(StartupReviewBaseline)
         /// The file could not be read, or it is damaged and could not be moved aside (or was not asked to be).
         case unreadable
     }
@@ -55,7 +55,7 @@ public final class StartupReviewStore: Sendable {
         lock.withLock { _ in
             switch readFile() {
             case let .readable(saved):
-                return .reviewed(saved.all)
+                return .reviewed(saved.baseline)
             case .unreadable:
                 return .unreadable
             case .missing:
@@ -133,6 +133,12 @@ public final class StartupReviewStore: Sendable {
 
         var all: Set<String> {
             byKind.values.reduce(legacy) { $0.union($1) }
+        }
+
+        /// For matching: every key, and for each kind what it saved plus the keys saved under no kind.
+        var baseline: StartupReviewBaseline {
+            let kinds = StartupKind.allCases.map { ($0, known(for: $0)) }
+            return StartupReviewBaseline(all, byKind: Dictionary(uniqueKeysWithValues: kinds))
         }
 
         /// Without kinds saved, every old key is kept (the safe side: nothing silently dropped).

@@ -135,15 +135,49 @@ struct StartupChangeTests {
         #expect(try savedKeys(fixture) == [LaunchItemReader.item(at: path, kind: .userAgent).reviewKey])
     }
 
-    @Test("Home's counter treats an old baseline as reviewed but never upgrades it (it never writes)")
-    func counterDoesNotUpgrade() async throws {
+    @Test("Home's counter upgrades an old baseline itself: trusted once, then a later change shows on Home")
+    func counterUpgrades() async throws {
+        let fixture = try StartupFixture()
+        let clock = TestClock()
+        let services = fixture.services(clock: clock.reading)
+        let path = try fixture.plist("com.example.a.plist", in: fixture.userFolder, [
+            "Label": "com.example.a", "ProgramArguments": [dropped(fixture)] // changed before the first look
+        ])
+        try writeOldBaseline(fixture, ["label:com.example.a"])
+        #expect(await services.newItemCounter.list().newCount == 0) // the old review is trusted once
+        #expect(try savedKeys(fixture) == [LaunchItemReader.item(at: path, kind: .userAgent).reviewKey])
+        try fixture.job("com.example.a", in: fixture.userFolder) // changed after the upgrade
+        clock.advance(StartupServices.counterMinimumAge)
+        #expect(await services.newItemCounter.list().newCount == 1) // Home shows it without opening Startup
+    }
+
+    @Test(
+        "an old label key matches only within its own kind: a daemon reusing a reviewed agent's label is not reviewed"
+    )
+    func oldKeysStayInTheirKind() async throws {
         let fixture = try StartupFixture()
         let services = fixture.services()
         try fixture.job("com.example.a", in: fixture.userFolder)
+        try fixture.job("com.example.a", in: fixture.daemonFolder)
         try writeOldBaseline(fixture, ["label:com.example.a"])
-        let before = try Data(contentsOf: fixture.reviewFile)
-        #expect(await services.newItemCounter.list().newCount == 0)
-        #expect(try Data(contentsOf: fixture.reviewFile) == before)
+        let listed = await services.lister.list()
+        let agent = try #require(listed.items.first { $0.kind == .userAgent })
+        let daemon = try #require(listed.items.first { $0.kind == .systemDaemon })
+        #expect(!agent.needsReview)
+        #expect(daemon.needsReview)
+        #expect(listed.newCount == 1)
+    }
+
+    @Test("an old label key that two files of one kind match cannot tell which was reviewed: both are changed")
+    func sharedOldLabelKeyIsChanged() async throws {
+        let fixture = try StartupFixture()
+        let services = fixture.services()
+        try fixture.job("com.example.a", in: fixture.userFolder)
+        try fixture.job("com.example.a", in: fixture.userFolder, file: "dropped.plist")
+        try writeOldBaseline(fixture, ["label:com.example.a"])
+        let listed = await services.lister.list()
+        #expect(listed.items.map(\.isChanged) == [true, true])
+        #expect(listed.newCount == 2)
     }
 
     @Test("the program fingerprint covers Program and every argument, and is nil when the file names neither")

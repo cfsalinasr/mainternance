@@ -47,6 +47,6 @@ struct ScannerQuarantineUnreadableTests {
 
     @Test func theNoteIsPlain() {
         #expect(ScannerText.quarantineUnreadable
-            == "The quarantine list could not be read; nothing in it was changed.")
+            == "The quarantine list could not be read, so what is shown may be out of date. Nothing was removed.")
     }
 }

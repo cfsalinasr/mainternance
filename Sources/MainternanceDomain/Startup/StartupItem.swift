@@ -90,8 +90,11 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
 
     /// Keys from before the program was part of the review: the label when valid, or the file path.
     var legacyReviewKeys: [String] {
-        let path = "path:\(plistPath)"
-        return validLabel.map { ["label:\($0)", path] } ?? [path]
+        validLabel.map { ["label:\($0)", legacyPathKey] } ?? [legacyPathKey]
+    }
+
+    var legacyPathKey: String {
+        "path:\(plistPath)"
     }
 
     var validLabel: String? {
