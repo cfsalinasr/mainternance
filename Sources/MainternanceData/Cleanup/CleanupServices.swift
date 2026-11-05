@@ -16,11 +16,14 @@ public struct CleanupServices: Sendable {
         trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash,
         isLowPowerMode: @escaping @Sendable () -> Bool = { ProcessInfo.processInfo.isLowPowerModeEnabled }
     ) {
-        let rules = CleanupRules(roots: CleanupRoots.standard(home: home), now: now)
+        let resolved = ProtectedPaths.Resolved()
+        let rules = CleanupRules(
+            roots: CleanupRoots.standard(home: home), now: now, holdsApp: { resolved.holdsApp($0) }
+        )
         let measurer = CleanupMeasurer(rules: rules)
         scanner = measurer
         estimate = CleanupEstimate(scanner: measurer, now: now, isLowPowerMode: isLowPowerMode)
-        mover = CleanupMover(rules: rules, trash: trash, isProtected: { ProtectedPaths.isProtected($0) })
+        mover = CleanupMover(rules: rules, trash: trash, isProtected: { resolved.isProtected($0) })
     }
 
     /// The real move: to the owner's Trash, where Finder's Put Back can restore it. A link should move as the link

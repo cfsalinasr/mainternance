@@ -117,6 +117,11 @@ public struct CleanupMeasurement: Sendable, Equatable {
     public var isLowerBound: Bool {
         categories.contains(where: \.isLowerBound)
     }
+
+    /// The categories a measuring ticks (`selectedByDefault` true), or the ones it leaves unticked (old installers).
+    public func categories(selectedByDefault: Bool) -> [CleanupCategory] {
+        categories.filter { $0.kind.isSelectedByDefault == selectedByDefault }
+    }
 }
 
 /// An entry that was not moved, and why in plain words.
@@ -153,6 +158,8 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
     case protected
     /// A link that points into a protected place. Only the link would move, but it is left alone all the same.
     case protectedLink
+    /// A folder that holds the running Mainternance app: moving it would move the app too.
+    case holdsApp
     /// Nothing is at the path any more.
     case vanished
     /// A file became a folder, a folder became a link, another item took its place, or its folder was replaced.
@@ -169,6 +176,7 @@ public enum CleanupRefusal: Error, Equatable, Sendable {
         case .notInCleanupFolder: "It is not in one of the folders Cleanup looks at."
         case .protected: "It is in a protected place."
         case .protectedLink: "This is a link to a protected place."
+        case .holdsApp: "It holds Mainternance itself."
         case .vanished: "It is no longer there."
         case .changed: "It changed since it was measured."
         case .otherVolume: "It is on another disk, so Cleanup leaves it alone."

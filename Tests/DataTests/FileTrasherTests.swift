@@ -79,14 +79,16 @@ struct FileTrasherTests {
         #expect(urls.allSatisfy(fixture.exists))
     }
 
-    @Test("a dot-named file in an ordinary folder is a plain file and moves")
-    func dotFileMoves() async throws {
+    @Test("a dot-named (hidden) file in an ordinary folder is refused, as Search hides it")
+    func dotFileRefused() async throws {
         let fixture = try FilesFixture()
-        let url = try fixture.file("Documents/.notes.txt")
+        let url = try fixture.file("Movies/.render-cache.mov")
         let trash = fixture.trash()
         let outcome = try await fixture.trasher(trash).moveToTrash([fixture.item(url)])
-        #expect(outcome.moved.count == 1)
-        #expect(!fixture.exists(url))
+        #expect(outcome.moved.isEmpty)
+        #expect(outcome.failed.map(\.reason) == [FileRefusal.hiddenPlace.text])
+        #expect(trash.calls.isEmpty)
+        #expect(fixture.exists(url))
     }
 
     @Test("a protected path is refused")

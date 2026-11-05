@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a path lies inside the home folder, by folder names: the one rule the searcher and the trasher share for
-/// "inside the home folder", "in `~/Library` or a dot-folder" and "inside a package".
+/// "inside the home folder", "in `~/Library`, a dot-folder or a dot-file" and "inside a package".
 enum HomePlaces {
     /// The folder names from `home` down to `folder`, both already resolved (`realpath`): empty when `folder` is the
     /// home folder itself, nil when it is not inside the home folder.
@@ -19,7 +19,13 @@ enum HomePlaces {
         if let first = names.first, first.caseInsensitiveCompare("Library") == .orderedSame {
             return true
         }
-        return names.contains { $0.hasPrefix(".") }
+        return names.contains(where: isHiddenName)
+    }
+
+    /// A name that starts with `.`: hidden in Finder. Search, Large files, Duplicates and the trasher all leave such
+    /// a file or folder alone.
+    static func isHiddenName(_ name: some StringProtocol) -> Bool {
+        name.hasPrefix(".")
     }
 
     /// Whether any folder from just below `home` down to the end of `names` is a package (an app, a Photos library,

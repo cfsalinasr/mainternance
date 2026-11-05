@@ -12,17 +12,21 @@ public struct FilesServices: Sendable {
     /// `home` is the owner's home folder. Tests pass a temp folder, a fake `runQuery` (Spotlight is never queried
     /// from tests) and a `trash` that moves items into a temp folder, so no test touches the real home folder,
     /// `~/Library` or Trash. Without `isProtected`, the protected places are `ProtectedPaths`, with its fixed folders
-    /// resolved once here (the walker asks once per folder), giving the same answers as `ProtectedPaths.isProtected`.
+    /// resolved once here (the walker asks once per folder): the trasher gets `ProtectedPaths.isProtected`, the walks
+    /// get only the protected places themselves (a folder that holds the app, such as Downloads, is still walked; the
+    /// app inside it is not). A given `isProtected` is used for both.
     public init(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer = FilesServices.runSpotlight,
         trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash,
         isProtected given: (@Sendable (String) -> Bool)? = nil
     ) {
-        let isProtected = given ?? Self.protectedChecker()
+        let resolved = ProtectedPaths.Resolved()
+        let isProtected = given ?? { resolved.isProtected($0) }
+        let isWalkProtected = given ?? { resolved.isWithinProtected($0) }
         search = SpotlightSearcher(home: home, runQuery: runQuery)
-        disk = LargeFileScanner(walker: FileWalker(home: home, isProtected: isProtected))
-        duplicates = DuplicateFinder(home: home, isProtected: isProtected)
+        disk = LargeFileScanner(walker: FileWalker(home: home, isProtected: isWalkProtected))
+        duplicates = DuplicateFinder(home: home, isProtected: isWalkProtected)
         trasher = FileTrasher(home: home, trash: trash, isProtected: isProtected)
     }
 

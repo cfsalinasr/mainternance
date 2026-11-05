@@ -10,7 +10,8 @@ import MainternanceDomain
 /// in the home folder, not a fixed list). It is refused with a reason when:
 /// 1. its path is not a plain absolute path (`.`, `..`, a trailing slash), or its parent, with every link resolved,
 ///    is not the home folder or a folder inside it (`notInHome`), or that parent is inside `~/Library` or has a
-///    folder whose name starts with `.` on the way (`hiddenPlace`; `Library` in any letter case), or any folder
+///    folder whose name starts with `.` on the way, or the file's own name starts with `.` (`hiddenPlace`;
+///    `Library` in any letter case; the same rule as Search, `HomePlaces.isHidden`), or any folder
 ///    from just below the home folder down to that parent is a package such as an app or a Photos library
 ///    (`insidePackage`: a package counts as one item, so nothing inside it is moved on its own);
 /// 2. that parent, opened without following a link (`O_NOFOLLOW | O_DIRECTORY`), is not the same folder (device and
@@ -172,7 +173,7 @@ struct FileTrasher: FileTrashing {
         // A missing folder means the file cannot be there either.
         guard let parent = CleanupRules.resolve(path.deletingLastPathComponent) else { return .failure(.vanished) }
         guard let below = HomePlaces.names(from: home.resolved, to: parent) else { return .failure(.notInHome) }
-        guard !HomePlaces.isHidden(below) else { return .failure(.hiddenPlace) }
+        guard !HomePlaces.isHidden(below + [Substring(name)]) else { return .failure(.hiddenPlace) }
         guard !HomePlaces.isInsidePackage(home: home.resolved, names: below, isPackage: isPackage) else {
             return .failure(.insidePackage)
         }

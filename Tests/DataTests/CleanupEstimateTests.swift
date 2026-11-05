@@ -140,11 +140,33 @@ struct CleanupEstimateTests {
         #expect(action.title == "Free about 12 GB in Cleanup")
         #expect(action.destination == .cleanup)
         #expect(action.id == "cleanup")
-        #expect(action.detail == "Caches, logs and old installers to review. They move to the Trash, never deleted.")
+        #expect(action.detail == "Caches, logs and build caches to review. They move to the Trash, never deleted.")
         estimate.record(Self.measurement(500_000_000))
         #expect(await estimate.suggestedActions().count == 1)
         estimate.record(Self.measurement(499_999_999))
         #expect(await estimate.suggestedActions().isEmpty)
+    }
+
+    @Test("old installers (never ticked by default) are not in the headline, only mentioned on their own")
+    func installersMentionedSeparately() async throws {
+        let estimate = rig().estimate
+        let installer = CleanupEntry(
+            path: "/Users/me/Downloads/Old.dmg", bytes: 6_000_000_000, isLowerBound: false, type: .file, modified: nil
+        )
+        var measurement = Self.measurement(1_000_000_000)
+        measurement.categories.append(CleanupCategory(kind: .installers, entries: [installer]))
+        estimate.record(measurement)
+        let action = try #require(await estimate.suggestedActions().first)
+        #expect(action.title == "Free about 1 GB in Cleanup")
+        #expect(action.detail == "Caches, logs and build caches to review. They move to the Trash, never deleted."
+            + " Also about 6 GB of old installers, not selected until you tick them.")
+        // Only installers worth mentioning: the suggestion says to review them, never "free".
+        var onlyInstallers = Self.measurement(100_000_000)
+        onlyInstallers.categories.append(CleanupCategory(kind: .installers, entries: [installer]))
+        estimate.record(onlyInstallers)
+        let review = try #require(await estimate.suggestedActions().first)
+        #expect(review.title == "Review about 6 GB of old installers in Cleanup")
+        #expect(review.destination == .cleanup)
     }
 
     @Test("a lower-bound total says at least")

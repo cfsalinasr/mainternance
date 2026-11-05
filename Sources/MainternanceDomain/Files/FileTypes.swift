@@ -255,7 +255,7 @@ public struct FileTrashOutcome: Sendable, Equatable {
 public enum FileRefusal: Error, Equatable, Sendable {
     /// Its folder is not inside the home folder.
     case notInHome
-    /// Inside `~/Library` or a folder whose name starts with a dot.
+    /// Inside `~/Library` or a folder whose name starts with a dot, or its own name starts with a dot.
     case hiddenPlace
     /// Inside a protected place (system folders, the home folder itself, the app).
     case protected
@@ -285,7 +285,7 @@ public enum FileRefusal: Error, Equatable, Sendable {
     public var text: String {
         switch self {
         case .notInHome: "It is not in your home folder."
-        case .hiddenPlace: "It is in your Library folder or a hidden folder, so it is left alone."
+        case .hiddenPlace: "It is hidden, or in your Library folder or a hidden folder, so it is left alone."
         case .protected: "It is in a protected place."
         case .link: "It is a link to something else, not a file, so it is left alone."
         case .notPlainFile: "It is a folder, an app or something else that is not a single file, so it is left alone."

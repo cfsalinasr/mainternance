@@ -10,10 +10,11 @@ import MainternanceDomain
 /// 2. that Cleanup folder is opened without following a link (`O_NOFOLLOW | O_DIRECTORY`) and must still be the
 ///    same folder on disk (device and inode) it was when this move started: a folder replaced meanwhile is refused;
 /// 3. the entry is read inside that open folder without following links: something is still there, of the kind
-///    that was measured, and the same item (device and inode) when the measurement knew it;
+///    that was measured, and the same item (device and inode) the measurement recorded; an entry with no recorded
+///    identity is refused as unreadable, like the other movers do;
 /// 4. it is on the same volume as its Cleanup folder (a folder mounted from another volume is refused);
-/// 5. the path is not protected (`isProtected`, which resolves links); a link into a protected place is refused
-///    with its own reason;
+/// 5. the path is not protected (`isProtected`, which resolves links) and does not hold the running app
+///    (`rules.holdsApp`); a link into a protected place is refused with its own reason;
 /// 6. it still matches its folder's rule (an installer touched since measuring no longer counts);
 /// 7. last, just before the move, the path is read again (`lstat`) and must name exactly the item checked in the
 ///    open folder: a file or folder that became a link, or any other swap, is refused as changed.
@@ -106,14 +107,17 @@ struct CleanupMover: CleanupMoving {
         case let .found(found):
             info = found
         }
-        guard info.type == entry.type, entry.identity.map({ $0 == info.identity }) ?? true else {
-            return .failure(.changed)
-        }
+        guard let identity = entry.identity else { return .failure(.unreadable) }
+        guard info.type == entry.type, identity == info.identity else { return .failure(.changed) }
         guard rules.volume(candidate.target, info) == candidate.folder.identity.device else {
             return .failure(.otherVolume)
         }
-        guard !isProtected(candidate.target) else {
-            return .failure(info.type == .symbolicLink ? .protectedLink : .protected)
+        let holdsTheApp = rules.holdsApp(candidate.target)
+        guard !holdsTheApp, !isProtected(candidate.target) else {
+            if info.type == .symbolicLink {
+                return .failure(.protectedLink)
+            }
+            return .failure(holdsTheApp ? .holdsApp : .protected)
         }
         guard rules.accepts(path: candidate.target, info, in: candidate.folder.root, now: now) else {
             return .failure(.notInCleanupFolder)

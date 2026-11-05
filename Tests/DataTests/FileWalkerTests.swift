@@ -15,9 +15,9 @@ struct FileWalkerTests {
         try fixture.file(".zshrc", bytes: 10)
         try fixture.folder("Empty")
         let record = fixture.walk()
+        // `.zshrc` is hidden: never reported, as in Search.
         #expect(Set(record.paths) == [
-            fixture.path("Documents/a.txt"), fixture.path("Documents/deep/er/b.bin"), fixture.path("top.mov"),
-            fixture.path(".zshrc")
+            fixture.path("Documents/a.txt"), fixture.path("Documents/deep/er/b.bin"), fixture.path("top.mov")
         ])
         #expect(record.unreadable == 0)
         let big = try #require(record.files.first { $0.path.hasSuffix("b.bin") })

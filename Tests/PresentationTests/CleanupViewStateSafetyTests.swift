@@ -22,8 +22,8 @@ struct CleanupViewStateSafetyTests {
         #expect(rig.state.selectionText(CleanupRig.withInstaller.categories[2]) == "0 of 1 selected")
         rig.state.toggleEntry(installer)
         #expect(rig.state.isSelected(entry: installer))
-        await rig.state.measure() // a new measuring unticks it again
-        #expect(!rig.state.isSelected(entry: installer))
+        await rig.state.measure() // the owner ticked it: a new measuring keeps that choice
+        #expect(rig.state.isSelected(entry: installer))
     }
 
     @Test("a measuring cancelled by leaving the screen is dropped: the previous list stays and Home is not told")
