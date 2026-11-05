@@ -219,6 +219,9 @@ struct FilesLargeStateTests {
 
     @Test func duplicatesIntroSaysICloudOnlyFilesAreSkipped() {
         #expect(FilesText.duplicatesIntro.contains("files stored only in iCloud are not included"))
+        // Hidden files are skipped too, not only hidden folders.
+        #expect(FilesText.duplicatesIntro.contains("hidden files and folders"))
+        #expect(FilesText.largeIntro.contains("hidden files and folders are not included"))
     }
 
     @Test func progressAndResultFillTheState() async {

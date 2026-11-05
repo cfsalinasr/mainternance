@@ -13,7 +13,7 @@ struct CleanupChoicesTests {
     private let log = CleanupRig.path("app.log", folder: "/Users/me/Library/Logs")
     private let installer = CleanupRig.path("Old.dmg", folder: CleanupRig.downloads)
 
-    @Test("coming back to the screen measures again but keeps what the owner unticked and ticked")
+    @Test("coming back to the screen measures again but keeps what the owner unticked; installers start unticked")
     func choicesSurviveComingBack() async {
         let rig = CleanupRig(CleanupRig.withInstaller)
         await rig.state.appear()
@@ -22,8 +22,8 @@ struct CleanupChoicesTests {
         await rig.state.appear() // left for Home and came back
         #expect(rig.fake.measures == 2)
         #expect(!rig.state.isSelected(entry: small))
-        #expect(rig.state.isSelected(entry: installer))
-        #expect(rig.state.selectedEntries.map(\.id) == [big, log, installer])
+        #expect(!rig.state.isSelected(entry: installer)) // old installers start unticked on every measuring
+        #expect(rig.state.selectedEntries.map(\.id) == [big, log])
     }
 
     @Test("a new entry gets its category's default; known ones keep the owner's choice")
@@ -90,18 +90,19 @@ struct CleanupChoicesTests {
         #expect(CleanupText.result(CleanupOutcome(moved: [], failed: [])) == nil)
     }
 
-    @Test("a moved path that shows up again later is a new item with its default")
+    @Test("a moved path that shows up again later is a new item with its default; other unticks stay")
     func movedPathStartsFresh() async {
         let rig = CleanupRig(CleanupRig.withInstaller)
         await rig.state.measure()
-        rig.state.toggleEntry(installer) // ticked by the owner
-        for id in [big, small, log] {
-            rig.state.toggleEntry(id)
-        }
+        rig.state.toggleEntry(small) // unticked by the owner
+        rig.state.toggleEntry(log)
         rig.state.review()
         await rig.state.confirm()
-        #expect(rig.fake.moves == [[installer]])
-        await rig.state.measure() // a new Old.dmg appeared at the same path
+        #expect(rig.fake.moves == [[big]])
+        await rig.state.measure() // the cache was made again at the same path
+        #expect(rig.state.isSelected(entry: big))
+        #expect(!rig.state.isSelected(entry: small))
+        #expect(!rig.state.isSelected(entry: log))
         #expect(!rig.state.isSelected(entry: installer))
     }
 }

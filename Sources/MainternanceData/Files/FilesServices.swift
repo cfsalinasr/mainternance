@@ -21,19 +21,30 @@ public struct FilesServices: Sendable {
         trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash,
         isProtected given: (@Sendable (String) -> Bool)? = nil
     ) {
-        let resolved = ProtectedPaths.Resolved()
-        let isProtected = given ?? { resolved.isProtected($0) }
-        let isWalkProtected = given ?? { resolved.isWithinProtected($0) }
-        search = SpotlightSearcher(home: home, runQuery: runQuery)
-        disk = LargeFileScanner(walker: FileWalker(home: home, isProtected: isWalkProtected))
-        duplicates = DuplicateFinder(home: home, isProtected: isWalkProtected)
-        trasher = FileTrasher(home: home, trash: trash, isProtected: isProtected)
+        let guards = given.map { Guards(walk: $0, move: $0) } ?? Self.guards(ProtectedPaths.Resolved())
+        self.init(home: home, runQuery: runQuery, trash: trash, guards: guards)
     }
 
-    /// `ProtectedPaths.isProtected`, with the fixed folders resolved once.
-    static func protectedChecker() -> @Sendable (String) -> Bool {
-        let resolved = ProtectedPaths.Resolved()
-        return { resolved.isProtected($0) }
+    /// The protected-places checks: `walk` for the disk scan and the duplicate finder, `move` for the trasher.
+    struct Guards {
+        let walk: @Sendable (String) -> Bool
+        let move: @Sendable (String) -> Bool
+    }
+
+    /// The walks get only the protected places themselves (`isWithinProtected`): a folder that holds the app is
+    /// still walked, the app inside it is not. The trasher gets the full `isProtected`.
+    static func guards(_ resolved: ProtectedPaths.Resolved) -> Guards {
+        Guards(walk: { resolved.isWithinProtected($0) }, move: { resolved.isProtected($0) })
+    }
+
+    init(
+        home: URL, runQuery: @escaping @Sendable (NSPredicate, URL, Int) async -> SpotlightAnswer,
+        trash: @escaping @Sendable (URL) throws -> Void, guards: Guards
+    ) {
+        search = SpotlightSearcher(home: home, runQuery: runQuery)
+        disk = LargeFileScanner(walker: FileWalker(home: home, isProtected: guards.walk))
+        duplicates = DuplicateFinder(home: home, isProtected: guards.walk)
+        trasher = FileTrasher(home: home, trash: trash, isProtected: guards.move)
     }
 
     /// The real Spotlight query (`SpotlightSearcher.runSpotlight`); never called by automated tests.
