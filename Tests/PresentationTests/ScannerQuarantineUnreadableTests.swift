@@ -50,7 +50,8 @@ struct ScannerQuarantineUnreadableTests {
             == "The quarantine list could not be read, so what is shown may be out of date. Nothing was removed.")
     }
 
-    @Test func anOlderReloadCannotDropTheLinkOfAFileMovedMeanwhile() async {
+    @Test(.timeLimit(.minutes(1)))
+    func anOlderReloadCannotDropTheLinkOfAFileMovedMeanwhile() async {
         let rig = await ScannerRig.ready()
         let held = record(1)
         let finding = makeFinding(2)
