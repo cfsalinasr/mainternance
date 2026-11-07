@@ -97,13 +97,22 @@ struct QuarantineSidecarTests {
         #expect(try corruptNames(fix).count == 1)
     }
 
-    @Test("a vault folder that cannot be listed is an ioFailure, a missing one is simply empty")
+    @Test("a vault folder that cannot be listed is an ioFailure")
     func unlistableVault() async throws {
         let fix = try QuarantineFixture()
         _ = try await fix.store.quarantine(path: fix.makeFile("a.txt").path, signature: "S")
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fix.vault.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fix.vault.path) }
+        // chmod 000 does not stop root from listing; the owner's own account is not root.
+        try #require(getuid() != 0)
         await #expect(throws: QuarantineError.self) { try await later(fix).unclaimedFiles() }
+    }
+
+    @Test("a vault folder that does not exist has nothing unclaimed")
+    func missingVault() async throws {
+        let fix = try QuarantineFixture()
+        try? FileManager.default.removeItem(at: fix.vault)
+        #expect(try await later(fix).unclaimedFiles().isEmpty)
     }
 
     @Test("an unreadable index is never replaced: operations fail with ioFailure and write nothing")

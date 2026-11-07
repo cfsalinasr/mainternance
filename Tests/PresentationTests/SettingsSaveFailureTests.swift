@@ -45,6 +45,22 @@ struct SettingsSaveFailureTests {
         #expect(rig.state.current.problemAlerts == false)
     }
 
+    @Test func twoFailedChangesAreBothCarriedByTheNextSave() async {
+        let rig = SettingsRig()
+        await rig.state.load()
+        rig.store.configure { $0.failWrites = true }
+        await rig.state.setWeeklyDigest(false)
+        await rig.state.setProblemAlerts(false)
+        #expect(rig.state.saveFailed)
+        rig.store.configure { $0.failWrites = false }
+        await rig.state.setWeeklyDigest(true) // a later change to the same setting wins, in order
+        #expect(!rig.state.saveFailed)
+        #expect(rig.store.stored.weeklyDigest == true)
+        #expect(rig.store.stored.problemAlerts == false)
+        #expect(rig.state.current.weeklyDigest == true)
+        #expect(rig.state.current.problemAlerts == false)
+    }
+
     @Test func aSavedChangeShowsNoNote() async {
         let rig = SettingsRig()
         await rig.state.load()
