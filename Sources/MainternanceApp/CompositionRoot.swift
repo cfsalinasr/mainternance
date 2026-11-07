@@ -35,11 +35,6 @@ enum CompositionRoot {
         // Cleanup measures the owner's own Caches, Logs, Downloads and DerivedData when its screen appears (never at
         // launch), and moves what the owner confirmed to the real Trash. Home's suggestion uses its last measurement.
         let cleanupServices = CleanupServices()
-        let load = LoadOverview(
-            snapshots: LiveSystemSnapshotProvider(startup: startupServices.newItemCounter),
-            scans: services.statusProvider,
-            actions: cleanupServices.estimate
-        )
         let scannerModel = ScannerViewModel(
             engine: services.scanner,
             quarantine: services.quarantine,
@@ -56,6 +51,12 @@ enum CompositionRoot {
         )
         let automation = ScanAutomation(
             scanner: scannerModel, settings: settings, preferences: preferences, notifications: notifications
+        )
+        // Home and the popover show the next weekly scan from the same values the scheduler follows.
+        let load = LoadOverview(
+            snapshots: LiveSystemSnapshotProvider(startup: startupServices.newItemCounter),
+            scans: automation.statusWithNextScan(services.statusProvider),
+            actions: cleanupServices.estimate
         )
         let startup = StartupViewState(
             lister: startupServices.lister, controller: startupServices.controller,

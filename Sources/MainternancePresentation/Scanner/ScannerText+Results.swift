@@ -12,8 +12,9 @@ extension ScannerText {
         var isCleanAndComplete: Bool
     }
 
-    /// What the finished scan says. Plain facts only: what was scanned, how many files, what could not be read,
-    /// which definitions, and what was found. "Clean" wording is used only when `isClean` and nothing was skipped.
+    /// What the finished scan says. Plain facts only: what was scanned, how many files, what could not be read or
+    /// opened, what was too large to scan, which definitions, and what was found. "Clean" wording is used only when
+    /// `isClean` and nothing was skipped.
     static func report(_ summary: ScanSummary, locale: Locale = .current, timeZone: TimeZone = .current) -> Report {
         var lines = [
             scopeLine(summary.scope), "\(files(summary.scanned, locale: locale)) scanned.",
@@ -22,6 +23,12 @@ extension ScannerText {
         if summary.unreadable > 0 {
             let verb = summary.unreadable == 1 ? "was" : "were"
             lines.append("\(files(summary.unreadable, locale: locale)) could not be read and \(verb) not scanned.")
+        }
+        if summary.unreadableFolders > 0 {
+            lines.append(unreadableFolders(summary.unreadableFolders, locale: locale))
+        }
+        if summary.tooLarge > 0 {
+            lines.append(tooLarge(summary.tooLarge, locale: locale))
         }
         lines.append(definitionsLine(summary.definitionsDate, locale: locale, timeZone: timeZone))
         if summary.cancelled {
@@ -33,12 +40,22 @@ extension ScannerText {
         if summary.unattributedDetections > 0 {
             lines.append(unattributed(summary.unattributedDetections))
         }
-        if summary.scope == .full {
-            lines.append(cloudAdvisory)
+        if let advisory = cloudLine(summary) {
+            lines.append(advisory)
         }
         let cleanAndComplete = !summary.cancelled && summary.isClean && summary.isComplete
         let (title, symbol) = headline(summary, cleanAndComplete: cleanAndComplete)
         return Report(title: title, symbol: symbol, lines: lines, isCleanAndComplete: cleanAndComplete)
+    }
+
+    /// Only what is true for the scope: a quick scan covers the Desktop, a full scan Desktop and Documents and
+    /// skips the cloud folders; a chosen folder gets the note only when some files could not be read.
+    private static func cloudLine(_ summary: ScanSummary) -> String? {
+        switch summary.scope {
+        case .quick: quickCloudAdvisory
+        case .full: cloudAdvisory
+        case .custom: summary.unreadable > 0 ? customCloudAdvisory : nil
+        }
     }
 
     private static func headline(_ summary: ScanSummary, cleanAndComplete: Bool) -> (String, String) {
@@ -58,7 +75,7 @@ extension ScannerText {
         switch scope {
         case .quick: quickScope
         case .full: fullScope
-        case let .custom(url): "Scan of \(url.path)."
+        case let .custom(url): "Scan of \(shownPath(url.path))."
         }
     }
 
@@ -137,8 +154,8 @@ extension ScannerText {
     }
 
     static func restored(_ path: String, signature: String?) -> String {
-        guard let signature else { return "Restored to \(path)." }
-        return "Restored to \(path). It was flagged as \(signature), so be careful with it."
+        guard let signature else { return "Restored to \(shownPath(path))." }
+        return "Restored to \(shownPath(path)). It was flagged as \(signature), so be careful with it."
     }
 
     static func unclaimed(_ count: Int) -> String {

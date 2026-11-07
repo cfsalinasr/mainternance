@@ -121,6 +121,7 @@ struct ScannerFixture {
         clock: TestClock = TestClock(),
         temp existing: TempDirectory? = nil,
         fileExists: @escaping @Sendable (String) -> Bool = { _ in true },
+        isRegularFile: @escaping @Sendable (String) -> Bool = { _ in true },
         runner: FakeRunner
     ) throws {
         temp = try existing ?? TempDirectory()
@@ -142,7 +143,9 @@ struct ScannerFixture {
         scanner = ClamAVScanner(
             locator: tools.locator, runner: runner, paths: paths,
             definitions: DefinitionsStore(paths: paths), installer: installer,
-            environment: .init(now: clock.reading, home: temp.url, fileExists: fileExists)
+            environment: .init(
+                now: clock.reading, home: temp.url, fileExists: fileExists, isRegularFile: isRegularFile
+            )
         )
     }
 
@@ -166,7 +169,8 @@ struct ScannerFixture {
     static func replaying(
         _ lines: [ProcessLine], status: Int32, clock: TestClock = TestClock(),
         tools: Set<String> = ["brew", "clamscan", "freshclam"],
-        fileExists: @escaping @Sendable (String) -> Bool = { _ in true }
+        fileExists: @escaping @Sendable (String) -> Bool = { _ in true },
+        isRegularFile: @escaping @Sendable (String) -> Bool = { _ in true }
     ) throws -> ScannerFixture {
         let temp = try TempDirectory()
         let target = temp.url.appendingPathComponent("target", isDirectory: true)
@@ -182,6 +186,7 @@ struct ScannerFixture {
             clock: clock,
             temp: temp,
             fileExists: fileExists,
+            isRegularFile: isRegularFile,
             runner: FakeRunner.replaying(mapped, status: status)
         )
     }

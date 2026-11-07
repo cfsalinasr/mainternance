@@ -49,10 +49,12 @@ public protocol QuarantineStoring: Sendable {
     /// Restores the file and returns the path it was restored to.
     func restore(_ id: UUID) async throws -> String
     /// Items that are really in quarantine (the vault holds them and they are no longer at their old path).
-    func records() async -> [QuarantineRecord]
+    /// Throws `.ioFailure` when the quarantine list exists but cannot be read: that is never "nothing in quarantine".
+    func records() async throws -> [QuarantineRecord]
     /// Records whose copy is in the vault but whose original ALSO still sits at its old path (an interrupted copy
-    /// across volumes). They are NOT contained: the UI must say the file could not be moved.
-    func stillInPlace() async -> [QuarantineRecord]
-    /// Files in the vault that no record describes. They are never touched; the UI only mentions them.
-    func unclaimedFiles() async -> [String]
+    /// across volumes). They are NOT contained: the UI must say the file could not be moved. Throws like `records`.
+    func stillInPlace() async throws -> [QuarantineRecord]
+    /// Files in the vault that no record describes. They are never touched; the UI only mentions them. Throws like
+    /// `records`.
+    func unclaimedFiles() async throws -> [String]
 }

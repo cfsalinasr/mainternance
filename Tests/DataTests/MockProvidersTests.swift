@@ -17,7 +17,7 @@ struct MockProvidersTests {
         let disk = report.attentionChecks.first { $0.id == .diskSpace }
         let startup = report.attentionChecks.first { $0.id == .startupItems }
         #expect(disk?.reason == "Disk 91% full")
-        #expect(startup?.reason == "3 new startup items")
+        #expect(startup?.reason == "3 new or changed startup items")
     }
 
     @Test func mockScanStatusDates() async throws {

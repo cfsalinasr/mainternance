@@ -34,7 +34,8 @@ public final class ClamAVScanner: ScannerEngine {
     private let installer: ClamAVInstaller
     private let now: @Sendable () -> Date
     let home: URL
-    private let fileExists: @Sendable (String) -> Bool
+    let fileExists: @Sendable (String) -> Bool
+    let isRegularFile: @Sendable (String) -> Bool
     let state = Mutex(State())
 
     public init(
@@ -53,6 +54,7 @@ public final class ClamAVScanner: ScannerEngine {
         now = environment.now
         home = environment.home
         fileExists = environment.fileExists
+        isRegularFile = environment.isRegularFile
     }
 
     public func status() async -> EngineStatus {
@@ -159,8 +161,7 @@ public final class ClamAVScanner: ScannerEngine {
         let startedAt = now()
         continuation.yield(.started(scope: scope))
         let excluded = ScanExclusions.directories(for: scope, home: home, paths: paths)
-        let arguments = ["--database=\(paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive"]
-            + ScanExclusions.arguments(for: excluded) + ["--"] + roots
+        let arguments = Self.scanArguments(database: paths.databaseDirectory.path, excluded: excluded, roots: roots)
         let context = Context(
             scope: scope,
             startedAt: startedAt,
@@ -178,7 +179,7 @@ public final class ClamAVScanner: ScannerEngine {
         return await consume(process, continuation, context)
     }
 
-    private struct Context {
+    struct Context {
         let scope: ScanScope
         let startedAt: Date
         let definitionsDate: Date?
@@ -189,14 +190,17 @@ public final class ClamAVScanner: ScannerEngine {
     }
 
     /// Starts the child inside the same critical section that checks the quit and cancel flags and records the
-    /// process, so `terminateNow()` / `cancelScan()` can never slip between the check and the start.
+    /// process, so `terminateNow()` / `cancelScan()` can never slip between the check and the start. The child is
+    /// started with downloads of online-only (iCloud) files turned off, see `DatalessPolicy`.
     /// `runner.run` therefore executes WITH the lock held: a concurrent `terminateNow()` (the quit hook) or
     /// `cancelScan()` may block for the duration of the spawn (milliseconds), and a runner must never call back
     /// into the scanner.
     func launch(_ clamscan: String, _ arguments: [String]) -> RunningProcess? {
         state.withLock { current -> RunningProcess? in
             guard !current.quitRequested, !current.cancelRequested, !Task.isCancelled else { return nil }
-            let process = runner.run(clamscan, arguments: arguments, environment: nil, lowPriority: true)
+            let process = DatalessPolicy.withMaterializationOff {
+                runner.run(clamscan, arguments: arguments, environment: nil, lowPriority: true)
+            }
             current.current = process
             return process
         }
@@ -220,7 +224,7 @@ public final class ClamAVScanner: ScannerEngine {
             if isStderr, text.hasPrefix("ERROR:") {
                 tally.noteFatal()
             }
-            if let hit = tally.consume(parsed) {
+            if let hit = tally.consume(parsed, fromStderr: isStderr) {
                 continuation.yield(.found(ScanFinding(
                     id: UUID(), path: hit.path, signature: hit.signature, foundAt: now()
                 )))
@@ -255,65 +259,13 @@ public final class ClamAVScanner: ScannerEngine {
         return result
     }
 
-    /// Drops a verdict whose path cannot be a real result of this scan. A file name may contain newlines and so
-    /// forge lines: every path must be plain absolute and below one of the scan roots, and a FOUND path must exist.
-    /// This cannot stop a forged line that names a real file inside a root; the consumer re-verifies a finding
-    /// (`verifyFinding`) before acting on it.
-    private func vetted(_ line: ClamLine, context: Context, tally: inout ScanTally) -> ClamLine {
-        let path: String
-        switch line {
-        case .ignored: return line
-        case let .scanned(value), let .found(value, _), let .unreadable(value, _): path = value
-        }
-        let isFound = if case .found = line {
-            true
-        } else {
-            false
-        }
-        // A FOUND line ending in the app's own folders cannot be a result of this scan, but a file name with a
-        // newline can make a REAL detection print that way: it is dropped and counted, never silent (a forged line
-        // on a clean exit 0 is cleared by `ScanTally.noteExit`).
-        let inOwn = ScanPathRules.isPlainAbsolute(path)
-            && context.ownDirectories.contains { ScanPathRules.isInside(path, directory: $0) }
-        if isFound, inOwn {
-            tally.noteSuspicious()
-            tally.noteDroppedDetection()
-            return .ignored
-        }
-        let inRoot = ScanPathRules.isPlainAbsolute(path)
-            && context.roots.contains { ScanPathRules.isInside(path, directory: $0) }
-        // A FOUND inside an excluded CLOUD folder is a real, valid detection (the folder was not scanned, so only an
-        // output line can name it): delivered. Other verdicts below any excluded directory are post-filtered.
-        let plausible = inRoot
-            && (isFound || !context.excluded.contains { ScanPathRules.isInside(path, directory: $0) })
-        var accepted = plausible
-        if isFound, plausible, !fileExists(path) {
-            accepted = false
-        }
-        guard accepted else {
-            tally.noteSuspicious()
-            if isFound {
-                // A real detection without a usable path must never vanish silently (exit 0 resets this: see
-                // `ScanTally.noteExit`).
-                tally.noteDroppedDetection()
-            }
-            return .ignored
-        }
-        return line
-    }
-
-    private func cloudDirectories() -> Set<String> {
-        Set(["Library/Mobile Documents", "Library/CloudStorage"].map {
-            home.appendingPathComponent($0).standardizedFileURL.path
-        })
-    }
-
     private func summary(_ tally: ScanTally, _ context: Context, cancelled: Bool) -> ScanSummary {
         ScanSummary(
             scope: context.scope, scanned: tally.scanned, unreadable: tally.unreadable,
             findings: tally.findings, startedAt: context.startedAt, endedAt: now(), cancelled: cancelled,
             definitionsDate: context.definitionsDate, permissionDenied: tally.permissionDenied,
-            unattributedDetections: tally.unattributedDetections
+            unattributedDetections: tally.unattributedDetections, tooLarge: tally.tooLarge,
+            unreadableFolders: tally.unreadableFolders
         )
     }
 }
@@ -325,15 +277,18 @@ public extension ClamAVScanner {
         let now: @Sendable () -> Date
         let home: URL
         let fileExists: @Sendable (String) -> Bool
+        let isRegularFile: @Sendable (String) -> Bool
 
         public init(
             now: @escaping @Sendable () -> Date = { Date() },
             home: URL = FileManager.default.homeDirectoryForCurrentUser,
-            fileExists: @escaping @Sendable (String) -> Bool = ScanPathRules.lstatExists
+            fileExists: @escaping @Sendable (String) -> Bool = ScanPathRules.lstatExists,
+            isRegularFile: @escaping @Sendable (String) -> Bool = { ScanPathRules.isRegularFile($0) }
         ) {
             self.now = now
             self.home = home
             self.fileExists = fileExists
+            self.isRegularFile = isRegularFile
         }
     }
 }

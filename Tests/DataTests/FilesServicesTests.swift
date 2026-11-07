@@ -78,4 +78,27 @@ struct FilesServicesTests {
         #expect(outcome.moved.map(\.id) == [url.path])
         #expect(!ProtectedPaths.isProtected(url.path))
     }
+
+    @Test("by default the walks enter a folder that holds the app but skip the app; the trasher protects the folder")
+    func defaultGuardsSplitWalkAndMove() async throws {
+        let fixture = try FilesFixture()
+        try fixture.file("Downloads/Build/Mainternance.app/Contents/MacOS/x", bytes: 30000)
+        try fixture.file("Downloads/Build/big.bin", bytes: 30000)
+        let holder = fixture.path("Downloads/Build")
+        let resolved = ProtectedPaths.Resolved(bundlePath: holder + "/Mainternance.app")
+        let guards = FilesServices.guards(resolved)
+        #expect(!guards.walk(holder))
+        #expect(guards.walk(holder + "/Mainternance.app"))
+        #expect(guards.move(holder))
+        #expect(guards.move(fixture.path("Downloads")))
+        let trash = fixture.trash()
+        let services = FilesServices(
+            home: fixture.home, runQuery: { _, _, _ in [] }, trash: { try trash.trash($0) }, guards: guards
+        )
+        let scan = try #require(await finishedResult(collectUpdates(services.disk.scan())))
+        let downloads = try #require(child("Downloads", of: scan.tree))
+        let build = try #require(child("Build", of: downloads))
+        #expect(child("big.bin", of: build) != nil)
+        #expect(child("Mainternance.app", of: build) == nil)
+    }
 }

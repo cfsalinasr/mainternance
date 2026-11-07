@@ -45,12 +45,13 @@ struct SchedulerRig {
     let scheduler: ScanScheduler
     let finished = Recorded<ScanSummary>()
 
-    /// Weekly scan on, Sunday 02:00 UTC, last run as given; the scanner has checked its (ready) engine.
+    /// Weekly scan on, Sunday 02:00 UTC, last run as given; the scanner has checked its (ready) engine unless
+    /// `primed` is false (the Scanner screen was never opened, as after a launch at login).
     static func make(
-        lastRun: Date?, now: Date, enabled: Bool = true,
+        lastRun: Date?, now: Date, enabled: Bool = true, primed: Bool = true,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async -> SchedulerRig {
-        let scanner = await ScannerRig.ready()
+        let scanner = primed ? await ScannerRig.ready() : ScannerRig()
         var prefs = AppPreferences.defaults
         prefs.weeklyScanEnabled = enabled
         prefs.lastScheduledRun = lastRun

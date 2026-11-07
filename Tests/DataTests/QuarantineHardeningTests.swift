@@ -31,7 +31,7 @@ struct QuarantineSidecarTests {
         try Data(recordJSON(path: "/Users/x/Downloads/eicar.com").utf8)
             .write(to: fix.vault.appendingPathComponent("\(idText).json"))
         try Data("x".utf8).write(to: fix.vault.appendingPathComponent(idText))
-        let record = try #require(await fix.store.records().first)
+        let record = try #require(try await fix.store.records().first)
         #expect(record.id == UUID(uuidString: idText))
         #expect(record.originalPath == "/Users/x/Downloads/eicar.com")
         #expect(record.quarantinedAt == Date(timeIntervalSince1970: 1_700_000_000))
@@ -62,13 +62,13 @@ struct QuarantineSidecarTests {
         let second = try await fix.store.quarantine(path: fix.makeFile("b.txt", "two").path, signature: "T")
         try Data("{ not json".utf8).write(to: fix.manifestURL)
         let store = later(fix)
-        #expect(await Set(store.records().map(\.id)) == [first.id, second.id])
+        #expect(try await Set(store.records().map(\.id)) == [first.id, second.id])
         let kept = try corruptNames(fix)
         #expect(kept.count == 1)
         #expect(try String(contentsOf: fix.vault.appendingPathComponent(kept[0]), encoding: .utf8) == "{ not json")
         let restored = try await store.restore(first.id)
         #expect(try String(contentsOfFile: restored, encoding: .utf8) == "one")
-        #expect(await store.records().map(\.id) == [second.id])
+        #expect(try await store.records().map(\.id) == [second.id])
         let entries = try QuarantineManifest.decode(Data(contentsOf: fix.manifestURL))
         #expect(entries.map(\.record.id) == [second.id])
     }
@@ -78,7 +78,7 @@ struct QuarantineSidecarTests {
         let fix = try QuarantineFixture()
         let record = try await fix.store.quarantine(path: fix.makeFile("a.txt").path, signature: "S")
         try FileManager.default.removeItem(at: fix.manifestURL)
-        #expect(await later(fix).records() == [record])
+        #expect(try await later(fix).records() == [record])
     }
 
     @Test("a corrupt index with vault files but no sidecar lists nothing, deletes nothing and reports them")
@@ -88,13 +88,31 @@ struct QuarantineSidecarTests {
         try FileManager.default.removeItem(at: fix.vault.appendingPathComponent("\(record.id.uuidString).json"))
         try Data("{ not json".utf8).write(to: fix.manifestURL)
         let store = later(fix)
-        #expect(await store.records().isEmpty)
-        #expect(await store.unclaimedFiles() == [record.id.uuidString])
+        #expect(try await store.records().isEmpty)
+        #expect(try await store.unclaimedFiles() == [record.id.uuidString])
         #expect(fix.exists(fix.vault.appendingPathComponent(record.id.uuidString)))
         let other = try await store.quarantine(path: fix.makeFile("b.txt").path, signature: "S")
-        #expect(await store.records() == [other])
+        #expect(try await store.records() == [other])
         #expect(fix.exists(fix.vault.appendingPathComponent(record.id.uuidString)))
         #expect(try corruptNames(fix).count == 1)
+    }
+
+    @Test("a vault folder that cannot be listed is an ioFailure")
+    func unlistableVault() async throws {
+        let fix = try QuarantineFixture()
+        _ = try await fix.store.quarantine(path: fix.makeFile("a.txt").path, signature: "S")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fix.vault.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fix.vault.path) }
+        // chmod 000 does not stop root from listing; the owner's own account is not root.
+        try #require(getuid() != 0)
+        await #expect(throws: QuarantineError.self) { try await later(fix).unclaimedFiles() }
+    }
+
+    @Test("a vault folder that does not exist has nothing unclaimed")
+    func missingVault() async throws {
+        let fix = try QuarantineFixture()
+        try? FileManager.default.removeItem(at: fix.vault)
+        #expect(try await later(fix).unclaimedFiles().isEmpty)
     }
 
     @Test("an unreadable index is never replaced: operations fail with ioFailure and write nothing")
@@ -107,7 +125,10 @@ struct QuarantineSidecarTests {
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fix.manifestURL.path) }
         let store = later(fix)
         let other = try fix.makeFile("b.txt", "keep")
-        #expect(await store.records().isEmpty)
+        // The list is reported as unreadable, never as an empty quarantine.
+        await #expect(throws: QuarantineError.self) { try await store.records() }
+        await #expect(throws: QuarantineError.self) { try await store.stillInPlace() }
+        await #expect(throws: QuarantineError.self) { try await store.unclaimedFiles() }
         await #expect(throws: QuarantineError.self) { try await store.quarantine(path: other.path, signature: "S") }
         await #expect(throws: QuarantineError.self) { try await store.restore(record.id) }
         do { _ = try await store.quarantine(path: other.path, signature: "S") } catch {
@@ -151,8 +172,8 @@ struct QuarantineSidecarTests {
         try FileManager.default.createDirectory(at: fix.vault, withIntermediateDirectories: true)
         try Data(json.utf8).write(to: fix.vault.appendingPathComponent("\(idText).json"))
         try Data("abc".utf8).write(to: fix.vault.appendingPathComponent(idText))
-        #expect(await fix.store.records().isEmpty)
-        #expect(await fix.store.stillInPlace().map(\.originalPath) == [file.path])
+        #expect(try await fix.store.records().isEmpty)
+        #expect(try await fix.store.stillInPlace().map(\.originalPath) == [file.path])
         #expect(try String(contentsOf: file, encoding: .utf8) == "abc")
         #expect(fix.exists(fix.vault.appendingPathComponent(idText)))
         await #expect(throws: QuarantineError.missing) {
@@ -168,7 +189,7 @@ struct QuarantineSidecarTests {
             .write(to: fix.vault.appendingPathComponent("\(idText).json"))
         try Data("x".utf8).write(to: fix.vault.appendingPathComponent(idText))
         let id = try #require(UUID(uuidString: idText))
-        #expect(await fix.store.records().map(\.id) == [id])
+        #expect(try await fix.store.records().map(\.id) == [id])
         await #expect(throws: QuarantineError.protectedPath) { try await fix.store.restore(id) }
         #expect(fix.exists(fix.vault.appendingPathComponent(idText)))
         #expect(!FileManager.default.fileExists(atPath: "/usr/bin/mainternance-test-not-real"))
@@ -214,7 +235,7 @@ struct QuarantineRaceTests {
         ) }
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: victim) == decoy.path)
         #expect(try String(contentsOf: decoy, encoding: .utf8) == "decoy")
-        let records = await store.records()
+        let records = try await store.records()
         if forceCopy {
             // The real file was removed by the swap: the verified vault copy is now its only copy, so it is kept
             // and counts as stored.

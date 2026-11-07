@@ -10,6 +10,10 @@ final class FakePreferencesStore: PreferencesStoring {
         var stored: AppPreferences = .defaults
         var saves: [AppPreferences] = []
         var holdNextSave = false
+        /// Every write fails (nothing is stored), as a full disk would.
+        var failWrites = false
+        /// `load` gives the defaults, as the real store does after a read error.
+        var failLoads = false
     }
 
     let state: Mutex<State>
@@ -43,29 +47,33 @@ final class FakePreferencesStore: PreferencesStoring {
     }
 
     func load() async -> AppPreferences {
-        state.withLock { $0.stored }
+        state.withLock { $0.failLoads ? .defaults : $0.stored }
     }
 
-    func save(_ preferences: AppPreferences) async {
+    func save(_ preferences: AppPreferences) async -> Bool {
         await waitIfHeld()
-        state.withLock {
-            $0.stored = preferences
-            $0.saves.append(preferences)
+        let saved = state.withLock { current -> Bool in
+            guard !current.failWrites else { return false }
+            current.stored = preferences
+            current.saves.append(preferences)
+            return true
         }
         log?.add("save")
+        return saved
     }
 
-    func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> AppPreferences {
+    func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> PreferencesUpdate {
         await waitIfHeld()
         let moment = now()
-        let next = state.withLock { current in
+        let result = state.withLock { current in
             let next = current.stored.updated(now: moment, change)
+            guard !current.failWrites else { return PreferencesUpdate(preferences: next, saved: false) }
             current.stored = next
             current.saves.append(next)
-            return next
+            return PreferencesUpdate(preferences: next, saved: true)
         }
         log?.add("save")
-        return next
+        return result
     }
 
     private func waitIfHeld() async {

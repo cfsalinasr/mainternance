@@ -24,7 +24,7 @@ struct QuarantineManifestTests {
         try FileManager.default.createDirectory(at: fix.vault, withIntermediateDirectories: true)
         try Data(literal(state: "stored").utf8).write(to: fix.manifestURL)
         try Data("x".utf8).write(to: fix.vault.appendingPathComponent(Self.idText))
-        let records = await fix.store.records()
+        let records = try await fix.store.records()
         let record = try #require(records.first)
         #expect(records.count == 1)
         #expect(record.id == UUID(uuidString: Self.idText))
@@ -67,7 +67,7 @@ struct QuarantineManifestTests {
         try Data(literal(state: "pending", path: fix.area.appendingPathComponent("gone.txt").path, sha: sha).utf8)
             .write(to: fix.manifestURL)
         try Data("x".utf8).write(to: fix.vault.appendingPathComponent(Self.idText))
-        let records = await fix.store.records()
+        let records = try await fix.store.records()
         #expect(records.count == 1)
         let restored = try await fix.store.restore(#require(records.first).id)
         #expect(restored == fix.area.appendingPathComponent("gone.txt").path)
@@ -80,12 +80,12 @@ struct QuarantineManifestTests {
         let original = try fix.makeFile("keep.txt", "still here")
         try FileManager.default.createDirectory(at: fix.vault, withIntermediateDirectories: true)
         try Data(literal(state: "pending", path: original.path).utf8).write(to: fix.manifestURL)
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
         #expect(try String(contentsOf: original, encoding: .utf8) == "still here")
         // The next write persists the cleanup, and the dropped entry never comes back.
         let other = try await fix.store.quarantine(path: fix.makeFile("b.txt").path, signature: "S")
         let again = QuarantineStore(directory: fix.vault, now: { Date() })
-        #expect(await again.records() == [other])
+        #expect(try await again.records() == [other])
     }
 
     @Test("an interrupted cross-volume copy leaves only a partial file, which the sweep removes; the original stays")
@@ -96,7 +96,7 @@ struct QuarantineManifestTests {
         let partial = fix.vault.appendingPathComponent("\(Self.idText).partial")
         try Data("half".utf8).write(to: partial)
         try Data(literal(state: "pending", path: original.path).utf8).write(to: fix.manifestURL)
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
         #expect(!fix.exists(partial))
         #expect(try String(contentsOf: original, encoding: .utf8) == "still here")
     }
@@ -106,7 +106,7 @@ struct QuarantineManifestTests {
         let fix = try QuarantineFixture()
         try FileManager.default.createDirectory(at: fix.vault, withIntermediateDirectories: true)
         try Data(literal(state: "stored").utf8).write(to: fix.manifestURL)
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
     }
 
     @Test("quarantine writes the manifest as stored, and no pending entry is left behind")

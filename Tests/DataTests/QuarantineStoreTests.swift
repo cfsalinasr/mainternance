@@ -53,7 +53,7 @@ struct QuarantineStoreTests {
         #expect(restored == file.path)
         #expect(try String(contentsOf: file, encoding: .utf8) == "hello")
         #expect(permissions(file) == 0o755)
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
     }
 
     @Test("hash and size are recorded, the copy has no execute bit and the manifest lists it")
@@ -67,7 +67,7 @@ struct QuarantineStoreTests {
         let stored = fix.vault.appendingPathComponent(record.id.uuidString)
         #expect(fix.exists(stored))
         #expect(permissions(stored) == 0o600)
-        #expect(await fix.store.records() == [record])
+        #expect(try await fix.store.records() == [record])
     }
 
     @Test("a streamed hash over several chunks matches the one-shot hash")
@@ -94,7 +94,7 @@ struct QuarantineStoreTests {
             }
         }
         #expect(fix.exists(item))
-        #expect(await fix.store.records() == [record])
+        #expect(try await fix.store.records() == [record])
     }
 
     @Test("a file already inside the quarantine folder is refused")
@@ -129,7 +129,7 @@ struct QuarantineStoreTests {
             try await fix.store.quarantine(path: fix.area.appendingPathComponent("nope").path, signature: "S")
         }
         #expect(fix.exists(target))
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
     }
 
     @Test("quarantining the same path twice: the second is .missing because the file is gone")
@@ -140,7 +140,7 @@ struct QuarantineStoreTests {
         await #expect(throws: QuarantineError.missing) {
             try await fix.store.quarantine(path: file.path, signature: "S")
         }
-        #expect(await fix.store.records().count == 1)
+        #expect(try await fix.store.records().count == 1)
     }
 
     @Test("restore never overwrites: a collision restores next to it with a suffix")
@@ -180,7 +180,7 @@ struct QuarantineStoreTests {
         try FileManager.default.removeItem(at: sub)
         await #expect(throws: QuarantineError.restoreTargetMissing) { try await fix.store.restore(record.id) }
         #expect(fix.exists(fix.vault.appendingPathComponent(record.id.uuidString)))
-        #expect(await fix.store.records() == [record])
+        #expect(try await fix.store.records() == [record])
         #expect(!fix.exists(sub))
     }
 
@@ -199,14 +199,14 @@ struct QuarantineStoreTests {
         let fix = try QuarantineFixture()
         let record = try await fix.store.quarantine(path: fix.makeFile("a.txt").path, signature: "S")
         let again = QuarantineStore(directory: fix.vault, now: { Date() })
-        #expect(await again.records() == [record])
+        #expect(try await again.records() == [record])
         _ = try await again.restore(record.id)
     }
 
     @Test("a missing manifest yields an empty list and creates nothing")
     func missingManifest() async throws {
         let fix = try QuarantineFixture()
-        #expect(await fix.store.records().isEmpty)
+        #expect(try await fix.store.records().isEmpty)
         #expect(!fix.exists(fix.vault))
     }
 
@@ -225,11 +225,11 @@ struct QuarantineStoreTests {
             }
             #expect(ids.count == 12)
         }
-        let listed = await store.records()
+        let listed = try await store.records()
         #expect(listed.count == 12)
         #expect(Set(listed.map(\.originalPath)) == Set(paths))
         let onDisk = QuarantineStore(directory: fix.vault, now: { Date() })
-        #expect(await onDisk.records().count == 12)
+        #expect(try await onDisk.records().count == 12)
     }
 }
 
@@ -279,6 +279,6 @@ struct QuarantineCrossVolumeTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == "intruder")
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: fix.area.path).sorted()
         #expect(leftovers == ["a (restored).txt", "a.txt"])
-        #expect(await store.records().isEmpty)
+        #expect(try await store.records().isEmpty)
     }
 }

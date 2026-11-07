@@ -114,14 +114,40 @@ public struct PopoverModel: Equatable, Sendable {
             rows.append(Row(title: "Scanner", value: "Not set up yet", symbol: "shield", state: .good))
             return rows
         }
-        rows.append(Row(
-            title: "Last scan",
-            value: scan.lastScan.map { relative($0, now: now, locale: locale) } ?? "Never",
-            symbol: "clock", state: .good
-        ))
+        rows += scanRows(scan, report: overview.report, now: now, locale: locale)
+        return rows
+    }
+
+    /// Shown instead of a date when the weekly scan is off.
+    static let weeklyScanOff = "Weekly scan off"
+
+    /// The same checks as Home: the last-scan row takes the `.lastScan` check's state (unreadable results and
+    /// unfinished scans never read as "Never" or as a date), and the `.scannerFindings` check gets its own row
+    /// whenever the report has one.
+    private static func scanRows(_ scan: ScanStatus, report: HealthReport, now: Date, locale: Locale) -> [Row] {
+        func check(_ id: CheckID) -> HealthCheck? {
+            report.checks.first { $0.id == id }
+        }
+
+        let last: String = if scan.savedResultsUnreadable {
+            "Could not be read"
+        } else if scan.lastScanDidNotFinish {
+            "Did not finish"
+        } else {
+            scan.lastScan.map { relative($0, now: now, locale: locale) } ?? "Never"
+        }
+        var rows = [Row(title: "Last scan", value: last, symbol: "clock", state: check(.lastScan)?.state ?? .good)]
+        if let findings = check(.scannerFindings) {
+            rows.append(Row(
+                title: "Findings", value: findings.reason,
+                symbol: findings.state == .good ? "checkmark.shield" : "exclamationmark.shield", state: findings.state
+            ))
+        }
         rows.append(Row(
             title: "Next scan",
-            value: scan.nextScan.map { relative($0, now: now, locale: locale) } ?? "Not scheduled",
+            value: scan.weeklyScanWaiting
+                ? "Waiting: scanner not ready"
+                : scan.nextScan.map { relative($0, now: now, locale: locale) } ?? weeklyScanOff,
             symbol: "calendar", state: .good
         ))
         return rows

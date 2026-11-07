@@ -76,6 +76,30 @@ public struct ScanSchedule: Equatable, Codable, Sendable {
         return lastRun < start
     }
 
+    /// When the weekly scan runs next: `now` when the current slot is due (it runs at the next check), otherwise
+    /// the start of the first later slot that `lastRun` does not already cover. Nil only when the calendar finds no
+    /// matching moment (not expected with clamped values).
+    public func nextRun(now: Date, lastRun: Date?, calendar: Calendar) -> Date? {
+        if isDue(now: now, lastRun: lastRun, calendar: calendar) {
+            return now
+        }
+        let safe = clamped()
+        let parts = DateComponents(hour: safe.hour, minute: safe.minute, weekday: safe.weekday)
+        var from = now
+        // A valid recorded run is at most a week ahead, so it can cover one later slot at most.
+        for _ in 0 ..< 3 {
+            guard let found = calendar.nextDate(
+                after: from, matching: parts, matchingPolicy: .nextTime, repeatedTimePolicy: .first,
+                direction: .forward
+            ) else { return nil }
+            if isDue(now: found, lastRun: lastRun, calendar: calendar) {
+                return found
+            }
+            from = found
+        }
+        return nil
+    }
+
     /// How far ahead of `now` a recorded run may be and still count: one week.
     public static let futureRunLimit: TimeInterval = 7 * 24 * 60 * 60
 

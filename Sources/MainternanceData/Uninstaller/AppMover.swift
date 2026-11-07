@@ -18,7 +18,8 @@ import MainternanceDomain
 ///    item (device and inode) that was measured; an item with no recorded identity cannot be checked and is refused;
 /// 4. it is on another volume than its folder;
 /// 5. the path is protected (`isProtected`: system places, the home folder itself, the running Mainternance
-///    bundle); a link into a protected place gets its own reason;
+///    bundle), or it is a folder that holds the running app (`holdsApp`); a link into a protected place gets its
+///    own reason;
 /// 6. for the app only: its `Info.plist`, read again now (`AppLister.readPlist`), names one of Apple's apps
 ///    (`com.apple.`), names another identifier than when it was listed, or names an app that is running;
 /// 7. last, just before the move, the path is read again (`lstat`) and must name exactly the item checked in the
@@ -39,12 +40,16 @@ struct AppMover: AppUninstalling {
     let isProtected: @Sendable (String) -> Bool
     /// The volume (device) the item at a path is on, given its `lstat` reading. Tests replace it.
     let volume: @Sendable (String, ItemStat) -> Int32
+    /// Whether the path is a folder that holds the running app (`ProtectedPaths.holdsApp`). Tests replace it.
+    let holdsApp: @Sendable (String) -> Bool
 
     init(
         home: URL, applicationFolders: [URL], isRunning: @escaping @Sendable (String) -> Bool,
         trash: @escaping @Sendable (URL) throws -> Void, isProtected: @escaping @Sendable (String) -> Bool,
-        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device }
+        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device },
+        holdsApp: @escaping @Sendable (String) -> Bool = ProtectedPaths.holdsApp
     ) {
+        self.holdsApp = holdsApp
         self.home = home
         self.applicationFolders = applicationFolders
         self.isRunning = isRunning
@@ -221,8 +226,12 @@ struct AppMover: AppUninstalling {
         guard volume(target, info) == candidate.folder.identity.device else {
             return .failure(Refused(UninstallRefusal.otherVolume))
         }
-        guard !isProtected(target) else {
-            return .failure(Refused(info.type == .symbolicLink ? .protectedLink : .protected))
+        let holdsTheApp = holdsApp(target)
+        guard !holdsTheApp, !isProtected(target) else {
+            if info.type == .symbolicLink {
+                return .failure(Refused(.protectedLink))
+            }
+            return .failure(holdsTheApp ? Refused(UninstallRefusal.holdsApp) : Refused(.protected))
         }
         if let app = candidate.item.app, let refused = recheck(app, at: target) {
             return .failure(refused)

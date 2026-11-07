@@ -96,6 +96,9 @@ struct StoredSummary: Codable {
     var cancelled: Bool
     var definitionsDate: Double?
     var unattributedDetections: Int?
+    /// Optional: records written before these counts existed read as zero.
+    var tooLarge: Int?
+    var unreadableFolders: Int?
 
     init(_ summary: ScanSummary) {
         switch summary.scope {
@@ -116,6 +119,8 @@ struct StoredSummary: Codable {
         cancelled = summary.cancelled
         definitionsDate = summary.definitionsDate?.timeIntervalSince1970
         unattributedDetections = summary.unattributedDetections
+        tooLarge = summary.tooLarge
+        unreadableFolders = summary.unreadableFolders
     }
 
     /// Nil when the scope is unknown or a number is not finite: a damaged record is never half-trusted.
@@ -134,7 +139,8 @@ struct StoredSummary: Codable {
             scope: scanScope, scanned: scanned, unreadable: unreadable, findings: findings,
             startedAt: Date(timeIntervalSince1970: startedAt), endedAt: Date(timeIntervalSince1970: endedAt),
             cancelled: cancelled, definitionsDate: definitionsDate.map { Date(timeIntervalSince1970: $0) },
-            permissionDenied: permissionDenied ?? 0, unattributedDetections: unattributedDetections ?? 0
+            permissionDenied: permissionDenied ?? 0, unattributedDetections: unattributedDetections ?? 0,
+            tooLarge: tooLarge ?? 0, unreadableFolders: unreadableFolders ?? 0
         )
     }
 }

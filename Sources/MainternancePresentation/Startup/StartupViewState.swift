@@ -25,6 +25,9 @@ enum StartupText {
     static let duplicate = "Another file registers the same label."
     static let newBadge = "New"
     static let newBadgeAccessibility = "New since your last review"
+    static let changedBadge = "Changed"
+    static let changedBadgeAccessibility = "Changed since your last review"
+    static let changedNote = "Changed since your last review: its file, label or program is not what you reviewed."
     static let reveal = "Reveal in Finder"
     static let noLabel = "No label"
     static let noProgram = "No program listed"
@@ -55,7 +58,8 @@ enum StartupText {
 ///
 /// Only the owner's own agents can be switched (through `StartupControlling`); a switch takes effect at the next
 /// login. A failed switch leaves the shown state as it was and says why. "New" means not present at the last review;
-/// the first listing ever only creates that baseline.
+/// "Changed" means the review saw that label or file, but with another file, label or program. The first listing
+/// ever only creates that baseline.
 @MainActor
 @Observable
 public final class StartupViewState {
@@ -148,7 +152,22 @@ public final class StartupViewState {
 
     /// The small lines under a row: why it could not be read, a shared label, why it has no switch.
     func rowNotes(_ item: StartupItem) -> [String] {
-        [item.readProblem, duplicateNote(item), readOnlyNote(item)].compactMap(\.self)
+        [item.readProblem, changedNote(item), duplicateNote(item), readOnlyNote(item)].compactMap(\.self)
+    }
+
+    func changedNote(_ item: StartupItem) -> String? {
+        item.isChanged ? StartupText.changedNote : nil
+    }
+
+    /// The text badge of a new or changed item (never color alone), with its spoken label; nil for the others.
+    func badge(_ item: StartupItem) -> (text: String, accessibility: String)? {
+        if item.isNew {
+            return (StartupText.newBadge, StartupText.newBadgeAccessibility)
+        }
+        if item.isChanged {
+            return (StartupText.changedBadge, StartupText.changedBadgeAccessibility)
+        }
+        return nil
     }
 
     /// Shown instead of a switch on items for all users and daemons: read-only here by design.

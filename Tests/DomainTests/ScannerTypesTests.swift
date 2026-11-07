@@ -97,6 +97,21 @@ struct ScannerTypesTests {
         #expect(make(unattributed: 2).isComplete)
     }
 
+    /// Audit H2 and M4: files skipped for clamscan's limits and folders that could not be opened were not scanned.
+    @Test func tooLargeFilesAndUnreadableFoldersMakeAScanPartialButNotUnclean() {
+        func make(tooLarge: Int = 0, folders: Int = 0) -> ScanSummary {
+            ScanSummary(
+                scope: .quick, scanned: 5, unreadable: 0, findings: 0, startedAt: now, endedAt: now,
+                cancelled: false, definitionsDate: nil, tooLarge: tooLarge, unreadableFolders: folders
+            )
+        }
+        #expect(make().isComplete)
+        #expect(make(tooLarge: 1).isClean && !make(tooLarge: 1).isComplete)
+        #expect(make(folders: 1).isClean && !make(folders: 1).isComplete)
+        #expect(make(tooLarge: -2).tooLarge == 0)
+        #expect(make(folders: -2).unreadableFolders == 0)
+    }
+
     @Test func verifyResultsCompareByValue() {
         #expect(VerifyResult.confirmed(signature: "A") == .confirmed(signature: "A"))
         #expect(VerifyResult.confirmed(signature: "A") != .confirmed(signature: "B"))

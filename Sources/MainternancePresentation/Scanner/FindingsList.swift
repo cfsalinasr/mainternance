@@ -24,17 +24,17 @@ struct FindingsList: View {
                 .frame(width: 90, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(finding.signature).font(.system(size: 13, weight: .medium))
-                Text(finding.path)
+                Text(ScannerText.shownPath(finding.path))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(finding.path)
+                    .help(ScannerText.shownPath(finding.path))
             }
             Spacer()
             Button(ScannerText.quarantineButton) { model.requestQuarantine(finding.id) }
                 .disabled(model.isBusy)
-                .accessibilityLabel(ScannerText.quarantineLabel((finding.path as NSString).lastPathComponent))
+                .accessibilityLabel(ScannerText.quarantineLabel(ScannerText.shownName(finding.path)))
                 .accessibilityHint(ScannerText.quarantineHint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -52,9 +52,9 @@ struct QuarantineConfirmation: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(ScannerText.quarantineTitle).font(.title3.bold())
             VStack(alignment: .leading, spacing: 2) {
-                Text((finding.path as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
+                Text(ScannerText.shownName(finding.path)).font(.system(size: 13, weight: .medium))
                 Text(ScannerText.detectionLine(finding.signature)).font(.system(size: 12)).foregroundStyle(.secondary)
-                Text(finding.path).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(ScannerText.shownPath(finding.path)).font(.system(size: 12)).foregroundStyle(.secondary)
                     .lineLimit(2).truncationMode(.middle)
             }
             Text(ScannerText.quarantineExplanation)
@@ -75,9 +75,14 @@ struct QuarantineSection: View {
     let model: ScannerViewModel
 
     var body: some View {
-        if !model.quarantined.isEmpty || !model.notMoved.isEmpty || model.unclaimedCount > 0 {
+        if model.showsQuarantineSection {
             VStack(alignment: .leading, spacing: 8) {
                 Text(ScannerText.quarantineHeading).font(.headline)
+                if model.quarantineUnreadable {
+                    Label(ScannerText.quarantineUnreadable, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                }
                 ForEach(model.quarantined) { record in
                     contained(record)
                 }
@@ -99,19 +104,19 @@ struct QuarantineSection: View {
                 .font(.system(size: 12, weight: .medium))
                 .frame(width: 110, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text((record.originalPath as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
+                Text(ScannerText.shownName(record.originalPath)).font(.system(size: 13, weight: .medium))
                 Text(record.signature).font(.system(size: 12)).foregroundStyle(.secondary)
-                Text(record.originalPath)
+                Text(ScannerText.shownPath(record.originalPath))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(record.originalPath)
+                    .help(ScannerText.shownPath(record.originalPath))
             }
             Spacer()
             Button(ScannerText.restoreButton) { Task { await model.restore(record.id) } }
                 .disabled(model.isBusy)
-                .accessibilityLabel(ScannerText.restoreLabel((record.originalPath as NSString).lastPathComponent))
+                .accessibilityLabel(ScannerText.restoreLabel(ScannerText.shownName(record.originalPath)))
                 .accessibilityHint(ScannerText.restoreHint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -126,15 +131,15 @@ struct QuarantineSection: View {
                 .foregroundStyle(.orange)
                 .frame(width: 110, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text((record.originalPath as NSString).lastPathComponent).font(.system(size: 13, weight: .medium))
+                Text(ScannerText.shownName(record.originalPath)).font(.system(size: 13, weight: .medium))
                 Text("\(record.signature): \(ScannerText.notMovedNote)")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
-                Text(record.originalPath)
+                Text(ScannerText.shownPath(record.originalPath))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(record.originalPath)
+                    .help(ScannerText.shownPath(record.originalPath))
             }
             Spacer()
         }

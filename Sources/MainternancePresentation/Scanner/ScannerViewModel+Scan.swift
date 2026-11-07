@@ -7,12 +7,25 @@ extension ScannerViewModel {
     /// Returns the summary this scan ended with, or nil when it did not start or ended without one.
     @discardableResult
     public func startScan(_ scope: ScanScope) async -> ScanSummary? {
-        guard canStartScan else { return nil }
+        await runScan(scope).summary
+    }
+
+    /// How one call to `runScan` ended.
+    struct ScanRun {
+        var summary: ScanSummary?
+        /// The engine reported `.started`: the scan really ran, however it ended.
+        var began = false
+    }
+
+    /// `startScan`, also saying whether the scan began (the scheduler gives its slot back when it did not).
+    func runScan(_ scope: ScanScope) async -> ScanRun {
+        guard canStartScan else { return ScanRun() }
         if case let .custom(url) = scope, isProtected(url) {
             errorMessage = ScannerText.protectedFolder
-            return nil
+            return ScanRun()
         }
         let scheduled = startingScheduledScan
+        let staleDays = staleDefinitionsDays
         errorMessage = nil
         notice = nil
         pendingQuarantine = nil
@@ -44,10 +57,24 @@ extension ScannerViewModel {
             }
         }
         await finish(scope, coverage, outcome)
+        report(outcome, scheduled: scheduled, staleDays: staleDays)
+        return ScanRun(summary: outcome.summary, began: outcome.began)
+    }
+
+    /// One callback per scan that ran: `onScanCompleted` when it ended with a summary, `onScanFailed` when it began
+    /// and failed without one, nothing when the engine refused it before it began.
+    private func report(_ outcome: ScanOutcome, scheduled: Bool, staleDays: Int?) {
         if let summary = outcome.summary {
-            onScanCompleted?(ScanCompletion(summary: summary, scheduled: scheduled, failed: outcome.failure != nil))
+            onScanCompleted?(ScanCompletion(
+                summary: summary, scheduled: scheduled, failed: outcome.failure != nil, staleDefinitionsDays: staleDays
+            ))
+        } else if outcome.began {
+            // Counts only: the failure text can hold a path, and notifications never carry one.
+            onScanFailed?(ScanFailure(
+                found: outcome.refound.count, unattributedDetections: outcome.unattributed, scheduled: scheduled,
+                staleDefinitionsDays: staleDays
+            ))
         }
-        return outcome.summary
     }
 
     /// What one scan reported, collected while its events stream in.
@@ -57,6 +84,13 @@ extension ScannerViewModel {
         var began = false
         var unattributed = 0
         var refound: Set<String> = []
+    }
+
+    /// The weekly scheduler updated the definitions before its scan and the update failed: the scan cleared the
+    /// message when it started, so the reason is put back next to whatever the scan itself reported.
+    func noteScheduledUpdateFailure(_ failure: String) {
+        let note = ScannerText.scheduledUpdateFailed(failure)
+        errorMessage = [errorMessage, note].compactMap(\.self).joined(separator: " ")
     }
 
     /// A finding the scan reports replaces the older entry for the same file and detection, otherwise it is added.
@@ -124,7 +158,7 @@ extension ScannerViewModel {
     /// as full, so only a full scan resets them.
     private func resolve(_ summary: ScanSummary, _ coverage: ScanCoverage, refound: Set<String>) {
         let readEverything = summary.unreadable == 0 && summary.permissionDenied == 0
-            && summary.unattributedDetections == 0
+            && summary.unreadableFolders == 0 && summary.tooLarge == 0 && summary.unattributedDetections == 0
         findings = findings.filter { finding in
             guard !refound.contains(Self.key(finding)), coverage.covers(finding.path) else { return true }
             return !readEverything && fileExists(finding.path)

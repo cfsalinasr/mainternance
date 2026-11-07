@@ -49,6 +49,24 @@ struct ScanStatusStoreTests {
         #expect(loaded.findings == found)
     }
 
+    @Test("too-large files and unreadable folders survive a round trip; older records without them read as zero")
+    func limitsRoundTrip() async throws {
+        let temp = try TempDirectory()
+        let written = ScanSummary(
+            scope: .full, scanned: 50, unreadable: 1, findings: 0,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000), endedAt: Date(timeIntervalSince1970: 1_800_000_100),
+            cancelled: false, definitionsDate: nil, permissionDenied: 1, tooLarge: 3, unreadableFolders: 12
+        )
+        await store(temp).recordScan(written, memory: ScanMemory(findings: []))
+        let loaded = try #require(await store(temp).load())
+        #expect(loaded.summary == written)
+        #expect(loaded.summary?.tooLarge == 3)
+        #expect(loaded.summary?.unreadableFolders == 12)
+        let older = try TempDirectory()
+        await store(older).recordScan(summary(), memory: ScanMemory(findings: []))
+        #expect(await store(older).load()?.summary?.tooLarge == 0)
+    }
+
     @Test("every scope round trips, a custom folder included, and a missing definitions date stays nil")
     func scopes() async throws {
         let temp = try TempDirectory()

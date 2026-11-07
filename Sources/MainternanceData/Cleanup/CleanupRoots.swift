@@ -140,16 +140,21 @@ struct CleanupRules: Sendable {
     /// The volume (device) the item at a path is on, given its `lstat` reading. Tests replace it, since they cannot
     /// mount a volume.
     let volume: @Sendable (String, ItemStat) -> Int32
+    /// Whether the path is a folder that holds the running app (`ProtectedPaths.holdsApp`): such an entry is never
+    /// listed and never moved. Tests pass a check with another app path.
+    let holdsApp: @Sendable (String) -> Bool
 
     init(
         roots: [CleanupRoot], now: @escaping @Sendable () -> Date,
         dateAdded: @escaping @Sendable (String) -> Date? = CleanupRules.readDateAdded,
-        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device }
+        volume: @escaping @Sendable (String, ItemStat) -> Int32 = { $1.device },
+        holdsApp: @escaping @Sendable (String) -> Bool = ProtectedPaths.holdsApp
     ) {
         self.roots = roots
         self.now = now
         self.dateAdded = dateAdded
         self.volume = volume
+        self.holdsApp = holdsApp
     }
 
     /// The file system's "date added" for the item at `path` (a plain file: links are never passed here).

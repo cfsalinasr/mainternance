@@ -23,7 +23,7 @@ public struct UninstallerServices: Sendable {
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         applicationFolders: [URL] = UninstallerServices.standardApplicationFolders,
         isRunning: @escaping @Sendable (String) -> Bool = UninstallerServices.isRunning,
-        trash: @escaping @Sendable (URL) throws -> Void = CleanupServices.moveToTrash
+        trash: @escaping @Sendable (URL) throws -> Void = SystemTrash.move
     ) {
         lister = AppLister(applicationFolders: applicationFolders)
         finder = LeftoverFinder(home: home)

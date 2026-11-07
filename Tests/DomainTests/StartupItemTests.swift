@@ -49,26 +49,67 @@ struct StartupItemTests {
         #expect(!StartupItem(kind: .userAgent, plistPath: path, label: "com.a", readProblem: "bad").canToggle)
     }
 
-    @Test("the review key is a valid label, or else the file path; the two never collide")
-    func reviewKeys() {
-        let labeled = StartupItem(kind: .userAgent, plistPath: "/x/a.plist", label: "com.a")
-        let unlabeled = StartupItem(kind: .userAgent, plistPath: "/x/a.plist")
-        let invalid = StartupItem(kind: .userAgent, plistPath: "/x/a.plist", label: "/x/a.plist")
-        #expect(labeled.reviewKey == "label:com.a")
-        #expect(unlabeled.reviewKey == "path:/x/a.plist")
-        #expect(invalid.reviewKey == "path:/x/a.plist")
-        #expect(labeled.reviewKey != unlabeled.reviewKey)
+    private func item(
+        _ path: String = "/x/a.plist", label: String? = "com.a", fingerprint: String? = "p1", readProblem: String? = nil
+    ) -> StartupItem {
+        var item = StartupItem(kind: .userAgent, plistPath: path, label: label, readProblem: readProblem)
+        item.programFingerprint = fingerprint
+        return item
     }
 
-    @Test("an item is reviewed when its key, or its path from a time it was keyed by path, is in the baseline")
-    func reviewedByLabelOrEarlierPath() {
-        let now = StartupItem(kind: .userAgent, plistPath: "/x/a.plist", label: "com.a")
-        #expect(now.isReviewed(in: ["label:com.a"]))
-        #expect(now.isReviewed(in: ["path:/x/a.plist"])) // it could not be read when the baseline was written
-        #expect(!now.isReviewed(in: ["path:/x/b.plist", "label:com.b"]))
-        let unreadable = StartupItem(kind: .userAgent, plistPath: "/x/a.plist", readProblem: "bad")
-        #expect(unreadable.isReviewed(in: ["path:/x/a.plist"]))
-        #expect(!unreadable.isReviewed(in: ["label:com.a"]))
+    @Test("the review key holds the valid label, the file path and the program, so changing any one changes it")
+    func reviewKeys() {
+        let base = item()
+        #expect(base.reviewKey == "item2\u{0}com.a\u{0}/x/a.plist\u{0}p1")
+        #expect(item(label: "/x/a.plist")
+            .reviewKey == "item2\u{0}\u{0}/x/a.plist\u{0}p1") // an invalid label is left out
+        #expect(base.reviewKey != item(fingerprint: "p2").reviewKey)
+        #expect(base.reviewKey != item("/x/b.plist").reviewKey)
+        #expect(base.reviewKey != item(label: "com.b").reviewKey)
+        #expect(base.reviewKey != item(label: nil).reviewKey)
+    }
+
+    @Test("an item reviewed as it is now is reviewed; another program under the same label or file is changed")
+    func changedSinceReview() {
+        let seen = StartupReviewBaseline([item().reviewKey])
+        #expect(seen.match(item()) == .reviewed)
+        #expect(seen.match(item(fingerprint: "evil")) == .changed) // the plist now runs something else
+        #expect(seen.match(item("/x/replaced.plist")) == .changed) // another file took the label
+        #expect(seen.match(item(label: "com.other")) == .changed) // the same file now registers another label
+        #expect(seen.match(item("/x/b.plist", label: "com.b")) == .new)
+    }
+
+    @Test("an old-style key counts as reviewed once (to be upgraded); once upgraded it can never hide a change")
+    func legacyKeysAreUpgradedOnce() {
+        let now = item()
+        #expect(StartupReviewBaseline(["label:com.a"]).match(now) == .reviewedBeforeUpgrade)
+        #expect(StartupReviewBaseline(["path:/x/a.plist"]).match(now) == .reviewedBeforeUpgrade)
+        #expect(StartupReviewBaseline(["path:/x/b.plist", "label:com.b"]).match(now) == .new)
+        let unreadable = item(label: nil, fingerprint: nil, readProblem: "bad")
+        #expect(StartupReviewBaseline(["path:/x/a.plist"]).match(unreadable) == .reviewedBeforeUpgrade)
+        #expect(StartupReviewBaseline(["label:com.a"]).match(unreadable) == .new)
+        // Upgraded, with the old key left behind: a new program is still flagged.
+        let upgraded = StartupReviewBaseline(["label:com.a", now.reviewKey])
+        #expect(upgraded.match(item(fingerprint: "evil")) == .changed)
+        #expect(StartupReviewBaseline.legacyKeys(of: now) == [
+            "label:com.a",
+            "path:/x/a.plist",
+            "item\u{0}com.a\u{0}/x/a.plist\u{0}"
+        ])
+    }
+
+    @Test("old keys match only within the item's kind, and one old label key matched twice makes both changed")
+    func legacyKeysAreScoped() {
+        let agent = item()
+        let daemon = StartupItem(kind: .systemDaemon, plistPath: "/y/a.plist", label: "com.a")
+        let scoped = StartupReviewBaseline(["label:com.a"], byKind: [.userAgent: ["label:com.a"]])
+        #expect(scoped.match(agent) == .reviewedBeforeUpgrade)
+        #expect(scoped.match(daemon) == .new)
+        let twin = item("/x/twin.plist")
+        #expect(scoped.matches([agent, twin]) == [.changed, .changed])
+        #expect(scoped.matches([agent, daemon]) == [.reviewedBeforeUpgrade, .new])
+        let byPath = StartupReviewBaseline(["label:com.a", "path:/x/a.plist"])
+        #expect(byPath.matches([agent, twin]) == [.reviewedBeforeUpgrade, .changed]) // its own path key decides
     }
 
     @Test("text shown from a plist has no bidi, zero-width or control characters; the label itself is untouched")
