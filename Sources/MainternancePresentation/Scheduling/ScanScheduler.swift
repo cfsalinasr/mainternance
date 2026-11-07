@@ -105,6 +105,16 @@ public final class ScanScheduler {
         hasPreferences ? current : await preferences.load()
     }
 
+    /// After the save: false when the schedule was switched off, or (slot given back) the scanner cannot start.
+    private func slotStillUsable(_ moment: Date, previousRun: Date?) -> Bool {
+        guard current.weeklyScanEnabled else { return false }
+        guard scanner.canStartScan else {
+            giveBack(moment, previousRun: previousRun)
+            return false
+        }
+        return true
+    }
+
     /// Starts the scheduled scan when its slot is due and the scanner can start; otherwise does nothing.
     public func tick() async {
         tickCount += 1
@@ -118,11 +128,7 @@ public final class ScanScheduler {
         let previousRun = current.lastScheduledRun
         await record(moment)
         // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
-        guard current.weeklyScanEnabled else { return }
-        guard scanner.canStartScan else {
-            giveBack(moment, previousRun: previousRun)
-            return
-        }
+        guard slotStillUsable(moment, previousRun: previousRun) else { return }
         var updateFailure: String?
         if scanner.staleDefinitionsDays != nil {
             await scanner.updateDefinitions()
