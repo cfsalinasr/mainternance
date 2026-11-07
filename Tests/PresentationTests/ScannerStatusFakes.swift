@@ -15,6 +15,8 @@ final class FakeStatusStore: ScanStatusRecording {
         /// Memories written through `rememberProgress` (the coalesced kind).
         var progress: [ScanMemory] = []
         var flushCount = 0
+        /// When true the next `remember` waits until `releaseRemember()`.
+        var holdNextRemember = false
     }
 
     let state = Mutex(State())
@@ -22,8 +24,20 @@ final class FakeStatusStore: ScanStatusRecording {
     let writes: AsyncStream<Void>
     private let writeSource: AsyncStream<Void>.Continuation
 
+    /// One value when a held `remember` has been reached, and the gate that lets it go on.
+    let rememberReached: AsyncStream<Void>
+    private let rememberReachedSource: AsyncStream<Void>.Continuation
+    private let rememberGate: AsyncStream<Void>
+    private let rememberGateSource: AsyncStream<Void>.Continuation
+
     init() {
         (writes, writeSource) = AsyncStream.makeStream(of: Void.self)
+        (rememberReached, rememberReachedSource) = AsyncStream.makeStream(of: Void.self)
+        (rememberGate, rememberGateSource) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func releaseRemember() {
+        rememberGateSource.yield()
     }
 
     func recordScan(_ summary: ScanSummary, memory: ScanMemory) async {
@@ -35,6 +49,16 @@ final class FakeStatusStore: ScanStatusRecording {
     }
 
     func remember(_ memory: ScanMemory) async {
+        let hold = state.withLock { current in
+            defer { current.holdNextRemember = false }
+            return current.holdNextRemember
+        }
+        if hold {
+            rememberReachedSource.yield()
+            for await _ in rememberGate {
+                break
+            }
+        }
         state.withLock {
             $0.remembered.append(memory)
             $0.memories.append(memory)

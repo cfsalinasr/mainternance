@@ -28,6 +28,7 @@ public extension ScannerViewModel {
         guard await isStillDetected(finding) else { return }
         do {
             let record = try await quarantine.quarantine(path: finding.path, signature: finding.signature)
+            quarantineReloadCount += 1 // any reload that read before this move is now stale
             findings.removeAll { $0.id == id }
             resolvedByQuarantine[record.id] = finding
             notice = ScannerText.moved(Self.name(of: finding.path))
@@ -64,6 +65,7 @@ public extension ScannerViewModel {
         let signature = quarantined.first { $0.id == id }?.signature
         do {
             let path = try await quarantine.restore(id)
+            quarantineReloadCount += 1 // any reload that read before this restore is now stale
             notice = ScannerText.restored(path, signature: signature)
             if let finding = resolvedByQuarantine.removeValue(forKey: id) {
                 merge(finding)
