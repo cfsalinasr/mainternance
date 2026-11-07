@@ -86,7 +86,7 @@ struct LaunchItemReader: Sendable {
 
     /// SHA-256 (hex) of what decides what the job runs: `Program`, every `ProgramArguments` entry,
     /// `EnvironmentVariables` (sorted by name, so it is stable), `BundleProgram` and `WorkingDirectory`. Each part is
-    /// tagged and NUL-separated so no two different jobs give the same text; nil when the file names none of them.
+    /// tagged and length-prefixed so no two different jobs give the same text; nil when the file names none of them.
     /// A value that is not text is hashed by its description, so it still counts.
     static func programFingerprint(_ job: [String: Any]) -> String? {
         let fields = ["Program", "ProgramArguments", "EnvironmentVariables", "BundleProgram", "WorkingDirectory"]
@@ -100,7 +100,7 @@ struct LaunchItemReader: Sendable {
         parts += (environment ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=" + describe($0.value) }
         parts += ["bundle", job["BundleProgram"].map(describe) ?? "-"]
         parts += ["directory", job["WorkingDirectory"].map(describe) ?? "-"]
-        return hash(["v2"] + parts)
+        return hashFramed(["v2"] + parts)
     }
 
     /// The fingerprint of reviews saved before the environment, bundle program and working directory counted
@@ -115,6 +115,18 @@ struct LaunchItemReader: Sendable {
         let arguments = job["ProgramArguments"] as? [Any]
         let head = ["program", program.map(describe) ?? "", "arguments", arguments.map { String($0.count) } ?? "-"]
         return head + (arguments ?? []).map(describe)
+    }
+
+    /// Like `hash`, but every part is length-prefixed, so a NUL inside a value (a binary plist can hold one) can never
+    /// make two different jobs produce the same input. The v2 fingerprint has never shipped, so it uses this form.
+    private static func hashFramed(_ parts: [String]) -> String {
+        var input = Data()
+        for part in parts {
+            let bytes = Data(part.utf8)
+            withUnsafeBytes(of: UInt64(bytes.count).bigEndian) { input.append(contentsOf: $0) }
+            input.append(bytes)
+        }
+        return SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
     }
 
     private static func hash(_ parts: [String]) -> String {

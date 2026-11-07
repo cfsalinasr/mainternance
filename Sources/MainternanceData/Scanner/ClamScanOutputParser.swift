@@ -48,6 +48,12 @@ public enum ClamScanOutputParser {
     ]
 
     public static func parse(_ line: String) -> ClamLine {
+        // A FOUND line is checked first and parsed even when its path is not absolute: a detection line mangled by
+        // a file name (it may start with `Scanning `, `Infected files: ` or `WARNING: Can't open file `) must reach
+        // the caller so the detection is accounted for and never silently dropped.
+        if line.hasSuffix(" FOUND") {
+            return parseFound(String(line.dropLast(6)))
+        }
         if line.hasPrefix(cantOpenFile) {
             return parseCantOpen(String(line.dropFirst(cantOpenFile.count)))
         }
@@ -57,11 +63,6 @@ public enum ClamScanOutputParser {
         }
         if line.hasPrefix(infectedFiles) {
             return parseTotal(String(line.dropFirst(infectedFiles.count)))
-        }
-        // A FOUND line is parsed even when its path is not absolute: the caller must see it to account for a
-        // detection whose line was mangled by a file name (a dropped detection is never silent).
-        if line.hasSuffix(" FOUND") {
-            return parseFound(String(line.dropLast(6)))
         }
         guard line.hasPrefix("/") else { return .ignored }
         if line.hasSuffix(": OK") {

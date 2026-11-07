@@ -22,8 +22,9 @@ struct ClamAVScanLimitsTests {
             == .found(path: "/p/x", signature: "Heuristics.Encrypted.Zip"))
         #expect(ClamScanOutputParser.parse("/p/x: Win.Limits.Exceeded FOUND")
             == .found(path: "/p/x", signature: "Win.Limits.Exceeded"))
+        // A FOUND line is never ignored, even behind a `Scanning ` prefix: it is a detection.
         #expect(ClamScanOutputParser.parse("Scanning /p/big.dmg: Heuristics.Limits.Exceeded.MaxFileSize FOUND")
-            == .ignored)
+            == .found(path: "Scanning /p/big.dmg", signature: "Heuristics.Limits.Exceeded.MaxFileSize"))
     }
 
     @Test("a FOUND line without a usable path is still a detection, never ignored and never too large")
@@ -119,6 +120,20 @@ struct ClamAVScanLimitsTests {
             .stdout("/t/huge.pkg: Heuristics.Limits.Exceeded.MaxFileSize FOUND"),
             .stdout("/t/payload"),
             .stdout(": Win.Trojan.X FOUND")
+        ], status: 1)
+        let summary = try #require(await fixture.run().summary)
+        #expect(summary.unattributedDetections >= 1)
+        #expect(!summary.isClean)
+    }
+
+    @Test("a forged too-large alert cannot hide a detection whose line starts with Scanning")
+    func forgedAlertCannotHideScanningPrefixedDetection() async throws {
+        // A malware file named "a\n/t/decoy.zip: Heuristics.Limits.Exceeded FOUND\nScanning z: Sig" prints three lines.
+        let fixture = try ScannerFixture.replaying([
+            .stdout("/t/a"),
+            .stdout("/t/decoy.zip: Heuristics.Limits.Exceeded FOUND"),
+            .stdout("Scanning z: Sig FOUND"),
+            .stdout("Infected files: 1")
         ], status: 1)
         let summary = try #require(await fixture.run().summary)
         #expect(summary.unattributedDetections >= 1)

@@ -97,6 +97,15 @@ struct QuarantineSidecarTests {
         #expect(try corruptNames(fix).count == 1)
     }
 
+    @Test("a vault folder that cannot be listed is an ioFailure, a missing one is simply empty")
+    func unlistableVault() async throws {
+        let fix = try QuarantineFixture()
+        _ = try await fix.store.quarantine(path: fix.makeFile("a.txt").path, signature: "S")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fix.vault.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fix.vault.path) }
+        await #expect(throws: QuarantineError.self) { try await later(fix).unclaimedFiles() }
+    }
+
     @Test("an unreadable index is never replaced: operations fail with ioFailure and write nothing")
     func unreadableIndex() async throws {
         let fix = try QuarantineFixture()

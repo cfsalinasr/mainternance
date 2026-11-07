@@ -34,8 +34,9 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
     public var isNew: Bool
     /// Present at the last review under the same label or file, but its file, label or program changed since.
     public var isChanged = false
-    /// A hash of the job's `Program` and every `ProgramArguments` entry (set by the reader); nil when the file names
-    /// neither or could not be read. Part of `reviewKey`, so a reviewed job that now runs something else is flagged.
+    /// A hash of the job's `Program`, every `ProgramArguments` entry, `EnvironmentVariables`, `BundleProgram` and
+    /// `WorkingDirectory` (set by the reader); nil when none of those keys is present or the file could not be read.
+    /// Part of `reviewKey`, so a reviewed job that now runs something else is flagged.
     public var programFingerprint: String?
     /// The fingerprint an earlier version of the review used (`Program` and `ProgramArguments` only); a review
     /// saved with it is upgraded once, like the label-only keys before it.
@@ -94,7 +95,6 @@ public struct StartupItem: Sendable, Equatable, Identifiable {
         [prefix, validLabel ?? "", plistPath, fingerprint ?? ""].joined(separator: StartupReviewBaseline.separator)
     }
 
-    /// Keys from before the program was part of the review: the label when valid, or the file path.
     /// Keys of earlier review formats: the label when valid, the file path, and the key with the earlier
     /// fingerprint. Only the label key can be shared by two files; the others name this file.
     var legacyReviewKeys: [String] {

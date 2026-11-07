@@ -34,6 +34,8 @@ public final class ScannerViewModel {
     /// True when the last read of the quarantine list failed (the lists above then keep what the last good read
     /// showed); the Scanner screen says so instead of hiding the section.
     public internal(set) var quarantineUnreadable = false
+    /// Counts quarantine reloads; a reload that finds a newer one started meanwhile drops its older snapshot.
+    @ObservationIgnored var quarantineReloadCount = 0
     public internal(set) var pendingQuarantine: ScanFinding?
     public internal(set) var errorMessage: String?
     public internal(set) var notice: String?

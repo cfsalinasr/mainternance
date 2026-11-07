@@ -8,9 +8,7 @@
 
 **Tech Stack:** Swift 6, SwiftUI, SwiftPM, Swift Testing, built with scripts/test.sh, lint.sh, check-boundaries.sh.
 
-**Spec:** The audit reports (read them for file:line, scenarios and suggested fixes; they are the requirements):
-- /private/tmp/claude-501/-Users-cristiansalinas-Desktop-mainternance/7b58e81d-ba88-44d6-9512-a1dd8d666294/scratchpad/audit-scanner.md
-- .../audit-moves.md, .../audit-quality.md, .../audit-ui.md (same folder)
+**Spec:** The 2026-11-04 whole-app audit (four read-only reviewers; the findings are summarised per task below, and each task lists the file, the scenario and the fix it needs). The raw reports were temporary files and are not part of the repository.
 
 ## Global Constraints
 - Nothing is deleted permanently; Trash only. Anything not real must say so in the UI. Plain-language UI text. Notifications carry counts only, never file names.

@@ -111,7 +111,15 @@ public actor QuarantineStore: QuarantineStoring {
     public func unclaimedFiles() throws -> [String] {
         let entries = try load()
         let known = Set(entries.map(\.record.id))
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names: [String]
+        do {
+            names = try fileManager.contentsOfDirectory(atPath: directory.path)
+        } catch {
+            let missing = (error as NSError).domain == NSCocoaErrorDomain
+                && (error as NSError).code == NSFileReadNoSuchFileError
+            guard missing else { throw Self.wrap(error) }
+            names = [] // no vault folder yet: nothing is unclaimed
+        }
         return names.filter { UUID(uuidString: $0).map { !known.contains($0) } ?? false }.sorted()
     }
 

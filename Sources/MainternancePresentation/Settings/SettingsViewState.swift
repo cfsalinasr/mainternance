@@ -98,6 +98,10 @@ public final class SettingsViewState {
     @ObservationIgnored private let notifications: any NotificationPosting
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var pendingSave: Task<PreferencesUpdate, Never>?
+    /// Changes whose write failed. They stay shown, and every later write carries them again, so a save that works
+    /// later neither loses them nor lets the stale file contents replace what the screen shows.
+    @ObservationIgnored private var unsaved: [(id: Int, apply: @Sendable (inout AppPreferences) -> Void)] = []
+    @ObservationIgnored private var nextChangeID = 0
     @ObservationIgnored private var askedForPermission = false
     /// False until the permission was read once, so nothing is claimed about it before.
     private var authorizationKnown = false
@@ -313,17 +317,33 @@ public final class SettingsViewState {
         onChange?(current)
         let previous = pendingSave
         let store = preferences
-        let write = Task<PreferencesUpdate, Never> {
+        let id = nextChangeID
+        nextChangeID += 1
+        let write = Task<(update: PreferencesUpdate, carried: [Int]), Never> {
             _ = await previous?.value
-            return await store.update(change)
+            let carried = self.unsaved
+            let update = await store.update { prefs in
+                for earlier in carried {
+                    earlier.apply(&prefs)
+                }
+                change(&prefs)
+            }
+            return (update, carried.map(\.id))
         }
-        pendingSave = write
-        let result = await write.value
+        let mine = Task { await write.value.update }
+        pendingSave = mine
+        let outcome = await write.value
+        let result = outcome.update
+        if result.saved {
+            unsaved.removeAll { outcome.carried.contains($0.id) }
+        } else if !unsaved.contains(where: { $0.id == id }) {
+            unsaved.append((id, change))
+        }
         saveFailed = !result.saved
         current.lastScheduledRun = ScanSchedule.laterRun(
             current.lastScheduledRun, result.preferences.lastScheduledRun, now: now()
         )
-        guard result.saved, pendingSave == write else { return }
+        guard result.saved, unsaved.isEmpty, pendingSave == mine else { return }
         adoptSaved(result.preferences)
     }
 

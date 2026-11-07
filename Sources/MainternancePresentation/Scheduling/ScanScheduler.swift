@@ -118,7 +118,11 @@ public final class ScanScheduler {
         let previousRun = current.lastScheduledRun
         await record(moment)
         // The save let other work run: re-check, and give the slot up rather than queue behind a manual scan.
-        guard current.weeklyScanEnabled, scanner.canStartScan else { return }
+        guard current.weeklyScanEnabled else { return }
+        guard scanner.canStartScan else {
+            giveBack(moment, previousRun: previousRun)
+            return
+        }
         var updateFailure: String?
         if scanner.staleDefinitionsDays != nil {
             await scanner.updateDefinitions()

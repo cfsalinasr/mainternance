@@ -78,16 +78,22 @@ public extension ScannerViewModel {
     /// A list that cannot be read is never shown as an empty quarantine: the lists keep what the last good read
     /// showed, `quarantineUnreadable` makes the screen say so, and no finding link is dropped.
     internal func reloadQuarantine() async {
+        quarantineReloadCount += 1
+        let mine = quarantineReloadCount
         do {
             let records = try await quarantine.records()
             let inPlace = try await quarantine.stillInPlace()
             let unclaimed = try await quarantine.unclaimedFiles().count
+            // A newer reload started while this one read: its snapshot is the current one, this one is stale.
+            guard mine == quarantineReloadCount else { return }
             quarantined = records
             notMoved = inPlace
             unclaimedCount = unclaimed
             quarantineUnreadable = false
         } catch {
-            quarantineUnreadable = true
+            if mine == quarantineReloadCount {
+                quarantineUnreadable = true
+            }
             return
         }
         await dropLinksOfRecordsThatAreGone()
