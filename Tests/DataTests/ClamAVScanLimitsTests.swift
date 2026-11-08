@@ -75,11 +75,14 @@ struct ClamAVScanLimitsTests {
         let fixture = try ScannerFixture.replaying([
             .stdout("/t/a: OK"),
             .stdout("/t/huge.pkg: Heuristics.Limits.Exceeded.MaxFileSize FOUND"),
+            .stdout("/t/huge.pkg: Virus(es) detected ERROR"),
             .stdout("/t/many.zip: Heuristics.Limits.Exceeded.MaxFiles FOUND"),
+            .stdout("/t/many.zip: Virus(es) detected ERROR"),
             .stdout("/t/b: OK"),
             .stdout("----------- SCAN SUMMARY -----------"),
-            .stdout("Infected files: 2")
-        ], status: 1) // clamscan counts an alert as an infection, so it exits 1
+            .stdout("Infected files: 0"),
+            .stdout("Total errors: 2")
+        ], status: 2) // real ClamAV 1.5.4: an alert is an error, not an infection; only alerts means exit 2
         let events = await fixture.run()
         let summary = try #require(events.summary)
         #expect(summary.scanned == 2)
@@ -157,7 +160,7 @@ struct ClamAVScanLimitsTests {
         let fixture = try ScannerFixture.replaying([
             .stdout("/t/huge.pkg: Heuristics.Limits.Exceeded.MaxFileSize FOUND"),
             .stdout("/t/e: Win.Test.EICAR_HDB-1 FOUND"),
-            .stdout("Infected files: 3")
+            .stdout("Infected files: 2")
         ], status: 1)
         let summary = try #require(await fixture.run().summary)
         #expect(summary.unattributedDetections == 1)
@@ -170,7 +173,7 @@ struct ClamAVScanLimitsTests {
         let fixture = try ScannerFixture.replaying([
             .stdout("/t/huge.pkg: Heuristics.Limits.Exceeded.MaxFileSize FOUND"),
             .stdout("/t/e: Win.Test.EICAR_HDB-1 FOUND"),
-            .stdout("Infected files: 2")
+            .stdout("Infected files: 1")
         ], status: 1)
         #expect(try #require(await fixture.run().summary).unattributedDetections == 0)
     }
@@ -183,7 +186,7 @@ struct ClamAVScanLimitsTests {
             .stdout("Infected files: 2"),
             .stderr("Infected files: 1")
         ], status: 1)
-        #expect(try #require(await fixture.run().summary).unattributedDetections == 1)
+        #expect(try #require(await fixture.run().summary).unattributedDetections == 2)
     }
 
     @Test("without clamscan's total, exit 1 with no finding is never explained by a too-large file")

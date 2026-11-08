@@ -37,17 +37,18 @@ struct ScanTally {
         infectedTotal = max(0, total)
     }
 
-    /// clamscan exited 1 (infected files found). With `--alert-exceeds-max` a file over a limit also counts as
-    /// infected, so clamscan's own total is compared with what was attributed: every infected file that is neither
-    /// an accepted finding nor an accepted too-large alert is a detection that could not be attributed (a FOUND
-    /// line lost to a file name, for example). Without a total (crash, truncated output) it fails closed: exit 1
-    /// with no finding always means at least one unattributed detection, too-large alerts or not.
+    /// clamscan exited 1 (infected files found). Checked against real ClamAV 1.5.4: a file over a size limit prints
+    /// a `Heuristics.Limits.Exceeded` alert but is counted as an error, never as an infected file, and a scan with
+    /// only such files exits 2 with `Infected files: 0`. So clamscan's own total is exactly the number of real
+    /// detections: every infected file that is not an accepted finding is a detection that could not be attributed
+    /// (a FOUND line lost to a file name, for example). A too-large alert must never offset it, or a forged alert
+    /// could hide a detection. Without a total (crash, truncated output) exit 1 with no finding still fails closed.
     mutating func noteExitOne() {
         if let infectedTotal {
-            let missing = infectedTotal - findings - tooLarge
+            let missing = infectedTotal - findings
             unattributedDetections = max(unattributedDetections, min(missing, Int.max / 2))
         }
-        if findings == 0, tooLarge == 0 || infectedTotal == nil {
+        if findings == 0 {
             unattributedDetections = max(unattributedDetections, 1)
         }
     }
