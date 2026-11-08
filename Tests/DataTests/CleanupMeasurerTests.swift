@@ -179,7 +179,8 @@ struct CleanupMeasurerTests {
             return await measurer.measure()
         }
         let measurement = await task.value
-        #expect(Date().timeIntervalSince(started) < 5)
+        // Generous: a loaded CI runner took 6 to 7 s here twice. A walk that ignored cancellation would run far longer.
+        #expect(Date().timeIntervalSince(started) < 30)
         let entries = measurement.categories.flatMap(\.entries)
         #expect(entries.count == 20)
         let allLowerBounds = entries.allSatisfy(\.isLowerBound)
