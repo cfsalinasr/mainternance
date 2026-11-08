@@ -12,12 +12,12 @@ struct ScanProgressCard: View {
                     Text(ScannerText.scanning).font(.headline)
                     Text("\(ScannerText.files(scanned)) scanned").font(.system(size: 13)).foregroundStyle(.secondary)
                     if !current.isEmpty {
-                        Text(current)
+                        Text(ScannerText.shownPath(current))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .help(current)
+                            .help(ScannerText.shownPath(current))
                     }
                 }
                 Spacer()
@@ -32,7 +32,7 @@ struct ScanProgressCard: View {
     }
 
     private func spokenLabel(scanned: Int, current: String) -> String {
-        let place = current.isEmpty ? "" : ", in \(current)"
+        let place = current.isEmpty ? "" : ", in \(ScannerText.shownPath(current))"
         return "Scanning, \(ScannerText.files(scanned)) scanned\(place)"
     }
 }

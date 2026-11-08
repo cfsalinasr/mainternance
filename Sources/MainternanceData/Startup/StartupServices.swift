@@ -1,9 +1,10 @@
 import Foundation
 import MainternanceDomain
 
-/// Lists the launchd jobs, adds launchd's on/off state and what is new since the owner's last review.
+/// Lists the launchd jobs, adds launchd's on/off state and what is new or changed since the owner's last review.
 ///
-/// `readsState` false (Home's counter) skips `launchctl` (every state stays unknown) and never writes the baseline.
+/// `readsState` false (Home's counter) skips `launchctl` (every state stays unknown) and never creates the baseline;
+/// the only write it makes is the one-time upgrade of keys saved before programs were part of the review.
 /// With `invalidates`, every listing marks Home's cached count as stale (the screen just read everything again).
 struct StartupLister: StartupListing {
     let reader: LaunchItemReader
@@ -35,13 +36,11 @@ struct StartupLister: StartupListing {
             // the baseline was read, so the count is a known zero, not unknown.
             let readOnly = !review.canWrite()
             if !readOnly {
-                for index in items.indices where !items[index].isReviewed(in: seen) {
-                    items[index].isNew = true
-                }
+                mark(&items, against: seen)
             }
             snapshot.baselineEstablished = true
-            snapshot.newCount = items.count(where: \.isNew)
-            snapshot.reviewReadOnly = readsState && readOnly
+            snapshot.newCount = items.count(where: \.needsReview)
+            snapshot.reviewReadOnly = readOnly // Home must then say it could not check, not "nothing new"
         case let .missing(saved):
             snapshot.reviewReadOnly = readsState && !saved
         case .unreadable:
@@ -54,6 +53,25 @@ struct StartupLister: StartupListing {
         snapshot.duplicateLabels = Set(seenLabels.filter { $0.value > 1 }.keys)
         snapshot.items = items
         return snapshot
+    }
+
+    /// Marks new and changed items. Items matched only by a key saved before programs were part of the review
+    /// count as reviewed this once, and their current keys are saved in place of the old ones at once, by this
+    /// listing or Home's counter, whichever reads first: from then on a change of their program is flagged
+    /// everywhere, Home's count included.
+    private func mark(_ items: inout [StartupItem], against baseline: StartupReviewBaseline) {
+        var upgraded: [StartupItem] = []
+        for (index, match) in zip(items.indices, baseline.matches(items)) {
+            switch match {
+            case .reviewed: break
+            case .reviewedBeforeUpgrade: upgraded.append(items[index])
+            case .changed: items[index].isChanged = true
+            case .new: items[index].isNew = true
+            }
+        }
+        if !upgraded.isEmpty {
+            _ = review.upgrade(upgraded)
+        }
     }
 }
 
@@ -80,7 +98,8 @@ public struct StartupServices: Sendable {
     public let lister: any StartupListing
     public let controller: any StartupControlling
     public let reviewer: any StartupReviewing
-    /// Home's count of new items: reads the files and the baseline only; never runs `launchctl`, never writes.
+    /// Home's count of new and changed items: reads the files and the baseline; never runs `launchctl`, and writes
+    /// only the one-time upgrade of old review keys (see `StartupLister`).
     /// Home polls every few seconds, so the answer is reused for up to `counterMinimumAge`, and read again as soon
     /// as the Startup screen lists or marks as reviewed.
     public let newItemCounter: any StartupListing

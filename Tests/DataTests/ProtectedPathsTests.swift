@@ -85,7 +85,7 @@ struct ProtectedPathsTests {
             home + "/Downloads/mainternance-not-real.zip", bundle, bundle + "/Contents/MacOS/x",
             temp.url.appendingPathComponent("a.txt").path, link.path, link.path + "/Library/x", "", "relative/x"
         ]
-        let checker = FilesServices.protectedChecker()
+        let checker = FilesServices.guards(ProtectedPaths.Resolved()).move
         let resolved = ProtectedPaths.Resolved()
         for path in paths {
             #expect(checker(path) == ProtectedPaths.isProtected(path), "\(path)")

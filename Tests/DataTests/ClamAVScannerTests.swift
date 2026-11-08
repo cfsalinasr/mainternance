@@ -19,7 +19,7 @@ struct ClamAVScannerTests {
         ))
         #expect(exclusions.count == 2)
         #expect(call.arguments == [
-            "--database=\(fixture.paths.databaseDirectory.path)", "-v", "--no-summary", "--recursive"
+            "--database=\(fixture.paths.databaseDirectory.path)", "-v", "--alert-exceeds-max=yes", "--recursive"
         ] + exclusions + ["--", root])
         #expect(!call.arguments.contains("--infected"))
         #expect(call.lowPriority)

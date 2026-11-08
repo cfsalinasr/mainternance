@@ -111,7 +111,11 @@ struct CleanupMoverTests {
     func downloadsRuleReapplied() async throws {
         let fixture = try CleanupFixture()
         let document = try fixture.file("thesis.docx", in: fixture.downloads, age: 100 * CleanupFixture.day)
-        let forged = CleanupEntry(path: document.path, bytes: 1, isLowerBound: false, type: .file, modified: nil)
+        // With its real identity, so only the folder's rule can refuse it.
+        guard case let .found(info) = ItemStat.read(document.path) else { throw FixtureError.notListed }
+        let forged = CleanupEntry(
+            path: document.path, bytes: 1, isLowerBound: false, type: .file, modified: nil, identity: info.identity
+        )
         let outcome = await fixture.mover().moveToTrash([forged])
         #expect(outcome.failed.map(\.reason) == [CleanupRefusal.notInCleanupFolder.text])
         #expect(fixture.exists(document))

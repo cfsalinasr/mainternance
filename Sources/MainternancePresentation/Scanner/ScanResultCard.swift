@@ -36,7 +36,7 @@ struct ScanResultCard: View {
     private var fullDiskAccessHelp: some View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
-            Text(ScannerText.permissionExplanation(model.permissionDeniedCount))
+            Text(ScannerText.permissionExplanation(model.permissionDeniedCount, folders: model.permissionDeniedFolders))
                 .font(.system(size: 13))
             Button(ScannerText.fullDiskAccessButton) { model.openFullDiskAccessSettings() }
                 .accessibilityHint(ScannerText.fullDiskAccessHint)

@@ -16,7 +16,7 @@ enum FilesText {
     static let reveal = "Reveal in Finder"
 
     static let largeIntro = "Plain files of at least 50 MB in your home folder, largest first. "
-        + "Your Library folder and hidden folders are not included."
+        + "Your Library folder and hidden files and folders are not included."
     static let scan = "Scan"
     static let scanAgain = "Scan again"
     static let stop = "Stop"
@@ -31,7 +31,7 @@ enum FilesText {
     static let wouldRemove = "Would remove"
     static let keepLabel = "Keep:"
     static let duplicatesIntro = "Plain files of at least 1 MB in your home folder with exactly the same contents. "
-        + "Your Library folder, hidden folders and files stored only in iCloud are not included."
+        + "Your Library folder, hidden files and folders, and files stored only in iCloud are not included."
     static let noDuplicates = "No duplicates found"
     static let duplicatesNotScanned = "Not scanned yet"
     static let duplicatesStopped = "The search stopped early, so more duplicates may exist."

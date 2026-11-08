@@ -134,7 +134,7 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
 
     // MARK: A file that exists but cannot be read is not damaged
 
-    @Test("a file that cannot be read loads the defaults, is not moved aside, and blocks writes until a load succeeds")
+    @Test("a file that cannot be read loads the defaults, is not moved aside, and nothing is written over it")
     func unreadableFileIsLeftAlone() async throws {
         let temp = try TempDirectory()
         await store(temp).save(sample)
@@ -144,17 +144,65 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
         defer { try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path) }
         let prefs = store(temp)
         #expect(await prefs.load() == .defaults)
-        await prefs.save(.defaults)
-        _ = await prefs.update { $0.weeklyDigest = false }
+        #expect(await prefs.save(.defaults) == false)
+        #expect(await prefs.update { $0.weeklyDigest = false }.saved == false)
         #expect(try names(temp) == ["preferences.json"]) // nothing moved aside
-        // The read error passes; until a load succeeds, the defaults shown must not be written over the real file.
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
-        await prefs.save(.defaults)
-        _ = await prefs.update { $0.launchAtLogin = false }
+        #expect(await store(temp).load() == sample) // the owner's choices survived
+    }
+
+    @Test("after a passing read error, the next change is saved: one error never stops saving for the session")
+    func updateRecoversAfterReadError() async throws {
+        let temp = try TempDirectory()
+        await store(temp).save(sample)
+        let path = fileURL(temp).path
+        let manager = FileManager.default
+        try manager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path) }
+        let prefs = store(temp)
+        #expect(await prefs.load() == .defaults) // the launch read failed
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        // A whole-file save of the defaults shown would overwrite the owner's choices: still skipped.
+        #expect(await prefs.save(.defaults) == false)
         #expect(await store(temp).load() == sample)
-        #expect(await prefs.load() == sample)
-        await prefs.save(.defaults)
-        #expect(await store(temp).load() == .defaults) // writing resumes after a good load
+        // A change reads the file again and is applied to what it holds, then written.
+        let result = await prefs.update { $0.weeklyDigest = false }
+        var expected = sample
+        expected.weeklyDigest = false
+        #expect(result.saved)
+        #expect(result.preferences == expected)
+        #expect(await store(temp).load() == expected)
+        #expect(await prefs.save(sample)) // the read error is cleared for saves too
+    }
+
+    @Test("a write that fails says so: update and save report not saved, and the file keeps its old values")
+    func failedWriteIsReported() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        #expect(await prefs.save(sample))
+        prefs.failWriting = true
+        let result = await prefs.update { $0.weeklyScanEnabled = false }
+        #expect(!result.saved)
+        #expect(!result.preferences.weeklyScanEnabled)
+        #expect(await prefs.save(.defaults) == false)
+        #expect(await store(temp).load() == sample)
+        prefs.failWriting = false
+        #expect(await prefs.update { $0.weeklyScanEnabled = false }.saved)
+    }
+
+    @Test("a folder that cannot be written makes the real write fail and report it")
+    func unwritableFolderIsReported() async throws {
+        let temp = try TempDirectory()
+        let prefs = store(temp)
+        #expect(await prefs.save(sample))
+        let folder = fileURL(temp).deletingLastPathComponent().path
+        let manager = FileManager.default
+        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder) }
+        let result = await prefs.update { $0.weeklyDigest = false }
+        #expect(!result.saved)
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder)
+        #expect(await store(temp).load() == sample)
     }
 
     @Test("a directory in place of the file is unreadable, not damaged: nothing is moved or written")
@@ -165,7 +213,8 @@ struct PreferencesStoreRecoveryTests: PreferencesStoreFixture {
         #expect(await prefs.load() == .defaults)
         await prefs.save(sample)
         let result = await prefs.update { $0.weeklyDigest = false }
-        #expect(!result.weeklyDigest)
+        #expect(!result.preferences.weeklyDigest)
+        #expect(!result.saved)
         #expect(try names(temp) == ["preferences.json"])
         var isDirectory: ObjCBool = false
         #expect(FileManager.default.fileExists(atPath: fileURL(temp).path, isDirectory: &isDirectory))

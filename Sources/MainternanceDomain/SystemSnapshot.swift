@@ -35,6 +35,9 @@ public struct SystemSnapshot: Sendable, Equatable {
     public var battery: BatterySnapshot?
     /// Nil when unknown (never shown as 0).
     public var newStartupItemCount: Int?
+    /// A review baseline exists but cannot be read or saved, so new or changed items cannot be told apart: Home
+    /// says it could not check (never "nothing new"). Only meaningful while `newStartupItemCount` is nil.
+    public var startupCheckUnavailable = false
     /// Nil when unknown (never shown as up to date).
     public var osUpdateAvailable: Bool?
 
@@ -72,12 +75,16 @@ public struct ScanStatus: Sendable, Equatable {
     public var lastScanDidNotFinish: Bool
     /// The saved results exist but could not be read, so neither "never scanned" nor "no findings" can be claimed.
     public var savedResultsUnreadable: Bool
+    /// The weekly scan is on and its slot is due, but the scanner cannot start it (for example the virus
+    /// definitions are missing): it is waiting, so no time may be promised. `nextScan` is nil then.
+    public var weeklyScanWaiting: Bool
 
     public init(
         lastScan: Date?, nextScan: Date?, unresolvedFindings: Int, lastScanDidNotFinish: Bool = false,
-        savedResultsUnreadable: Bool = false
+        savedResultsUnreadable: Bool = false, weeklyScanWaiting: Bool = false
     ) {
         self.savedResultsUnreadable = savedResultsUnreadable
+        self.weeklyScanWaiting = weeklyScanWaiting
         self.lastScan = lastScan
         self.nextScan = nextScan
         self.unresolvedFindings = unresolvedFindings

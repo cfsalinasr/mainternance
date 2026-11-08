@@ -107,8 +107,9 @@ enum CleanupText {
     }
 
     /// "Moved N items, about X, to the Trash." plus how many could not be moved; only moved bytes count. "At least"
-    /// when any moved item was only partly measured.
-    static func result(_ outcome: CleanupOutcome) -> String {
+    /// when any moved item was only partly measured. Nil when nothing moved: `nothingMoved` says so instead.
+    static func result(_ outcome: CleanupOutcome) -> String? {
+        guard !outcome.moved.isEmpty else { return nil }
         let size = size(outcome.movedBytes, lowerBound: outcome.moved.contains(where: \.isLowerBound))
         let moved = "Moved \(items(outcome.moved.count)), \(size), to the Trash."
         return outcome.failed.isEmpty ? moved : "\(moved) \(outcome.failed.count) could not be moved."

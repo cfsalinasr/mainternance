@@ -40,7 +40,8 @@ struct ClamAVVerifyTests {
         let call = try #require(fixture.runner.recorded.first)
         #expect(call.executable == "/fake/bin/clamscan")
         #expect(call.arguments == [
-            "--database=\(fixture.paths.databaseDirectory.path)", "-v", "--no-summary", "--", path
+            "--database=\(fixture.paths.databaseDirectory.path)", "-v", "--no-summary", "--alert-exceeds-max=yes", "--",
+            path
         ])
         #expect(call.lowPriority)
         #expect(fixture.runner.recorded.count == 1)

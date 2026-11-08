@@ -14,8 +14,10 @@ import Synchronization
 /// protected (`ProtectedPaths`), or it cannot be moved to the Trash, or moving aside fails, the damaged file stays
 /// where it is and saving is skipped.
 /// A file that exists but cannot be READ (no permission, a directory in its place, an I/O error) is not damaged: it is
-/// left alone, loading gives the defaults, and nothing is saved until a later load reads the file (or finds it gone),
-/// so defaults shown after a passing read error are never written over the owner's choices.
+/// left alone and loading gives the defaults. `update` reads the file again every time and applies its change to
+/// what it holds, so it saves again as soon as the read works; `save` (a whole-file replace) waits for a `load` or
+/// `update` that reads the file, so defaults shown after a passing read error are never written over the owner's
+/// choices. Every write says whether it reached the disk.
 /// A schedule out of range is clamped on load; a missing field takes its default (so a field added later never resets
 /// the owner's other choices).
 /// Reads and writes happen inside one lock, so concurrent saves and updates are serialised and the file is always
@@ -29,15 +31,23 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
     private let now: @Sendable () -> Date
     private let trash: @Sendable (URL) throws -> Void
     private let isProtected: @Sendable (String) -> Bool
-    /// True from a read that failed until a load reads the file (or finds it missing or damaged): writes are skipped.
+    /// True from a read that failed until a load or update reads the file (or finds it missing or damaged): `save`
+    /// is skipped meanwhile.
     private let lock = Mutex(false)
     private let moveAsideFails = Mutex(false)
+    private let writeFailure = Mutex(false)
     private let afterReadHook = Mutex<(@Sendable () -> Void)?>(nil)
 
     /// Test seam: makes moving a damaged file aside fail.
     var failMovingAside: Bool {
         get { moveAsideFails.withLock { $0 } }
         set { moveAsideFails.withLock { $0 = newValue } }
+    }
+
+    /// Test seam: makes every write fail, as a full disk or a folder that cannot be written would.
+    var failWriting: Bool {
+        get { writeFailure.withLock { $0 } }
+        set { writeFailure.withLock { $0 = newValue } }
     }
 
     /// Test seam: runs inside the lock, after `update` read the file and before it writes.
@@ -52,7 +62,7 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
     public init(
         directory: URL,
         now: @escaping @Sendable () -> Date = Date.init,
-        trash: @escaping @Sendable (URL) throws -> Void = PreferencesStore.moveToTrash,
+        trash: @escaping @Sendable (URL) throws -> Void = SystemTrash.move,
         isProtected: @escaping @Sendable (String) -> Bool = { ProtectedPaths.isProtected($0) }
     ) {
         self.directory = directory
@@ -60,11 +70,6 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         self.now = now
         self.trash = trash
         self.isProtected = isProtected
-    }
-
-    /// The real Trash: the item can be put back from Finder.
-    public static func moveToTrash(_ url: URL) throws {
-        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
     }
 
     public func load() async -> AppPreferences {
@@ -87,42 +92,49 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         }
     }
 
-    public func save(_ preferences: AppPreferences) async {
+    /// A whole-file replace: after a passing read error it stays skipped until a `load` or `update` reads the file
+    /// again (the values given may be defaults shown because of that error).
+    @discardableResult
+    public func save(_ preferences: AppPreferences) async -> Bool {
         lock.withLock { unreadable in
             switch readFile() {
             case .unreadable:
                 unreadable = true
-                return
+                return false
             case .damaged:
-                guard !unreadable, moveAside() else { return }
+                guard !unreadable, moveAside() else { return false }
             case .missing, .readable:
-                guard !unreadable else { return }
+                guard !unreadable else { return false }
             }
-            write(preferences)
+            return write(preferences)
         }
     }
 
-    public func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> AppPreferences {
+    /// Reads the file again each time: a read that works clears an earlier read error, so one passing error never
+    /// stops saving for the rest of the session (the change is applied to what the file holds, never to defaults
+    /// shown because of that error).
+    @discardableResult
+    public func update(_ change: @Sendable (inout AppPreferences) -> Void) async -> PreferencesUpdate {
         lock.withLock { unreadable in
             var base = AppPreferences.defaults
-            var writable = !unreadable
+            var writable = true
             switch readFile() {
             case .missing:
-                break
+                unreadable = false
             case let .readable(prefs):
+                unreadable = false
                 base = prefs
             case .damaged:
-                writable = writable && moveAside()
+                unreadable = false
+                writable = moveAside()
             case .unreadable:
                 unreadable = true
                 writable = false
             }
             afterRead?()
             let next = base.updated(now: now(), change)
-            if writable {
-                write(next)
-            }
-            return next
+            let saved = writable && write(next)
+            return PreferencesUpdate(preferences: next, saved: saved)
         }
     }
 
@@ -153,7 +165,8 @@ public final class PreferencesStore: PreferencesStoring, Sendable {
         ).moveAside()
     }
 
-    private func write(_ preferences: AppPreferences) {
-        PrivateJSONFile.write(preferences, to: file)
+    private func write(_ preferences: AppPreferences) -> Bool {
+        guard !failWriting else { return false }
+        return PrivateJSONFile.write(preferences, to: file)
     }
 }

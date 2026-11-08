@@ -144,6 +144,8 @@ public enum UninstallRefusal: Error, Equatable, Sendable {
     case notInUninstallerFolder
     /// On another disk or volume than its folder.
     case otherVolume
+    /// A folder that holds the running Mainternance app: moving it would move the app too.
+    case holdsApp
 
     public var text: String {
         switch self {
@@ -151,6 +153,7 @@ public enum UninstallRefusal: Error, Equatable, Sendable {
         case .appleApp: "It is one of Apple's apps (bundle identifier starting com.apple.), and those are not removed."
         case .notInUninstallerFolder: "It is not in one of the folders the Uninstaller looks at."
         case .otherVolume: "It is on another disk, so the Uninstaller leaves it alone."
+        case .holdsApp: "It holds Mainternance itself."
         }
     }
 }

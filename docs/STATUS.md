@@ -25,14 +25,21 @@ Last updated: 2026-11-04.
 - Files: if a file becomes iCloud-only (stored online) in the moment between the duplicate scan listing it and reading it, opening it may start a download. Files already iCloud-only when scanned are skipped.
 - Files: Spotlight search lists files only (no folders), and Spotlight may not have indexed everything.
 - Uninstaller: a running app with no bundle identifier can still be moved.
+- Scanner, iCloud: the setting that asks macOS not to download iCloud-only files during a scan, and whether iCloud Desktop and Documents files show up under `~/Desktop` and `~/Documents`, are not yet checked on a real Mac.
+- Scanner, ClamAV output: the cross-check against ClamAV's "Infected files:" line and the name of the "file too large" alert (`Heuristics.Limits.Exceeded`) are not yet checked against real ClamAV.
+- Scanner, large files: files over ClamAV's default size limit are not scanned. Such a scan is "partial" (never the green "No threats found"), and the re-check before quarantine fails for those files, so they cannot be quarantined.
+- Scanner, findings kept: while any file is too large to scan, the scan stays incomplete, so earlier findings whose file still exists are kept rather than cleared. This is on purpose (it never drops a real finding) but can be noisy. Whether to raise ClamAV's size limits is the owner's call.
+- Scanner, weekly scan: when the virus definitions are more than 7 days old, the weekly scan first updates them over the network. This has not been run for real yet.
+- Startup: reviews saved by earlier versions of the app (by label only, or by program and arguments only) are trusted once: what is there at the first look counts as reviewed and the review is upgraded. A change made before that first look is not flagged.
+- Folders that could not be opened: the app does not know why (no Full Disk Access, a privacy prompt declined, or plain permissions), although it shows the Full Disk Access button.
 
 ## Needs a human (cannot be verified without a screen)
 - Popover: after "Open Mainternance" the popover closes, the window stays open, and one click on the menu bar icon reopens it without leaving the icon highlighted.
 - App CPU in Activity Monitor stays near 0% with the popover and window closed.
 - Launch at login from `/Applications`, including the approval step in System Settings > General > Login Items.
 - Cleanup: run it on a real Mac, move a few caches, then look in the Trash (they are there and Put Back restores them), and check Home's suggestion.
-- Cleanup and links: the real `FileManager.trashItem` is never run by the automated tests (they use a fake Trash), so its handling of links rests on this check only. Put a link in `~/Library/Caches` that points to a folder elsewhere, move it with Cleanup, and confirm the Trash holds the link while the folder it pointed to is untouched.
-- Uninstaller: uninstall a throwaway app on a real Mac with the app in `/Applications` and look in the Trash (the app and its ticked leftovers are there), including the administrator-password case, and check that Put Back restores it. The real `FileManager.trashItem` is never run by the automated tests.
+- Cleanup and links: The real `FileManager.trashItem` moving a link as the link (its target untouched) is covered by `SystemTrashIntegrationTests` on a temporary disk image (a separate volume); the home-volume `~/.Trash` and Put Back remain a manual check. Put a link in `~/Library/Caches` that points to a folder elsewhere, move it with Cleanup, and confirm the Trash holds the link while the folder it pointed to is untouched.
+- Uninstaller: uninstall a throwaway app on a real Mac with the app in `/Applications` and look in the Trash (the app and its ticked leftovers are there), including the administrator-password case, and check that Put Back restores it. The real `FileManager.trashItem` moving a link as the link (its target untouched) is covered by `SystemTrashIntegrationTests` on a temporary disk image (a separate volume); the home-volume `~/.Trash` and Put Back remain a manual check.
 - Startup: switching one of your own agents off, logging out and in, and checking it no longer starts (then switching it back on).
 - Notifications: the permission prompt, then a weekly scan set a few minutes ahead (see `docs/testing-the-scanner.md`).
 - First real scanner run with real ClamAV (not done yet): Install button, Update definitions, the harmless EICAR test file (see `docs/testing-the-scanner.md`).
@@ -40,7 +47,7 @@ Last updated: 2026-11-04.
 - Files, large files: a real scan and treemap on the home folder. Note how long it takes, whether the app stays responsive, and watch its memory in Activity Monitor.
 - Files, duplicates: a scan with a planted duplicate pair (two identical files of 1 MB or more) finds exactly that pair.
 - Files: Quick Look and Reveal in Finder from a row.
-- Files, Trash: a real move of a single file and of a duplicate, then Put Back in Finder. The real `FileManager.trashItem` is never run by the automated tests.
+- Files, Trash: a real move of a single file and of a duplicate, then Put Back in Finder. The real `FileManager.trashItem` moving a link as the link (its target untouched) is covered by `SystemTrashIntegrationTests` on a temporary disk image (a separate volume); the home-volume `~/.Trash` and Put Back remain a manual check.
 - Files, packages: check that moving a file inside a package folder (for example inside an `.app` or a Photos library) is refused, and that search does not list files inside packages.
 - Files, privacy: the prompts for Desktop, Documents and Downloads, and the "folders could not be read" note when you decline.
 - Uninstaller, known limit: a running app with no bundle identifier can still be moved by the Uninstaller. Check what happens.

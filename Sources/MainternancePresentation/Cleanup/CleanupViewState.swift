@@ -5,11 +5,14 @@ import Observation
 /// The real Cleanup screen: measures the fixed Cleanup folders through `CleanupScanning`, lets the owner choose
 /// entries, and after a review and an explicit confirm moves them to the Trash through `CleanupMoving`.
 ///
-/// After a measuring every entry is selected except old installers, which move only once the owner ticks them. Only
-/// entries that really moved leave the list and count as freed; one that could not be moved stays listed with its
-/// reason. Only the newest measuring is shown, whatever order measurings finish in, and a measuring cancelled (the
-/// screen was left) is dropped: the previous list stays and Home is not told. Nothing is measured while moving or
-/// while the review is open, nothing moves while measuring, and a list older than `maximumAge` is not cleaned.
+/// After a measuring every entry is selected except old installers, which move only once the owner ticks them (on
+/// every new measuring they start unticked again); an entry the owner unticked stays unticked in every later
+/// measuring (also one that was running while they unticked it, and one that runs when they come back). A
+/// measuring that finishes after a move clears that move's result card. Only entries that really moved leave the
+/// list and count as freed; one that could not be moved stays listed with its reason. Only the newest measuring is
+/// shown, whatever order measurings finish in, and a measuring cancelled (the screen was left) is dropped: the
+/// previous list stays and Home is not told. Nothing is measured while moving or while the review is open, nothing
+/// moves while measuring, and a list older than `maximumAge` is not cleaned.
 @MainActor
 @Observable
 public final class CleanupViewState {
@@ -26,6 +29,8 @@ public final class CleanupViewState {
     /// A short line about the last action, when it needs words.
     public private(set) var message: String?
     private(set) var selected: Set<String> = []
+    /// The entries the owner unticked, by id; kept across measurings, so a new list never re-ticks them.
+    private var unticked: Set<String> = []
     /// Why an entry that is still listed could not be moved last time.
     private(set) var failures: [String: String] = [:]
     private var measuresInFlight = 0
@@ -144,7 +149,7 @@ public final class CleanupViewState {
     }
 
     var resultText: String? {
-        lastOutcome.map(CleanupText.result)
+        lastOutcome.flatMap(CleanupText.result)
     }
 
     var failureLines: [String] {
@@ -164,8 +169,9 @@ public final class CleanupViewState {
     }
 
     /// Measures again; ignored while moving or reviewing (a new list must never re-tick what the owner unticked in
-    /// the review). Afterwards every entry is selected except old installers. A measuring whose task was cancelled
-    /// (the screen was left) only has lower-bound sizes: it is dropped and the previous list stays.
+    /// the review). Afterwards every entry is selected except old installers and what the owner unticked. A finished
+    /// measuring clears the last move's result. A measuring whose task was cancelled (the screen was left) only has
+    /// lower-bound sizes: it is dropped and the previous list stays.
     public func measure() async {
         guard !isMoving, !isReviewing else { return }
         message = nil
@@ -177,8 +183,11 @@ public final class CleanupViewState {
         guard mine == generation, !Task.isCancelled else { return }
         measurement = read
         measuredAt = now()
-        selected = Set(read.categories.filter(\.kind.isSelectedByDefault).flatMap(\.entries).map(\.id))
+        selected = Set(read.categories.flatMap { category in
+            category.kind.isSelectedByDefault ? category.entries.map(\.id).filter { !unticked.contains($0) } : []
+        })
         failures = [:]
+        lastOutcome = nil
         onMeasurement?(read)
     }
 
@@ -186,10 +195,16 @@ public final class CleanupViewState {
     func toggleCategory(_ kind: CleanupKind) {
         guard !isMoving, let entries = category(kind)?.entries else { return }
         let ids = Set(entries.map(\.id))
-        if isSelected(category: kind) {
-            selected.subtract(ids)
-        } else {
+        let tick = !isSelected(category: kind)
+        if tick {
             selected.formUnion(ids)
+        } else {
+            selected.subtract(ids)
+        }
+        if tick {
+            unticked.subtract(ids)
+        } else {
+            unticked.formUnion(ids)
         }
     }
 
@@ -200,6 +215,11 @@ public final class CleanupViewState {
             selected.remove(id)
         } else {
             selected.insert(id)
+        }
+        if selected.contains(id) {
+            unticked.remove(id)
+        } else {
+            unticked.insert(id)
         }
     }
 
@@ -244,6 +264,8 @@ public final class CleanupViewState {
             updated.categories[index].entries.removeAll { moved.contains($0.id) }
         }
         selected.subtract(moved)
+        // Something found later at a moved path is a new item: it gets its category's default.
+        unticked.subtract(moved)
         measurement = updated
         onMeasurement?(updated)
     }

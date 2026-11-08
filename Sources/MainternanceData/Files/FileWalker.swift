@@ -16,10 +16,10 @@ struct WalkedFile: Sendable {
 /// Walks the owner's home folder, depth first, with its own list of folders to visit (no recursion, so deep trees
 /// cannot exhaust the stack).
 ///
-/// Never entered or reported: `Library` at the top of home, any folder whose name starts with `.` (the Trash
-/// among them), links (never followed and not counted), anything on another volume than the home folder, and
-/// any folder `isProtected` refuses. Only plain files and packages are reported; a file with several hard links is
-/// reported once. Read-only.
+/// Never entered or reported: `Library` at the top of home, any file or folder whose name starts with `.` (the
+/// Trash among them; the same rule as Search, `HomePlaces.isHidden`), links (never followed and not counted),
+/// anything on another volume than the home folder, and any folder `isProtected` refuses. Only plain files and
+/// packages are reported; a file with several hard links is reported once. Read-only.
 struct FileWalker: Sendable {
     /// Folder extensions treated as one item even when macOS does not say it is a package.
     static let packageExtensions: Set<String> = [
@@ -110,11 +110,13 @@ struct FileWalker: Sendable {
     private func step(
         _ path: String, name: String, device: Int32, library: String, onUnreadable: () -> Void
     ) -> Step {
+        // Hidden items (a name starting with `.`) are never shown, as in Search.
+        guard !HomePlaces.isHiddenName(name) else { return .skip }
         // Removed while walking, or not checkable: nothing to count. Links are never followed or counted.
         guard case let .found(item) = ItemStat.read(path), item.type != .symbolicLink,
               volume(path, item) == device else { return .skip }
         if item.type == .directory {
-            guard !name.hasPrefix("."), path != library, !isProtected(path) else { return .skip }
+            guard path != library, !isProtected(path) else { return .skip }
             guard isPackage(path) else { return .enter(path) }
             let (bytes, complete) = CleanupMeasurer.size(of: path, device: device)
             if !complete, !Task.isCancelled {

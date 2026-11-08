@@ -28,6 +28,7 @@ public extension ScannerViewModel {
         guard await isStillDetected(finding) else { return }
         do {
             let record = try await quarantine.quarantine(path: finding.path, signature: finding.signature)
+            quarantineReloadCount += 1 // any reload that read before this move is now stale
             findings.removeAll { $0.id == id }
             resolvedByQuarantine[record.id] = finding
             notice = ScannerText.moved(Self.name(of: finding.path))
@@ -64,6 +65,7 @@ public extension ScannerViewModel {
         let signature = quarantined.first { $0.id == id }?.signature
         do {
             let path = try await quarantine.restore(id)
+            quarantineReloadCount += 1 // any reload that read before this restore is now stale
             notice = ScannerText.restored(path, signature: signature)
             if let finding = resolvedByQuarantine.removeValue(forKey: id) {
                 merge(finding)
@@ -75,16 +77,38 @@ public extension ScannerViewModel {
         await reloadQuarantine()
     }
 
+    /// A list that cannot be read is never shown as an empty quarantine: the lists keep what the last good read
+    /// showed, `quarantineUnreadable` makes the screen say so, and no finding link is dropped.
     internal func reloadQuarantine() async {
-        quarantined = await quarantine.records()
-        notMoved = await quarantine.stillInPlace()
-        unclaimedCount = await quarantine.unclaimedFiles().count
+        quarantineReloadCount += 1
+        let mine = quarantineReloadCount
+        do {
+            let records = try await quarantine.records()
+            let inPlace = try await quarantine.stillInPlace()
+            let unclaimed = try await quarantine.unclaimedFiles().count
+            // A newer reload started while this one read: its snapshot is the current one, this one is stale.
+            guard mine == quarantineReloadCount else { return }
+            quarantined = records
+            notMoved = inPlace
+            unclaimedCount = unclaimed
+            quarantineUnreadable = false
+        } catch {
+            if mine == quarantineReloadCount {
+                quarantineUnreadable = true
+            }
+            return
+        }
         await dropLinksOfRecordsThatAreGone()
     }
 
+    /// The Quarantine section shows while it holds anything, or while its list cannot be read.
+    var showsQuarantineSection: Bool {
+        quarantineUnreadable || !quarantined.isEmpty || !notMoved.isEmpty || unclaimedCount > 0
+    }
+
     /// A link whose quarantine record no longer exists can never be restored. Only a non-empty answer proves a
-    /// record is gone (`records()` also answers empty when the manifest cannot be read), so an empty one removes
-    /// nothing. A scan never removes a link: it cannot see a file that is in quarantine.
+    /// record is gone (an empty quarantine is also what a store that lost its folder reports), so an empty one
+    /// removes nothing. A scan never removes a link: it cannot see a file that is in quarantine.
     private func dropLinksOfRecordsThatAreGone() async {
         let known = Set((quarantined + notMoved).map(\.id))
         guard !known.isEmpty else { return }
@@ -94,7 +118,8 @@ public extension ScannerViewModel {
         await statusStore.remember(memory)
     }
 
+    /// The file name as shown in messages (cleaned of control and bidi characters).
     internal static func name(of path: String) -> String {
-        (path as NSString).lastPathComponent
+        ScannerText.shownName(path)
     }
 }

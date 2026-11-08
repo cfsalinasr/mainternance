@@ -153,7 +153,7 @@ struct HomeModelTests {
     @Test func scanSummaryWithoutDatesIsSafe() {
         let model = HomeModel(overview: overview(), now: now, locale: locale)
         #expect(model.scan.last == "Never scanned")
-        #expect(model.scan.next == "Next: not scheduled")
+        #expect(model.scan.next == "Weekly scan off")
     }
 
     @Test func missingScannerShowsSingleNotSetUpLine() {

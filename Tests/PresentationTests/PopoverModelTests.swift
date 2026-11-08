@@ -104,10 +104,10 @@ struct PopoverModelTests {
         #expect(!popover.rows.map(\.title).contains("Battery health"))
     }
 
-    @Test func nilScansShowNeverAndNotScheduled() {
+    @Test func nilScansShowNeverAndWeeklyScanOff() {
         let popover = model(overview(snapshot: snapshot()))
         #expect(popover.rows.first { $0.title == "Last scan" }?.value == "Never")
-        #expect(popover.rows.first { $0.title == "Next scan" }?.value == "Not scheduled")
+        #expect(popover.rows.first { $0.title == "Next scan" }?.value == "Weekly scan off")
     }
 
     @Test func thermalShowsLevelWordEvenWithTemperature() {

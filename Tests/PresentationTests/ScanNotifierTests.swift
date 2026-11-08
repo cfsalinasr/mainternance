@@ -100,10 +100,20 @@ struct ScanNotifierTests {
     @Test func unreadableFilesAreCounted() async {
         let (notifier, notifications) = notifier()
         await notifier.scanCompleted(completion(makeSummary(scanned: 50, unreadable: 1), scheduled: true))
-        #expect(notifications.posted.first?.title == "Weekly scan finished: nothing found")
+        #expect(notifications.posted.first?.title == "Weekly scan finished: nothing found in what it could check")
         #expect(notifications.posted.first?.body == "Scanned 50 files. 1 file could not be read.")
         await notifier.scanCompleted(completion(makeSummary(scanned: 1, unreadable: 7), scheduled: true))
         #expect(notifications.posted.last?.body == "Scanned 1 file. 7 files could not be read.")
+    }
+
+    /// Files too large to scan, or folders that could not be opened, were never checked: not a plain "nothing found".
+    @Test func skippedFilesOrFoldersNeverSayPlainNothingFound() async {
+        let (notifier, notifications) = notifier()
+        await notifier.scanCompleted(completion(makeSummary(scanned: 50, tooLarge: 2), scheduled: true))
+        await notifier.scanCompleted(completion(makeSummary(scanned: 50, folders: 1), scheduled: true))
+        #expect(notifications.posted.map(\.title) == Array(
+            repeating: "Weekly scan finished: nothing found in what it could check", count: 2
+        ))
     }
 
     /// One notification for one scheduled scan: the digest already carries the count, so no separate alert.

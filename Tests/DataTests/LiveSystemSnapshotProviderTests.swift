@@ -176,6 +176,30 @@ struct LiveSystemSnapshotProviderTests {
         #expect(await readers.provider.currentSnapshot().newStartupItemCount == nil)
     }
 
+    @Test("a review that cannot be saved or read makes Home say it could not check, never 'Nothing new or changed'")
+    func startupCheckUnavailable() async throws {
+        var readers = Readers()
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(
+            baselineEstablished: true, newCount: 0, reviewReadOnly: true
+        ))
+        let readOnly = await readers.provider.currentSnapshot()
+        #expect(readOnly.newStartupItemCount == nil)
+        #expect(readOnly.startupCheckUnavailable)
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(reviewUnreadable: true))
+        #expect(await readers.provider.currentSnapshot().startupCheckUnavailable)
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(baselineEstablished: false))
+        #expect(await !readers.provider.currentSnapshot().startupCheckUnavailable) // no baseline yet: silent
+        readers.startup = FixedStartupListing(snapshot: StartupSnapshot(
+            baselineEstablished: true, newCount: 0, reviewReadOnly: true
+        ))
+        let load = LoadOverview(
+            snapshots: readers.provider, scans: noScanner(), actions: NoSuggestedActionsProvider()
+        )
+        let check = try #require(await load().report.checks.first { $0.id == .startupItems })
+        #expect(check.reason == "Could not check for new or changed items")
+        #expect(check.state == .needsAttention)
+    }
+
     @Test("Home's startup check follows the real count and links to Startup")
     func startupCheckEndToEnd() async throws {
         var readers = Readers()
@@ -185,7 +209,7 @@ struct LiveSystemSnapshotProviderTests {
         )
         let check = try #require(await load().report.checks.first { $0.id == .startupItems })
         #expect(check.state == .needsAttention)
-        #expect(check.reason == "2 new startup items")
+        #expect(check.reason == "2 new or changed startup items")
         #expect(check.destination == .startup)
         #expect(AppDestination.startup.isAvailable)
     }

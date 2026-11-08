@@ -2,7 +2,8 @@ import Foundation
 import MainternanceDomain
 import Synchronization
 
-/// Home's Cleanup suggestion ("Free about N GB in Cleanup"), from the last real measurement.
+/// Home's Cleanup suggestion ("Free about N GB in Cleanup", counting only what a default Review moves), from the
+/// last real measurement.
 ///
 /// Nothing is suggested, and nothing is measured, until the Cleanup screen has measured once (`record`): measuring
 /// walks the disk, so it never starts at launch. After that, a Home refresh that finds the estimate older than
@@ -98,16 +99,57 @@ public final class CleanupEstimate: SuggestedActionsProviding, Sendable {
         }
     }
 
+    /// The ticked categories that hold something, named in Cleanup's order: "Caches", "Caches and logs",
+    /// "Caches, logs and build caches".
+    static func present(_ categories: [CleanupCategory]) -> String {
+        let names = categories.filter { $0.bytes > 0 }.compactMap { category -> String? in
+            switch category.kind {
+            case .caches: "caches"
+            case .logs: "logs"
+            case .developer: "build caches"
+            case .installers: nil
+            }
+        }
+        let text = switch names.count {
+        case 0: "Files"
+        case 1: names[0]
+        default: names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+        }
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    /// The headline is what a default Review moves (caches, logs and build caches); old installers, never ticked by
+    /// default, are mentioned on their own. Nothing is suggested when neither part reaches `threshold`.
     static func action(_ measurement: CleanupMeasurement) -> SuggestedAction? {
-        let total = measurement.totalBytes
-        guard total >= threshold else { return nil }
-        let size = ByteCountFormatter.string(fromByteCount: total, countStyle: .decimal)
+        let ticked = measurement.categories(selectedByDefault: true)
+        let unticked = measurement.categories(selectedByDefault: false)
+        let tickedBytes = CleanupMath.sum(ticked.map(\.bytes))
+        let untickedBytes = CleanupMath.sum(unticked.map(\.bytes))
+        let installers = size(untickedBytes, lowerBound: unticked.contains(where: \.isLowerBound))
+        if tickedBytes >= threshold {
+            let alsoInstallers = untickedBytes > 0
+                ? " Also \(installers) of old installers, not selected until you tick them." : ""
+            return SuggestedAction(
+                id: "cleanup",
+                title: "Free \(size(tickedBytes, lowerBound: ticked.contains(where: \.isLowerBound))) in Cleanup",
+                detail: "\(present(ticked)) to review. They move to the Trash, never deleted." + alsoInstallers,
+                symbol: "trash",
+                destination: .cleanup
+            )
+        }
+        guard untickedBytes >= threshold else { return nil }
         return SuggestedAction(
             id: "cleanup",
-            title: "Free \(measurement.isLowerBound ? "at least" : "about") \(size) in Cleanup",
-            detail: "Caches, logs and old installers to review. They move to the Trash, never deleted.",
+            title: "Review \(installers) of old installers in Cleanup",
+            detail: "Disk images and packages in Downloads, not selected until you tick them. "
+                + "They move to the Trash, never deleted.",
             symbol: "trash",
             destination: .cleanup
         )
+    }
+
+    /// "about 1 GB", or "at least 1 GB" when part was unreadable.
+    private static func size(_ bytes: Int64, lowerBound: Bool) -> String {
+        "\(lowerBound ? "at least" : "about") \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .decimal))"
     }
 }

@@ -21,8 +21,9 @@ struct ClamAVScannerFailureFormsTests {
         let events = await fixture.run()
         let summary = try #require(events.summary)
         #expect(summary.scanned == 3)
-        #expect(summary.unreadable == 3)
-        #expect(summary.permissionDenied == 3)
+        #expect(summary.unreadable == 2) // files; the Safari folder is counted as a folder
+        #expect(summary.unreadableFolders == 1)
+        #expect(summary.permissionDenied == 2)
         #expect(summary.findings == 1)
         #expect(events.failure == nil)
     }
@@ -38,8 +39,9 @@ struct ClamAVScannerFailureFormsTests {
         ], status: 2)
         let summary = try #require(await fixture.run().summary)
         #expect(summary.scanned == 2)
-        #expect(summary.unreadable == 3)
-        #expect(summary.permissionDenied == 2)
+        #expect(summary.unreadable == 2)
+        #expect(summary.unreadableFolders == 1)
+        #expect(summary.permissionDenied == 1)
     }
 
     @Test("one path reported in two forms is counted once")

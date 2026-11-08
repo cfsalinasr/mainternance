@@ -166,7 +166,10 @@ public struct HomeModel: Equatable, Sendable {
             symbol: scanState == .good ? "checkmark.shield" : "exclamationmark.shield",
             state: scanState,
             last: last,
-            next: scan.nextScan.map { Self.nextText($0, locale: locale) } ?? "Next: not scheduled"
+            // The status carries a next scan whenever the weekly scan is on (`ScheduledScanStatusProvider`).
+            next: scan.weeklyScanWaiting
+                ? "Weekly scan is waiting: the scanner is not ready"
+                : scan.nextScan.map { Self.nextText($0, locale: locale) } ?? PopoverModel.weeklyScanOff
         )
     }
 

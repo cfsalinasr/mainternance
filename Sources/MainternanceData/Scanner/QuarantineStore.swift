@@ -59,9 +59,10 @@ public actor QuarantineStore: QuarantineStoring {
 
     // MARK: QuarantineStoring
 
-    public func records() -> [QuarantineRecord] {
-        guard let entries = try? load() else { return [] }
-        return entries.filter { $0.state == .stored }.map(\.record)
+    /// A list that exists but cannot be read throws `.ioFailure` (here and in `stillInPlace`/`unclaimedFiles`):
+    /// nothing is written, and the caller must not take it for an empty quarantine.
+    public func records() throws -> [QuarantineRecord] {
+        try load().filter { $0.state == .stored }.map(\.record)
     }
 
     public func quarantine(path: String, signature: String) throws -> QuarantineRecord {
@@ -107,19 +108,26 @@ public actor QuarantineStore: QuarantineStoring {
 
     /// Items in the quarantine folder that no record describes (no sidecar and no manifest entry). They are never
     /// touched or deleted; this only reports them so the app can say so.
-    public func unclaimedFiles() -> [String] {
-        guard let entries = try? load() else { return [] }
+    public func unclaimedFiles() throws -> [String] {
+        let entries = try load()
         let known = Set(entries.map(\.record.id))
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names: [String]
+        do {
+            names = try fileManager.contentsOfDirectory(atPath: directory.path)
+        } catch {
+            let missing = (error as NSError).domain == NSCocoaErrorDomain
+                && (error as NSError).code == NSFileReadNoSuchFileError
+            guard missing else { throw Self.wrap(error) }
+            names = [] // no vault folder yet: nothing is unclaimed
+        }
         return names.filter { UUID(uuidString: $0).map { !known.contains($0) } ?? false }.sorted()
     }
 
     /// Records whose copy is in quarantine but whose original also still sits at its path with the same content
     /// (a copy across volumes was interrupted before the original was removed). They are NOT listed in `records()`
     /// as contained; nothing is deleted, and the original stays where it is.
-    public func stillInPlace() -> [QuarantineRecord] {
-        guard let entries = try? load() else { return [] }
-        return entries.filter { $0.state == .pending }.map(\.record)
+    public func stillInPlace() throws -> [QuarantineRecord] {
+        try load().filter { $0.state == .pending }.map(\.record)
     }
 
     // MARK: Moving files

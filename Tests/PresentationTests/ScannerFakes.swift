@@ -88,7 +88,8 @@ final class FakeEngine: ScannerEngine {
     }
 
     func updateDefinitions() -> AsyncStream<InstallEvent> {
-        replay(state.withLock { ($0.updateEvents, $0.statusAfterUpdate) })
+        log.add("update")
+        return replay(state.withLock { ($0.updateEvents, $0.statusAfterUpdate) })
     }
 
     private func replay(_ script: ([InstallEvent], EngineStatus?)) -> AsyncStream<InstallEvent> {
@@ -171,92 +172,6 @@ final class FakeEngine: ScannerEngine {
     }
 }
 
-final class FakeQuarantine: QuarantineStoring {
-    struct State {
-        var stored: [QuarantineRecord] = []
-        var inPlace: [QuarantineRecord] = []
-        var unclaimed: [String] = []
-        var quarantineError: QuarantineError?
-        var restoreError: QuarantineError?
-        var calls: [(path: String, signature: String)] = []
-        var restoredIDs: [UUID] = []
-        /// When true `restore` waits until `releaseRestore()`.
-        var holdRestore = false
-    }
-
-    let state = Mutex(State())
-    let log: CallLog
-    let restoreCalls: AsyncStream<Void>
-    private let restoreCallSource: AsyncStream<Void>.Continuation
-    private let restoreGate: AsyncStream<Void>
-    private let restoreGateSource: AsyncStream<Void>.Continuation
-
-    init(log: CallLog = CallLog()) {
-        self.log = log
-        (restoreCalls, restoreCallSource) = AsyncStream.makeStream(of: Void.self)
-        (restoreGate, restoreGateSource) = AsyncStream.makeStream(of: Void.self)
-    }
-
-    func releaseRestore() {
-        restoreGateSource.yield()
-    }
-
-    func configure(_ body: (inout State) -> Void) {
-        state.withLock { body(&$0) }
-    }
-
-    func quarantine(path: String, signature: String) async throws -> QuarantineRecord {
-        log.add("quarantine")
-        return try state.withLock { current in
-            current.calls.append((path, signature))
-            if let error = current.quarantineError {
-                throw error
-            }
-            let record = QuarantineRecord(
-                id: UUID(), originalPath: path, quarantinedAt: Date(timeIntervalSince1970: 1_800_000_000),
-                signature: signature, sha256: "00", size: 1, originalPermissions: 0o644
-            )
-            current.stored.append(record)
-            return record
-        }
-    }
-
-    func restore(_ id: UUID) async throws -> String {
-        log.add("restore")
-        if state.withLock({ $0.holdRestore }) {
-            restoreCallSource.yield()
-            for await _ in restoreGate {
-                break
-            }
-        }
-        return try state.withLock { current in
-            current.restoredIDs.append(id)
-            if let error = current.restoreError {
-                throw error
-            }
-            guard let record = current.stored.first(where: { $0.id == id }) else { throw QuarantineError.missing }
-            current.stored.removeAll { $0.id == id }
-            return record.originalPath
-        }
-    }
-
-    func records() async -> [QuarantineRecord] {
-        state.withLock { $0.stored }
-    }
-
-    func stillInPlace() async -> [QuarantineRecord] {
-        state.withLock { $0.inPlace }
-    }
-
-    func unclaimedFiles() async -> [String] {
-        state.withLock { $0.unclaimed }
-    }
-
-    var calls: [(path: String, signature: String)] {
-        state.withLock { $0.calls }
-    }
-}
-
 /// Which files "still exist" for the view model: all of them unless a test says one is gone.
 final class FileSystemStub: Sendable {
     private let missing = Mutex<Set<String>>([])
@@ -293,12 +208,14 @@ func makeFinding(_ index: Int, signature: String = "Win.Test.EICAR_HDB-1", path:
 
 func makeSummary(
     scope: ScanScope = .quick, scanned: Int = 100, unreadable: Int = 0, denied: Int = 0, findings: Int = 0,
-    unattributed: Int = 0, cancelled: Bool = false, definitions: Date? = Date(timeIntervalSince1970: 1_799_900_000)
+    unattributed: Int = 0, cancelled: Bool = false, definitions: Date? = Date(timeIntervalSince1970: 1_799_900_000),
+    tooLarge: Int = 0, folders: Int = 0
 ) -> ScanSummary {
     ScanSummary(
         scope: scope, scanned: scanned, unreadable: unreadable, findings: findings,
         startedAt: testNow, endedAt: testNow.addingTimeInterval(30), cancelled: cancelled,
-        definitionsDate: definitions, permissionDenied: denied, unattributedDetections: unattributed
+        definitionsDate: definitions, permissionDenied: denied, unattributedDetections: unattributed,
+        tooLarge: tooLarge, unreadableFolders: folders
     )
 }
 
