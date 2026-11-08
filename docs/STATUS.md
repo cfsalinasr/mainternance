@@ -51,3 +51,6 @@ Last updated: 2026-11-04.
 - Files, packages: check that moving a file inside a package folder (for example inside an `.app` or a Photos library) is refused, and that search does not list files inside packages.
 - Files, privacy: the prompts for Desktop, Documents and Downloads, and the "folders could not be read" note when you decline.
 - Uninstaller, known limit: a running app with no bundle identifier can still be moved by the Uninstaller. Check what happens.
+
+## Audit
+The whole-app audit of 2026-11-04 is fixed and merged (PR #10), including two CodeRabbit review rounds. Still open: running the app and ClamAV on a real Mac (the checks above), and one optional polish: startup items saved by a very early review format show as "New" instead of "Changed" the first time (not a way to hide a change).
