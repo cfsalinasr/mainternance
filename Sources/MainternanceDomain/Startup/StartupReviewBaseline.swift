@@ -28,6 +28,28 @@ public struct StartupReviewBaseline: Sendable, Equatable {
     /// Nil: a review saved without kinds, whose keys apply to every kind.
     private let byKind: [StartupKind: Set<String>]?
 
+    /// The labels and files named by earlier-format (`item`) keys, built once so matching stays linear.
+    private struct EarlierSeen: Sendable, Equatable {
+        var labels: Set<String> = []
+        var paths: Set<String> = []
+
+        init() {}
+
+        init(_ keys: Set<String>) {
+            for key in keys {
+                let parts = key.components(separatedBy: StartupReviewBaseline.separator)
+                guard parts.count == 4, parts[0] == StartupReviewBaseline.previousItemPrefix else { continue }
+                if !parts[1].isEmpty {
+                    labels.insert(parts[1])
+                }
+                paths.insert(parts[2])
+            }
+        }
+    }
+
+    private let earlierAll: EarlierSeen
+    private let earlierByKind: [StartupKind: EarlierSeen]
+
     /// `byKind` holds, for each kind, the keys saved for it plus those saved under no kind.
     public init(_ keys: Set<String>, byKind: [StartupKind: Set<String>]? = nil) {
         self.keys = keys
@@ -44,6 +66,8 @@ public struct StartupReviewBaseline: Sendable, Equatable {
         }
         self.labels = labels
         self.paths = paths
+        earlierAll = EarlierSeen(keys)
+        earlierByKind = (byKind ?? [:]).mapValues(EarlierSeen.init)
     }
 
     /// A current key wins; then a label or file the review saw in another form (changed) wins over an old-style
@@ -59,7 +83,14 @@ public struct StartupReviewBaseline: Sendable, Equatable {
         if !oldKeys(of: item).isEmpty {
             return .reviewedBeforeUpgrade
         }
-        return .new
+        return sawInEarlierFormat(item) ? .changed : .new
+    }
+
+    /// An earlier-format review (program and arguments only) saw this file or label, but its key no longer matches:
+    /// the program changed since, so the item is changed, not new. Within the item's own kind, like old-style keys.
+    private func sawInEarlierFormat(_ item: StartupItem) -> Bool {
+        let seen = byKind == nil ? earlierAll : (earlierByKind[item.kind] ?? EarlierSeen())
+        return seen.paths.contains(item.plistPath) || item.validLabel.map(seen.labels.contains) == true
     }
 
     /// `match` for a whole listing, plus one rule only a listing can apply: an old label key that more than one

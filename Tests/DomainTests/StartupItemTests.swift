@@ -79,6 +79,21 @@ struct StartupItemTests {
         #expect(seen.match(item("/x/b.plist", label: "com.b")) == .new)
     }
 
+    @Test("an item whose earlier-format key no longer matches (its program changed) is changed, not new")
+    func earlierFormatKeyWithAnotherProgramIsChanged() {
+        var reviewed = item()
+        reviewed.previousFingerprint = "old"
+        let saved = StartupReviewBaseline([StartupReviewBaseline.legacyKeys(of: reviewed)[2]])
+        var same = item()
+        same.previousFingerprint = "old"
+        #expect(saved.match(same) == .reviewedBeforeUpgrade) // unchanged program: trusted once
+        var rewritten = item()
+        rewritten.previousFingerprint = "evil"
+        #expect(saved.match(rewritten) == .changed)
+        #expect(saved.match(item("/x/other.plist", label: "com.a")) == .changed) // another file took the label
+        #expect(saved.match(item("/x/b.plist", label: "com.b")) == .new)
+    }
+
     @Test("an old-style key counts as reviewed once (to be upgraded); once upgraded it can never hide a change")
     func legacyKeysAreUpgradedOnce() {
         let now = item()

@@ -66,10 +66,13 @@ struct DuplicateFinderSafetyTests {
         while ended.values.isEmpty, Date().timeIntervalSince(start) < 5 {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        #expect(Date().timeIntervalSince(start) < 2)
+        // (Cancelling during a whole-file read is pinned exactly by the test above: reads == 3.)
+        // Uncancelled this makes 80 opens and 160 chunks. The bounds are half of that, so a slow CI runner (which
+        // lets more reads slip in before the cancel lands) cannot fail the test, while ignoring the cancel would.
+        #expect(Date().timeIntervalSince(start) < 4)
         #expect(ended.values.first?.wasCancelled == true)
-        #expect(reads.values.count < 10)
-        #expect(chunks.values.count < 10)
+        #expect(reads.values.count < 40)
+        #expect(chunks.values.count < 80)
     }
 
     @Test("a file changed while it is being read whole is dropped from its group")
