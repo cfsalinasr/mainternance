@@ -53,4 +53,4 @@ Last updated: 2026-11-04.
 - Uninstaller, known limit: a running app with no bundle identifier can still be moved by the Uninstaller. Check what happens.
 
 ## Audit
-The whole-app audit of 2026-11-04 is fixed and merged (PR #10), including two CodeRabbit review rounds. Still open: running the app and ClamAV on a real Mac (the checks above), and one optional polish: startup items saved by a very early review format show as "New" instead of "Changed" the first time (not a way to hide a change).
+The whole-app audit of 2026-11-04 is fixed and merged (PR #10), including two CodeRabbit review rounds. Still open: running the app and ClamAV on a real Mac (the checks above), and one optional polish: some startup items that no longer match their old review keys show as "New" instead of "Changed" on the first look; they still need review. A matching label-only key can instead mark an item as reviewed without flagging a change made before the first look (see Known limits above).
