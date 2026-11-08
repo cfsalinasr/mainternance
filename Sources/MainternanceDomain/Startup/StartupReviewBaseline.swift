@@ -59,7 +59,18 @@ public struct StartupReviewBaseline: Sendable, Equatable {
         if !oldKeys(of: item).isEmpty {
             return .reviewedBeforeUpgrade
         }
-        return .new
+        return sawInEarlierFormat(item) ? .changed : .new
+    }
+
+    /// An earlier-format review (program and arguments only) saw this file or label, but its key no longer matches:
+    /// the program changed since, so the item is changed, not new.
+    private func sawInEarlierFormat(_ item: StartupItem) -> Bool {
+        let saved = byKind.map { $0[item.kind] ?? [] } ?? keys
+        return saved.contains { key in
+            let parts = key.components(separatedBy: Self.separator)
+            guard parts.count == 4, parts[0] == Self.previousItemPrefix else { return false }
+            return parts[2] == item.plistPath || (!parts[1].isEmpty && parts[1] == item.validLabel)
+        }
     }
 
     /// `match` for a whole listing, plus one rule only a listing can apply: an old label key that more than one
